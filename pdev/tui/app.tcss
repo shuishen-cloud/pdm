@@ -2,6 +2,25 @@ Screen {
     layout: vertical;
 }
 
+/* 左上角标志：加大加粗，与标题形成对比 */
+Header {
+    background: $panel;
+}
+
+Header .header--title {
+    color: $text;
+    text-style: bold;
+}
+
+Header .header--icon {
+    color: $accent;
+    text-style: bold;
+}
+
+Header .header--subtitle {
+    color: $text-muted;
+}
+
 #main {
     height: 1fr;
 }

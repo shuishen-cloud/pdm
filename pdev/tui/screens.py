@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Optional
 
 from textual.app import ComposeResult
-from textual.containers import Grid, Vertical
+from textual.containers import Grid, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Static
 
@@ -26,9 +26,27 @@ class FilterScreen(ModalScreen):
     #buttons { margin-top: 1; height: auto; }
     """
 
+    BINDINGS = [
+        ("escape", "cancel", "取消"),
+        ("ctrl+c", "cancel", "取消"),
+    ]
+
     def __init__(self, current: Optional[dict] = None) -> None:
         super().__init__()
         self.current = current or {}
+
+    def action_cancel(self) -> None:
+        """Esc 关闭且不改变筛选。"""
+        self.dismiss(None)
+
+    def key_q(self) -> bool:
+        """q 关闭：仅当焦点不在输入框时（否则 q 是正常输入）。"""
+        from textual.widgets import Input
+
+        if isinstance(self.focused, Input):
+            return False
+        self.dismiss(None)
+        return True
 
     def compose(self) -> ComposeResult:
         with Vertical(id="filter-box"):
@@ -100,49 +118,69 @@ class FilterScreen(ModalScreen):
 _HELP = """\
 [bold]快捷键[/]
 
-  [yellow]Tab / Shift+Tab[/]   在面板间切换
-  [yellow]h / l[/]             左移 / 右移面板
-  [yellow]j / k[/]             上下移动
-  [yellow]/[/]                 筛选（类型/状态/文件/全文）
-  [yellow]r[/]                 执行当前笔记的验证
-  [yellow]R[/]                 刷新数据
-  [yellow]q[/]                 退出
+  [cyan]1[/] / [cyan]2[/] / [cyan]3[/]        直接跳到 提交 / 笔记 / 详情 面板
+  [cyan]Tab[/] / [cyan]Shift+Tab[/]     在面板间循环切换
+  [cyan]h[/] / [cyan]l[/]             焦点左移 / 右移
+  [cyan]j[/] / [cyan]k[/]             上下移动
+  [cyan]Enter[/] / [cyan]z[/]         放大当前面板 / 再按还原
+  [cyan]/[/]                 筛选（类型/状态/文件/全文）
+  [cyan]r[/]                 执行当前笔记的验证
+  [cyan]R[/]                 刷新数据
+  [cyan]?[/]                 本帮助
+  [cyan]q[/]                 退出
 
 [bold]面板[/]
 
-  1. [bold]提交[/]    有笔记的 commit，显示笔记数量与类型分布
-  2. [bold]笔记[/]    选中提交的全部笔记
-  3. [bold]详情[/]    笔记全文、验证方法与脚本
+  [cyan]1[/] [bold]提交[/]    有笔记的 commit，显示提交标题与类型分布
+  [cyan]2[/] [bold]笔记[/]    选中提交的全部笔记
+  [cyan]3[/] [bold]详情[/]    笔记全文、验证方法与测试脚本
+
+[bold]类型颜色[/]
+
+  [red]bug[/] 缺陷    [bright_yellow]pit[/] 易错点   [green]exc[/] 可控异常
+  [bright_red]pro[/] 问题    [cyan]dif[/] 难点
 
 [bold]状态标记[/]
 
-  笔记： [green]·[/] noted  [yellow]○[/] open  [green]●[/] resolved
-  验证： [green]✓[/] 通过  [red]✗[/] 失败  [yellow]![/] 出错  [dim]-[/] 人工  ? 未跑
+  笔记： [green]·[/] noted   [yellow]○[/] open   [green]●[/] resolved
+  验证： [green]✓[/] 通过   [red]✗[/] 失败   [yellow]![/] 出错   [dim]-[/] 人工   [dim]·[/] 未跑
+
+[dim]按 Esc / q / ? 关闭本窗口[/]
 """
 
 
 class HelpScreen(ModalScreen):
-    """帮助。按任意键关闭。"""
+    """帮助。按 Esc / q / ? 关闭。"""
 
     CSS = """
-    HelpScreen { align: center middle; }
-    #help-box { width: 68; height: auto; max-height: 90%;
-                padding: 1 2; border: thick $accent;
-                background: $surface; }
+    HelpScreen {
+        align: center middle;
+        background: $background 70%;
+    }
+    #help-box {
+        width: 74;
+        height: auto;
+        max-height: 90%;
+        padding: 1 2;
+        border: thick $accent;
+        background: $surface;
+    }
+    #help-text {
+        width: auto;
+        height: auto;
+    }
     """
 
     BINDINGS = [
-        ("escape", "dismiss", "关闭"),
-        ("q", "dismiss", "关闭"),
-        ("enter", "dismiss", "关闭"),
-        ("question_mark", "dismiss", "关闭"),
+        ("escape", "dismiss_help", "关闭"),
+        ("q", "dismiss_help", "关闭"),
+        ("enter", "dismiss_help", "关闭"),
+        ("question_mark", "dismiss_help", "关闭"),
     ]
 
     def compose(self) -> ComposeResult:
-        from textual.widgets import Markdown
-
         with Vertical(id="help-box"):
-            yield Markdown(_HELP)
+            yield Static(_HELP, id="help-text")
 
-    def action_dismiss(self) -> None:
+    def action_dismiss_help(self) -> None:
         self.dismiss(None)

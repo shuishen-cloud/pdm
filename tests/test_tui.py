@@ -453,3 +453,123 @@ async def test_commit_item_without_info_still_renders(tmp_path):
                                   title="x")]).render()
     assert "c1" in text.plain
     assert "bug:1" in text.plain
+
+
+# ---------------------------------------------------------------------------
+# 帮助 / 筛选弹窗的可关闭性
+# ---------------------------------------------------------------------------
+
+
+async def test_help_closes_with_escape(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpScreen)
+
+
+async def test_help_closes_with_q(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpScreen)
+        assert app.is_running   # 不应把整个应用退出
+
+
+async def test_help_renders_markup_not_literal(store):
+    """帮助内容应渲染为富文本，而不是显示 [bold] 字面量。"""
+    from pdev.tui.screens import _HELP
+
+    assert "[bold]" in _HELP          # 源文本是 Rich markup
+    app = make_app(store)
+    async with app.run_test(size=(110, 44)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        body = app.screen.query_one("#help-text")
+        rendered = body.render()
+        text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
+        assert "[bold]" not in text
+        assert "快捷键" in text
+
+
+async def test_filter_closes_with_escape(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(CommitList).focus()
+        await pilot.press("slash")
+        await pilot.pause()
+        assert isinstance(app.screen, FilterScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, FilterScreen)
+
+
+async def test_filter_q_types_into_input(store):
+    """输入框聚焦时 q 应作为字符输入，而不是关闭弹窗。"""
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(CommitList).focus()
+        await pilot.press("slash")
+        await pilot.pause()
+        app.screen.query_one("#text", Input).focus()
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, FilterScreen)
+        assert "q" in app.screen.query_one("#text", Input).value
+
+
+async def test_filter_q_closes_when_input_not_focused(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(CommitList).focus()
+        await pilot.press("slash")
+        await pilot.pause()
+        app.screen.query_one("#apply", Button).focus()
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        assert not isinstance(app.screen, FilterScreen)
+
+
+# ---------------------------------------------------------------------------
+# 面板直达快捷键
+# ---------------------------------------------------------------------------
+
+
+async def test_number_keys_jump_to_panels(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(DetailPane).focus()
+
+        await pilot.press("1")
+        await pilot.pause()
+        assert isinstance(app.focused, CommitList)
+
+        await pilot.press("2")
+        await pilot.pause()
+        assert isinstance(app.focused, NoteList)
+
+        await pilot.press("3")
+        await pilot.pause()
+        assert isinstance(app.focused, DetailPane)
+
+
+async def test_app_has_icon(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        assert app.ICON
+        assert app.ICON.strip()

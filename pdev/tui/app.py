@@ -32,13 +32,18 @@ class PDMApp(App):
 
     CSS_PATH = "app.tcss"
     TITLE = "ProjectDevelopManager"
+    # 左上角标志（Header 会以背景色高亮显示）
+    ICON = "📓"
 
     BINDINGS = [
         Binding("q", "quit", "退出"),
         Binding("tab", "focus_next", "下一个面板", show=False),
         Binding("shift+tab", "focus_previous", "上一个面板", show=False),
-        Binding("h", "focus_left", "左移"),
-        Binding("l", "focus_right", "右移"),
+        Binding("1", "focus_commits", "提交"),
+        Binding("2", "focus_notes", "笔记"),
+        Binding("3", "focus_detail", "详情"),
+        Binding("h", "focus_left", "左移", show=False),
+        Binding("l", "focus_right", "右移", show=False),
         Binding("j", "cursor_down", "下移", show=False),
         Binding("k", "cursor_up", "上移", show=False),
         Binding("enter", "toggle_zoom", "放大/还原"),
@@ -63,7 +68,7 @@ class PDMApp(App):
     # --- 布局 ---
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        yield Header(show_clock=True, icon=self.ICON)
         from textual.containers import Horizontal
 
         with Horizontal(id="main"):
@@ -74,6 +79,8 @@ class PDMApp(App):
 
     def on_mount(self) -> None:
         self.sub_title = f"store: {self.store.root}"
+        if not self.git.available:
+            self.sub_title += "  (非 git 仓库)"
         self._reload_commits()
         self.query_one(CommitList).focus()
 
@@ -162,6 +169,18 @@ class PDMApp(App):
 
     def action_focus_right(self) -> None:
         self._shift_focus(1)
+
+    def action_focus_commits(self) -> None:
+        """1：直接跳到提交面板（左上）。"""
+        self.query_one(CommitList).focus()
+
+    def action_focus_notes(self) -> None:
+        """2：跳到笔记面板。"""
+        self.query_one(NoteList).focus()
+
+    def action_focus_detail(self) -> None:
+        """3：跳到详情面板。"""
+        self.query_one(DetailPane).focus()
 
     def _panel_widgets(self) -> list:
         return [
