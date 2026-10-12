@@ -47,16 +47,26 @@ _VERIFY_MARK = {
 class CommitItem(ListItem):
     """提交列表项。"""
 
-    def __init__(self, commit: str, notes: List[CommitNote]) -> None:
+    def __init__(self, commit: str, notes: List[CommitNote],
+                 info=None) -> None:
         super().__init__()
         self.commit = commit
         self.notes = notes
+        self.info = info              # CommitInfo | None
 
     def render(self) -> Text:
         t = Text()
         t.append(self.commit[:8], style="bold yellow")
-        t.append(f"  {len(self.notes)} notes\n", style="dim")
-        # 类型缩写分布
+        t.append(f"  {len(self.notes)} notes", style="dim")
+
+        # 提交标题（来自 git log，可能拿不到）
+        if self.info and self.info.subject:
+            subject = self.info.subject
+            if len(subject) > 46:
+                subject = subject[:45] + "…"
+            t.append("\n  ")
+            t.append(subject, style="white")
+
         short = {
             NoteKind.PROBLEM: "pro",
             NoteKind.BUG: "bug",
@@ -69,26 +79,39 @@ class CommitItem(ListItem):
             kinds[n.kind] = kinds.get(n.kind, 0) + 1
         parts = [f"{short.get(k, '?')}:{c}"
                  for k, c in sorted(kinds.items(), key=lambda kv: kv[0].value)]
-        t.append("  " + " ".join(parts), style="dim")
+        t.append("\n  " + " ".join(parts), style="dim")
         return t
 
 
 class CommitList(ListView):
     """左侧：有笔记的提交。"""
 
-    class Selected(Message):
+    class Picked(Message):
+        """用户选中某个提交。
+
+        不能叫 ``Selected``：那会覆盖 ``ListView.Selected``，
+        而 Textual 点击 item 时正是发父类的 ``Selected``（叁数不同）会报错。
+        """
+
         def __init__(self, commit: str) -> None:
             self.commit = commit
             super().__init__()
 
     def load(self, commits: List[tuple]) -> None:
+        """commits: [(commit, notes, info|None), ...]"""
         self.clear()
-        for commit, notes in commits:
-            self.append(CommitItem(commit, notes))
-
+        for entry in commits:
+            commit, notes = entry[0], entry[1]
+            info = entry[2] if len(entry) > 2 else None
+            self.append(CommitItem(commit, notes, info))
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if isinstance(event.item, CommitItem):
-            self.post_message(self.Selected(event.item.commit))
+            self.post_message(self.Picked(event.item.commit))
+
+    def key_enter(self) -> bool:
+        """Enter 在被 ListView 消化前转给 App 放大。"""
+        self.app.action_toggle_zoom()
+        return True
 
     def action_cursor_down(self) -> None:
         self.action_cursor_down_impl()
@@ -139,7 +162,9 @@ class NoteItem(ListItem):
 class NoteList(ListView):
     """中左：选中提交的笔记。"""
 
-    class Selected(Message):
+    class Picked(Message):
+        """用户选中某条笔记（不叫 Selected，原因见 CommitList.Picked）。"""
+
         def __init__(self, note: CommitNote) -> None:
             self.note = note
             super().__init__()
@@ -151,7 +176,11 @@ class NoteList(ListView):
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if isinstance(event.item, NoteItem):
-            self.post_message(self.Selected(event.item.note))
+            self.post_message(self.Picked(event.item.note))
+
+    def key_enter(self) -> bool:
+        self.app.action_toggle_zoom()
+        return True
 
     def action_cursor_down(self) -> None:
         self._move(1)
@@ -178,20 +207,38 @@ class DetailPane(VerticalScroll):
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
         self.note: Optional[CommitNote] = None
+        self.commit_info = None
         self._body = Static(id="detail-body")
 
     def compose(self) -> ComposeResult:
         yield self._body
 
-    def show_note(self, note: Optional[CommitNote], cwd: str = ".") -> None:
+    def show_note(self, note: Optional[CommitNote], cwd: str = ".",
+                  commit_info=None) -> None:
         self.note = note
-        self._body.update(self._build(note, cwd))
+        self.commit_info = commit_info
+        self._body.update(self._build(note, cwd, commit_info))
 
-    def _build(self, n: Optional[CommitNote], cwd: str) -> Text:
+    def _build(self, n: Optional[CommitNote], cwd: str,
+               commit_info=None) -> Text:
         if n is None:
             return Text("（无笔记）", style="dim")
 
         t = Text()
+        # 提交标题放在最上方，一眼看到这次提交干了什么
+        if commit_info is not None and commit_info.subject:
+            t.append("提交  ", style="dim")
+            t.append(commit_info.subject + "\n", style="bold yellow")
+            if commit_info.author:
+                t.append("作者  ", style="dim")
+                when = (commit_info.date.strftime("%Y-%m-%d %H:%M")
+                        if commit_info.date else "")
+                t.append(f"{commit_info.author}", style="dim")
+                if when:
+                    t.append(f"  {when}", style="dim")
+                t.append("\n")
+            t.append("─" * 40 + "\n", style="dim")
+
         t.append(f"[{n.kind.value}] ", style=f"bold {_KIND_COLOR.get(n.kind, 'white')}")
         t.append(n.title + "\n", style="bold")
         t.append("─" * 40 + "\n", style="dim")

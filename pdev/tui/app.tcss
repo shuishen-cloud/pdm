@@ -43,3 +43,22 @@ ListItem.--highlight {
 #detail-body {
     width: 1fr;
 }
+
+/* 放大：被选中的面板占满宽度，其余隐藏 */
+CommitList.zoomed,
+NoteList.zoomed,
+DetailPane.zoomed {
+    width: 1fr;
+}
+
+CommitList.dimmed,
+NoteList.dimmed,
+DetailPane.dimmed {
+    display: none;
+}
+
+CommitList.zoomed:focus,
+NoteList.zoomed:focus,
+DetailPane.zoomed:focus {
+    border: round $accent;
+}

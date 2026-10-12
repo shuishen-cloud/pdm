@@ -41,6 +41,8 @@ class PDMApp(App):
         Binding("l", "focus_right", "右移"),
         Binding("j", "cursor_down", "下移", show=False),
         Binding("k", "cursor_up", "上移", show=False),
+        Binding("enter", "toggle_zoom", "放大/还原"),
+        Binding("z", "toggle_zoom", "放大/还原", show=False),
         Binding("slash", "filter", "筛选"),
         Binding("r", "run_verify", "跑验证"),
         Binding("R", "refresh", "刷新"),
@@ -53,6 +55,10 @@ class PDMApp(App):
         self.cwd = cwd
         self._note_filters: dict = {}
         self._current_commit: str | None = None
+        self._zoomed: str | None = None      # 被放大的面板 id
+        from ..git import GitRepo
+
+        self.git = GitRepo(cwd)
 
     # --- 布局 ---
 
@@ -83,7 +89,14 @@ class PDMApp(App):
             grouped.setdefault(n.commit, []).append(n)
 
         commits = sorted(grouped.items(), reverse=True)
-        self.query_one(CommitList).load(commits)
+
+        # 从 git 补齐 commit message
+        infos = {}
+        if self.git.available and commits:
+            infos = self.git.commit_infos([c for c, _ in commits])
+
+        cl = self.query_one(CommitList)
+        cl.load([(c, ns, infos.get(c)) for c, ns in commits])
         if commits:
             self._select_commit(commits[0][0])
         else:
@@ -124,18 +137,23 @@ class PDMApp(App):
             self.query_one(DetailPane).show_note(None, self.cwd)
             return
         notes = self.store.by_commit(commit)
+        info = self.git.commit_info(commit) if self.git.available else None
         self.query_one(NoteList).load(notes)
         self.query_one(DetailPane).show_note(
-            notes[0] if notes else None, self.cwd
+            notes[0] if notes else None, self.cwd, commit_info=info
         )
 
     # --- 事件 ---
 
-    def on_commit_list_selected(self, message: CommitList.Selected) -> None:
+    def on_commit_list_picked(self, message: CommitList.Picked) -> None:
         self._select_commit(message.commit)
 
-    def on_note_list_selected(self, message: NoteList.Selected) -> None:
-        self.query_one(DetailPane).show_note(message.note, self.cwd)
+    def on_note_list_picked(self, message: NoteList.Picked) -> None:
+        info = None
+        if self.git.available and self._current_commit:
+            info = self.git.commit_info(self._current_commit)
+        self.query_one(DetailPane).show_note(message.note, self.cwd,
+                                             commit_info=info)
 
     # --- 动作 ---
 
@@ -176,6 +194,40 @@ class PDMApp(App):
         self.store._load()
         self._reload_commits()
         self.notify("已刷新")
+
+    def action_toggle_zoom(self) -> None:
+        """把当前面板放大到整宽，再按一次还原。"""
+        focused = self.focused
+        if focused is None:
+            return
+        panel_id = focused.id
+        if panel_id not in ("commits", "notes", "detail"):
+            # 焦点在输入框等控件时，直接放大焦点所在面板
+            for pid in ("commits", "notes", "detail"):
+                if focused in self.query_one(f"#{pid}").ancestors:
+                    panel_id = pid
+                    break
+            else:
+                return
+
+        for pid in ("commits", "notes", "detail"):
+            widget = self.query_one(f"#{pid}")
+            widget.remove_class("zoomed")
+            widget.add_class("dimmed")
+
+        if self._zoomed == panel_id:
+            # 还原
+            self._zoomed = None
+            for pid in ("commits", "notes", "detail"):
+                self.query_one(f"#{pid}").remove_class("dimmed")
+            self.notify("已还原")
+        else:
+            self._zoomed = panel_id
+            widget = self.query_one(f"#{panel_id}")
+            widget.remove_class("dimmed")
+            widget.add_class("zoomed")
+            widget.focus()
+            self.notify(f"已放大：{panel_id}")
 
     def action_filter(self) -> None:
         def apply(result: dict | None) -> None:

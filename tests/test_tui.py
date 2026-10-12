@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("textual")
@@ -284,3 +286,127 @@ async def test_refresh_reloads(store):
         await pilot.press("R")
         await pilot.pause()
         assert len(app.query_one(CommitList).children) == 3
+
+
+# ---------------------------------------------------------------------------
+# 回归：点击不应崩溃（曾因自定义 Selected 覆盖 ListView.Selected）
+# ---------------------------------------------------------------------------
+
+
+async def test_click_commit_item_does_not_crash(store):
+    app = make_app(store)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        cl = app.query_one(CommitList)
+        await pilot.click(cl.children[1])
+        await pilot.pause()
+        assert app.is_running
+        assert app._current_commit == "aaa111"
+
+
+async def test_click_note_item_does_not_crash(store):
+    app = make_app(store)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        nl = app.query_one(NoteList)
+        await pilot.click(nl.children[0])
+        await pilot.pause()
+        assert app.is_running
+
+
+async def test_click_detail_pane_does_not_crash(store):
+    app = make_app(store)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await pilot.click("#detail")
+        await pilot.pause()
+        assert app.is_running
+
+
+async def test_panels_do_not_shadow_listview_selected():
+    # 自定义消息不得叫 Selected，否则覆盖父类导致点击崩溃
+    assert not hasattr(CommitList, "__dict__") or "Selected" not in CommitList.__dict__
+    assert "Selected" not in NoteList.__dict__
+    assert hasattr(CommitList, "Picked")
+    assert hasattr(NoteList, "Picked")
+
+
+# ---------------------------------------------------------------------------
+# 放大 / 还原
+# ---------------------------------------------------------------------------
+
+
+async def test_zoom_with_z_key(store):
+    app = make_app(store)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        cl = app.query_one(CommitList)
+        cl.focus()
+        await pilot.press("z")
+        await pilot.pause()
+        assert app._zoomed == "commits"
+        assert cl.has_class("zoomed")
+        assert app.query_one(NoteList).has_class("dimmed")
+
+
+async def test_zoom_toggles_back(store):
+    app = make_app(store)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        cl = app.query_one(CommitList)
+        cl.focus()
+        await pilot.press("z")
+        await pilot.pause()
+        await pilot.press("z")
+        await pilot.pause()
+        assert app._zoomed is None
+        assert not cl.has_class("zoomed")
+        assert not app.query_one(NoteList).has_class("dimmed")
+
+
+async def test_zoom_with_enter(store):
+    app = make_app(store)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(CommitList).focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app._zoomed == "commits"
+
+
+async def test_zoom_each_panel(store):
+    app = make_app(store)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        for panel_id in ("commits", "notes", "detail"):
+            app.query_one(f"#{panel_id}").focus()
+            await pilot.press("z")
+            await pilot.pause()
+            assert app._zoomed == panel_id
+            await pilot.press("z")
+            await pilot.pause()
+            assert app._zoomed is None
+
+
+# ---------------------------------------------------------------------------
+# commit message（git 集成）
+# ---------------------------------------------------------------------------
+
+
+async def test_commit_subject_from_git(tmp_path):
+    import subprocess
+
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True
+    ).stdout.strip()
+    if not head:
+        pytest.skip("不在 git 仓库中")
+
+    s = NoteStore(tmp_path / "notes")
+    s.add(CommitNote(commit=head, kind=NoteKind.BUG, title="真实提交"))
+    app = make_app(s, cwd=str(Path.cwd()))
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        item = app.query_one(CommitList).children[0]
+        assert item.info is not None
+        assert item.info.subject  # 拿到了提交标题
