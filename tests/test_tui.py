@@ -12,7 +12,7 @@ import pytest
 
 pytest.importorskip("textual")
 
-from textual.widgets import Button, Input  # noqa: E402
+from textual.widgets import Input  # noqa: E402
 
 from pdev import (  # noqa: E402
     Actor,
@@ -177,7 +177,7 @@ async def test_filter_reduces_commits(store):
         assert isinstance(app.screen, FilterScreen)
 
         app.screen.query_one("#kind", Input).value = "bug"
-        app.screen.query_one("#apply", Button).press()
+        await pilot.press("enter")
         await pilot.pause()
 
         assert app._note_filters["kind"] is NoteKind.BUG
@@ -193,7 +193,7 @@ async def test_filter_by_text(store):
         await pilot.press("slash")
         await pilot.pause()
         app.screen.query_one("#text", Input).value = "竞态"
-        app.screen.query_one("#apply", Button).press()
+        await pilot.press("enter")
         await pilot.pause()
         assert len(cl.children) == 1
 
@@ -206,7 +206,7 @@ async def test_filter_clear_restores(store):
         cl.focus()
         await pilot.press("slash")
         await pilot.pause()
-        app.screen.query_one("#clear", Button).press()
+        await pilot.press("ctrl+l")
         await pilot.pause()
         assert app._note_filters == {}
         assert len(cl.children) == 2
@@ -220,7 +220,7 @@ async def test_filter_cancel_keeps_state(store):
         cl.focus()
         await pilot.press("slash")
         await pilot.pause()
-        app.screen.query_one("#cancel", Button).press()
+        await pilot.press("escape")
         await pilot.pause()
         assert app._note_filters == {}
         assert len(cl.children) == 2
@@ -234,7 +234,7 @@ async def test_filter_invalid_kind(store):
         await pilot.press("slash")
         await pilot.pause()
         app.screen.query_one("#kind", Input).value = "bogus"
-        app.screen.query_one("#apply", Button).press()
+        await pilot.press("enter")
         await pilot.pause()
         # 非法输入不关闭弹窗
         assert isinstance(app.screen, FilterScreen)
@@ -514,8 +514,8 @@ async def test_filter_closes_with_escape(store):
         assert not isinstance(app.screen, FilterScreen)
 
 
-async def test_filter_q_types_into_input(store):
-    """输入框聚焦时 q 应作为字符输入，而不是关闭弹窗。"""
+async def test_filter_q_types_into_input_not_close(store):
+    """筛选弹窗里 q 是正常输入（因为焦点总在输入框），不会误关。"""
     app = make_app(store)
     async with app.run_test(size=(110, 40)) as pilot:
         await pilot.pause()
@@ -529,18 +529,38 @@ async def test_filter_q_types_into_input(store):
         assert "q" in app.screen.query_one("#text", Input).value
 
 
-async def test_filter_q_closes_when_input_not_focused(store):
+async def test_filter_esc_cancels(store):
     app = make_app(store)
     async with app.run_test(size=(110, 40)) as pilot:
         await pilot.pause()
         app.query_one(CommitList).focus()
         await pilot.press("slash")
         await pilot.pause()
-        app.screen.query_one("#apply", Button).focus()
-        await pilot.pause()
-        await pilot.press("q")
+        await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, FilterScreen)
+
+
+async def test_filter_esc_keeps_existing_filters(store):
+    """Esc 取消不应清掉已有筛选。"""
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(CommitList).focus()
+        # 先应用一个筛选
+        await pilot.press("slash")
+        await pilot.pause()
+        app.screen.query_one("#kind", Input).value = "bug"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app._note_filters.get("kind") is NoteKind.BUG
+
+        # 再打开并 Esc 取消
+        await pilot.press("slash")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app._note_filters.get("kind") is NoteKind.BUG
 
 
 # ---------------------------------------------------------------------------

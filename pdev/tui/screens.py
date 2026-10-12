@@ -9,9 +9,9 @@ from typing import Optional
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Grid, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Static
+from textual.widgets import Input, Label, Static
 
 from ..note import NoteKind, NoteStatus, VerificationStatus
 
@@ -19,18 +19,37 @@ __all__ = ["FilterScreen", "VerifyScreen", "HelpScreen"]
 
 
 class FilterScreen(ModalScreen):
-    """筛选条件输入。返回 dict（空 dict 表示清除筛选）。"""
+    """筛选条件输入（紧凑单屏）。
+
+    - ``Enter`` 应用
+    - ``Esc`` / ``q`` 取消
+    - ``Ctrl+L`` 清除
+    返回 dict（空 dict 表示清除筛选），取消返回 None。
+    """
 
     CSS = """
-    FilterScreen { align: center middle; }
-    #filter-box { width: 60; height: auto; padding: 1 2;
-                  border: thick $accent; background: $surface; }
-    #filter-box Label { margin-top: 1; }
-    #buttons { margin-top: 1; height: auto; }
+    FilterScreen { align: center middle; background: $background 60%; }
+    #filter-box {
+        width: 64;
+        height: auto;
+        padding: 1 2;
+        border: thick $accent;
+        background: $surface;
+    }
+    #filter-box .row { height: 3; }
+    #filter-box .row Label {
+        width: 12;
+        height: 3;
+        content-align: left middle;
+        color: $text-muted;
+    }
+    #filter-box Input { width: 1fr; }
+    #filter-hint { color: $text-muted; height: auto; margin-top: 1; }
     """
 
     BINDINGS = [
         ("escape", "cancel", "取消"),
+        ("ctrl+l", "clear", "清除"),
         ("ctrl+c", "cancel", "取消"),
     ]
 
@@ -38,84 +57,95 @@ class FilterScreen(ModalScreen):
         super().__init__()
         self.current = current or {}
 
+    # --- 动作 ---
+
     def action_cancel(self) -> None:
         """Esc 关闭且不改变筛选。"""
         self.dismiss(None)
 
+    def action_clear(self) -> None:
+        """Ctrl+L 清除全部筛选。"""
+        self.dismiss({})
+
     def key_q(self) -> bool:
         """q 关闭：仅当焦点不在输入框时（否则 q 是正常输入）。"""
-        from textual.widgets import Input
-
         if isinstance(self.focused, Input):
             return False
         self.dismiss(None)
         return True
 
-    def compose(self) -> ComposeResult:
-        with Vertical(id="filter-box"):
-            yield Label("筛选（留空表示不限制）", id="title")
-            yield Label("类型 problem/difficulty/pitfall/controlled-exception/bug")
-            yield Input(
-                value=(self.current.get("kind").value
-                       if self.current.get("kind") else ""),
-                placeholder="kind", id="kind",
-            )
-            yield Label("状态 open/resolved/noted")
-            yield Input(
-                value=(self.current.get("status").value
-                       if self.current.get("status") else ""),
-                placeholder="status", id="status",
-            )
-            yield Label("文件（支持 glob，如 src/auth/**）")
-            yield Input(
-                value=self.current.get("file", ""),
-                placeholder="file", id="file",
-            )
-            yield Label("全文关键字")
-            yield Input(
-                value=self.current.get("text", ""),
-                placeholder="text", id="text",
-            )
-            with Grid(id="buttons"):
-                yield Button("应用", variant="primary", id="apply")
-                yield Button("清除", id="clear")
-                yield Button("取消", id="cancel")
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "cancel":
-            self.dismiss(None)
-            return
-        if event.button.id == "clear":
-            self.dismiss({})
-            return
-
+    def action_apply(self) -> None:
+        """Enter：校验并应用。"""
         result = {}
-        kind = self.query_one("#kind", Input).value.strip()
-        status = self.query_one("#status", Input).value.strip()
-        file = self.query_one("#file", Input).value.strip()
-        text = self.query_one("#text", Input).value.strip()
 
+        kind = self.query_one("#kind", Input).value.strip()
         if kind:
             try:
                 result["kind"] = NoteKind(kind)
             except ValueError:
                 self.notify(f"未知类型：{kind}", severity="error")
+                self.query_one("#kind", Input).focus()
                 return
+
+        status = self.query_one("#status", Input).value.strip()
         if status:
             try:
                 result["status"] = NoteStatus(status)
             except ValueError:
                 self.notify(f"未知状态：{status}", severity="error")
+                self.query_one("#status", Input).focus()
                 return
+
+        file = self.query_one("#file", Input).value.strip()
         if file:
             result["file"] = file
+        text = self.query_one("#text", Input).value.strip()
         if text:
             result["text"] = text
 
         self.dismiss(result)
 
+    # --- 布局 ---
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="filter-box"):
+            with Horizontal(classes="row"):
+                yield Label("类型")
+                yield Input(
+                    value=(self.current.get("kind").value
+                           if self.current.get("kind") else ""),
+                    placeholder="problem / difficulty / pitfall / controlled-exception / bug",
+                    id="kind",
+                )
+            with Horizontal(classes="row"):
+                yield Label("状态")
+                yield Input(
+                    value=(self.current.get("status").value
+                           if self.current.get("status") else ""),
+                    placeholder="open / resolved / noted",
+                    id="status",
+                )
+            with Horizontal(classes="row"):
+                yield Label("文件")
+                yield Input(
+                    value=self.current.get("file", ""),
+                    placeholder="src/auth/** （支持 glob）",
+                    id="file",
+                )
+            with Horizontal(classes="row"):
+                yield Label("全文")
+                yield Input(
+                    value=self.current.get("text", ""),
+                    placeholder="关键字",
+                    id="text",
+                )
+            yield Static(
+                "[dim]Enter 应用   ·   Esc/q 取消   ·   Ctrl+L 清除[/]",
+                id="filter-hint",
+            )
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.query_one("#apply", Button).press()
+        self.action_apply()
 
 
 _HELP = """\

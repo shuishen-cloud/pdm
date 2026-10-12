@@ -257,9 +257,12 @@ class PDMApp(App):
 
     def action_filter(self) -> None:
         def apply(result: dict | None) -> None:
-            self._note_filters = result or {}
+            # None = 取消（保持原状）；{} = 清除
+            if result is None:
+                return
+            self._note_filters = result
             self._reload_commits()
-            if self._note_filters:
+            if result:
                 self.notify(f"筛选：{self._describe_filters()}")
             else:
                 self.notify("已清除筛选")
