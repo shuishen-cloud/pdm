@@ -621,3 +621,178 @@ async def test_arrow_right_stops_at_last_panel(store):
         await pilot.press("right")
         await pilot.pause()
         assert isinstance(app.focused, DetailPane)
+
+
+# ---------------------------------------------------------------------------
+# 语法高亮
+# ---------------------------------------------------------------------------
+
+
+def test_highlight_python_produces_colored_spans():
+    from pdev.tui.panels import _highlight_python
+
+    code = "def f():\n    x = 1\n    return x\n"
+    text = _highlight_python(code)
+    assert "def" in text.plain
+    # 至少有若干带颜色的 span
+    colored = [s for s in text.spans if s.style]
+    assert len(colored) >= 3
+    assert any("def" in text.plain[s.start:s.end] for s in text.spans)
+
+
+def test_highlight_python_applies_indent():
+    from pdev.tui.panels import _highlight_python
+
+    text = _highlight_python("x = 1\ny = 2\n", indent="    │ ")
+    for line in text.plain.splitlines():
+        assert line.startswith("    │ ")
+
+
+def test_highlight_python_handles_empty_and_bad_code():
+    from pdev.tui.panels import _highlight_python
+
+    assert _highlight_python("").plain == ""
+    # 语法错误也不应抛异常
+    out = _highlight_python("def broken(:\n    pass\n")
+    assert "broken" in out.plain
+
+
+# ---------------------------------------------------------------------------
+# 验证过程弹窗
+# ---------------------------------------------------------------------------
+
+
+async def test_verify_screen_shows_results(tmp_path):
+    from pdev import Verification, VerificationKind
+    from pdev.tui.screens import VerifyScreen
+
+    note = CommitNote(
+        commit="c1", kind=NoteKind.BUG, title="t",
+        verifications=[
+            Verification(kind=VerificationKind.COMMAND, command="true",
+                         method="总是通过"),
+            Verification(kind=VerificationKind.COMMAND, command="false",
+                         method="总是失败"),
+        ],
+    )
+    s = NoteStore(tmp_path / "notes")
+    s.add(note)
+    app = make_app(s)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(VerifyScreen(note, cwd=str(tmp_path)))
+        await pilot.pause()
+        assert isinstance(app.screen, VerifyScreen)
+
+        # 等执行完成
+        for _ in range(100):
+            await pilot.pause()
+            if app.screen._done:
+                break
+        assert app.screen._done
+        body = app.screen.query_one("#verify-list").render()
+        text = body.plain if hasattr(body, "plain") else str(body)
+        assert "true" in text
+        assert "false" in text
+        assert "通过" in text and "失败" in text
+
+
+async def test_verify_screen_esc_only_after_done(tmp_path):
+    from pdev import Verification, VerificationKind
+    from pdev.tui.screens import VerifyScreen
+
+    note = CommitNote(
+        commit="c1", kind=NoteKind.BUG, title="t",
+        verifications=[Verification(kind=VerificationKind.COMMAND,
+                                    command="true")],
+    )
+    s = NoteStore(tmp_path / "notes")
+    s.add(note)
+    app = make_app(s)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(VerifyScreen(note, cwd=str(tmp_path)))
+        for _ in range(100):
+            await pilot.pause()
+            if app.screen._done:
+                break
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, VerifyScreen)
+
+
+async def test_run_verify_opens_verify_screen(tmp_path):
+    from pdev import Verification, VerificationKind
+
+    s = NoteStore(tmp_path / "notes")
+    s.add(CommitNote(
+        commit="c1", kind=NoteKind.BUG, title="带验证",
+        verifications=[Verification(kind=VerificationKind.COMMAND,
+                                    command="true")],
+    ))
+    app = make_app(s)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(CommitList).focus()
+        await pilot.press("r")
+        await pilot.pause()
+        from pdev.tui.screens import VerifyScreen
+        assert isinstance(app.screen, VerifyScreen)
+
+
+# ---------------------------------------------------------------------------
+# 命令面板
+# ---------------------------------------------------------------------------
+
+
+async def test_command_palette_opens_with_p(store):
+    from textual.command import CommandPalette
+
+    app = make_app(store)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, CommandPalette)
+
+
+async def test_pdm_commands_registered(store):
+    from pdev.tui.commands import PDMCommands
+
+    assert PDMCommands in PDMApp.COMMANDS
+
+
+async def test_pdm_provider_lists_actions(store):
+    from pdev.tui.commands import PDMCommands
+
+    app = make_app(store)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        provider = next(
+            (p for p in app.screen._providers if isinstance(p, PDMCommands)),
+            None,
+        )
+        assert provider is not None
+        names = [hit.text async for hit in provider.discover()]
+        assert "提交面板" in names
+        assert "跑验证" in names
+        assert "退出" in names
+
+
+async def test_pdm_provider_search(store):
+    from pdev.tui.commands import PDMCommands
+
+    app = make_app(store)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        provider = next(
+            (p for p in app.screen._providers if isinstance(p, PDMCommands)),
+            None,
+        )
+        hits = [hit.text async for hit in provider.search("验证")]
+        assert "跑验证" in hits
+        assert [hit.text async for hit in provider.search("zzz")] == []

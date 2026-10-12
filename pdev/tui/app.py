@@ -21,6 +21,7 @@ from textual.binding import Binding
 from textual.widgets import Footer, Header
 
 from ..store import NoteStore
+from .commands import PDMCommands
 from .panels import CommitList, DetailPane, NoteList
 from .screens import FilterScreen, HelpScreen
 
@@ -53,8 +54,12 @@ class PDMApp(App):
         Binding("slash", "filter", "筛选"),
         Binding("r", "run_verify", "跑验证"),
         Binding("R", "refresh", "刷新"),
+        Binding("p", "command_palette", "命令"),
         Binding("question_mark", "help", "帮助"),
     ]
+
+    # 命令面板：Ctrl+P 或 p 唤起，可搜索本应用的动作
+    COMMANDS = App.COMMANDS | {PDMCommands}
 
     def __init__(self, store: NoteStore, cwd: str = ".") -> None:
         super().__init__()
@@ -265,21 +270,20 @@ class PDMApp(App):
         return " ".join(f"{k}={v}" for k, v in self._note_filters.items())
 
     def action_run_verify(self) -> None:
-        """对当前笔记执行验证。"""
-        from ..verify import run_note
+        """弹出验证过程窗口并执行。"""
+        from .screens import VerifyScreen
 
         note = self.query_one(DetailPane).note
         if note is None or not note.runnable_verifications:
             self.notify("当前笔记没有可执行的验证", severity="warning")
             return
 
-        results = run_note(note, cwd=self.cwd)
-        self.store.update(note)
-        passed = sum(1 for r in results if r.ok)
-        total = len(results)
-        severity = "information" if passed == total else "error"
-        self.notify(f"验证：{passed}/{total} 通过", severity=severity)
-        self.query_one(DetailPane).show_note(note, self.cwd)
+        def after(_result) -> None:
+            # 回写结果并刷新详情
+            self.store.update(note)
+            self.query_one(DetailPane).show_note(note, self.cwd)
+
+        self.push_screen(VerifyScreen(note, cwd=self.cwd), after)
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())

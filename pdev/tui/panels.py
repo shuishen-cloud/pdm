@@ -308,12 +308,11 @@ class DetailPane(VerticalScroll):
                 if v.expected:
                     t.append(f"    期望  {v.expected}\n", style="dim")
 
-                # 脚本
+                # 脚本（语法高亮）
                 script = v.script or self._extract(v, cwd)
                 if script:
                     t.append("    ┌" + "─" * 36 + "\n", style="dim")
-                    for line in script.splitlines():
-                        t.append("    │ " + line + "\n", style="bright_black")
+                    t.append_text(_highlight_python(script, indent="    │ "))
                     t.append("    └" + "─" * 36 + "\n", style="dim")
         return t
 
@@ -327,3 +326,58 @@ class DetailPane(VerticalScroll):
 
         r = extract_script(v.target, root=Path(cwd))
         return r.code if r.ok else ""
+
+
+def _highlight_python(code: str, indent: str = "") -> Text:
+    """用 Pygments 给 Python 代码上色，返回带样式的 Text。
+
+    Pygments 是 Textual 的依赖，总是可用；出错时回退为纯文本。
+    """
+    out = Text()
+    if not code:
+        return out
+    try:
+        from pygments import lex
+        from pygments.lexers import PythonLexer
+        from pygments.styles import get_style_by_name
+    except Exception:
+        for line in code.splitlines():
+            out.append(indent + line + "\n")
+        return out
+
+    # 把 Pygments 调色板映射到终端可用颜色
+    try:
+        style = get_style_by_name("monokai")
+    except Exception:
+        style = None
+
+    def color_for(token_type) -> str | None:
+        if style is None:
+            return None
+        try:
+            st = style.style_for_token(token_type)
+        except Exception:
+            return None
+        if st.get("color"):
+            return "#" + st["color"]
+        return None
+
+    line_start = True
+    line_text = Text()
+    for token_type, value in lex(code, PythonLexer()):
+        parts = value.split("\n")
+        for i, part in enumerate(parts):
+            if i > 0:
+                out.append_text(line_text)
+                out.append("\n")
+                line_text = Text()
+                line_start = True
+            if part:
+                if line_start:
+                    line_text.append(indent)
+                    line_start = False
+                color = color_for(token_type)
+                line_text.append(part, style=color or "")
+    if line_text.plain:
+        out.append_text(line_text)
+    return out

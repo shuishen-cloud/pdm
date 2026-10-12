@@ -1,18 +1,21 @@
 # -*- coding: utf-8 -*-
-"""TUI 弹出屏：筛选与帮助。"""
+"""TUI 弹出屏：筛选、验证过程与帮助。"""
 
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime
 from typing import Optional
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Static
 
-from ..note import NoteKind, NoteStatus
+from ..note import NoteKind, NoteStatus, VerificationStatus
 
-__all__ = ["FilterScreen", "HelpScreen"]
+__all__ = ["FilterScreen", "VerifyScreen", "HelpScreen"]
 
 
 class FilterScreen(ModalScreen):
@@ -147,6 +150,136 @@ _HELP = """\
 
 [dim]按 Esc / q / ? 关闭本窗口[/]
 """
+
+
+class VerifyScreen(ModalScreen):
+    """验证执行过程与结果。
+
+    打开后逐个跑验证，实时显示：命令、状态、输出（失败时）。
+    全部完成后可 Esc/q 关闭。
+    """
+
+    CSS = """
+    VerifyScreen {
+        align: center middle;
+        background: $background 60%;
+    }
+    #verify-box {
+        width: 84;
+        height: auto;
+        max-height: 85%;
+        padding: 1 2;
+        border: thick $accent;
+        background: $surface;
+    }
+    #verify-title { text-style: bold; height: auto; }
+    #verify-list { width: 1fr; height: auto; }
+    #verify-footer { height: auto; margin-top: 1; }
+    """
+
+    BINDINGS = [
+        ("escape", "close", "关闭"),
+        ("q", "close", "关闭"),
+        ("enter", "close", "关闭"),
+    ]
+
+    def __init__(self, note, cwd: str = ".", timeout: int = 600) -> None:
+        super().__init__()
+        self.note = note
+        self.cwd = cwd
+        self.timeout = timeout
+        self._lines: list = []
+        self._done = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="verify-box"):
+            yield Static(id="verify-title")
+            yield Static(id="verify-list")
+            yield Static(id="verify-footer")
+
+    def on_mount(self) -> None:
+        self._render_lines()
+        self.run_worker(self._run_all, exclusive=True)
+
+    # --- 执行 ---
+
+    async def _run_all(self) -> None:
+        from ..verify import run_verification
+
+        note = self.note
+        self.query_one("#verify-title", Static).update(
+            f"[bold]验证[/]  {note.commit[:8]}  {note.title}"
+        )
+
+        runnable = note.runnable_verifications
+        if not runnable:
+            self._lines.append(("dim", "（没有可执行的验证）"))
+            self._render_lines()
+            self._finish(0, 0)
+            return
+
+        passed = failed = 0
+        for v in runnable:
+            cmd = v.effective_command or "(空)"
+            self._lines.append(("bold", f"$ {cmd}"))
+            if v.method:
+                self._lines.append(("italic", f"  方法  {v.method}"))
+            self._render_lines()
+            await self._pause(0.05)
+
+            # 同步执行放进线程，避免阻塞 UI
+            result = await asyncio.to_thread(
+                run_verification, v, cwd=self.cwd, timeout=self.timeout
+            )
+            v.record(result.status, datetime.now().astimezone(), result.output)
+
+            mark, color = {
+                VerificationStatus.PASSED: ("✓ 通过", "green"),
+                VerificationStatus.FAILED: ("✗ 失败", "red"),
+                VerificationStatus.ERROR: ("! 出错", "yellow"),
+                VerificationStatus.SKIPPED: ("- 跳过", "dim"),
+            }.get(result.status, ("? 未知", "dim"))
+
+            if result.status is VerificationStatus.PASSED:
+                passed += 1
+            elif result.status in (VerificationStatus.FAILED,
+                                   VerificationStatus.ERROR):
+                failed += 1
+
+            self._lines.append((color, f"  → {mark}"))
+            # 失败/出错时才展开输出，避免刷屏
+            if result.status in (VerificationStatus.FAILED,
+                                 VerificationStatus.ERROR) and result.output:
+                for line in result.output.splitlines()[-15:]:
+                    self._lines.append(("dim", f"    {line}"))
+            self._lines.append(("", ""))
+            self._render_lines()
+
+        self._finish(passed, failed)
+
+    async def _pause(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+    def _finish(self, passed: int, failed: int) -> None:
+        self._done = True
+        total = passed + failed
+        color = "green" if failed == 0 else "red"
+        self.query_one("#verify-footer", Static).update(
+            f"[{color}]共 {total} 条：通过 {passed}，失败 {failed}[/]\n"
+            "[dim]Esc / q 关闭[/]"
+        )
+
+    def _render_lines(self) -> None:
+        text = Text()
+        for style, line in self._lines:
+            text.append(line + "\n", style=style)
+        self.query_one("#verify-list", Static).update(text)
+
+    def action_close(self) -> None:
+        if not self._done:
+            self.notify("验证进行中…", severity="warning")
+            return
+        self.dismiss(None)
 
 
 class HelpScreen(ModalScreen):

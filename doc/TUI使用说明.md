@@ -100,8 +100,9 @@ alias pdm='/path/to/ProjectDevelopManger/run.sh'
 | `j` / `k` | 当前面板内上下移动 |
 | `Enter` / `z` | **放大当前面板**（占满宽度）/ 再按还原 |
 | `/` | 打开筛选弹窗 |
-| `r` | 对当前笔记执行验证并回写结果 |
+| `r` | 弹出验证过程窗口并执行 |
 | `R` | 重新从磁盘加载数据 |
+| `p` / `Ctrl+P` | 命令面板（搜索并执行应用动作） |
 | `?` | 帮助 |
 | `q` | 退出 |
 
@@ -152,14 +153,45 @@ alias pdm='/path/to/ProjectDevelopManger/run.sh'
 
 ## 执行验证
 
-选中带验证的笔记，按 `r`：
+选中带验证的笔记，按 `r` 弹出**验证过程窗口**，逐条实时显示：
 
-- 逐条执行 `effective_command`
+```
+验证  ba6c9e57  锁在异常路径未释放导致后续刷新全部超时
+$ pytest test_auth_token.py::test_lock_released_on_error -q
+  方法  制造刷新失败，断言锁被释放
+  → ✓ 通过
+
+$ pytest test_auth_token.py::test_refresh_safe_single_flight -q
+  方法  20 次并发断言只产生一个 token
+  → ✓ 通过
+
+共 2 条：通过 2，失败 0
+Esc / q 关闭
+```
+
+- 命令与参数实时追加；失败/出错时会展开**最后 15 行输出**
+- 执行期间 `Esc`/`q` 不会关闭（提示"验证进行中"），完成后才可关闭
+- 结果回写存储，关闭后详情面板立即刷新
 - `manual` 类型的验证自动跳过
-- 结果（`✓` / `✗` / `!`）回写存储，`R` 刷新后仍可见
-- 底部弹通知：`验证：2/3 通过`
 
-无验证时提示 `当前笔记没有可执行的验证`。
+## 代码高亮
+
+详情面板里的测试脚本用 **Pygments**（Textual 自带依赖）做 Python 语法高亮，
+配色为 monokai。脚本来源优先级：`script` 字段 > 从 `target` 用 AST 抽取。
+
+## 命令面板
+
+按 `p` 或 `Ctrl+P` 打开，可直接搜索并执行所有应用动作：
+
+| 命令 | 说明 |
+|------|------|
+| 提交面板 / 笔记面板 / 详情面板 | 跳转 |
+| 放大 / 还原 | 撑满当前面板 |
+| 筛选 | 打开筛选弹窗 |
+| 跑验证 | 弹出验证过程窗口 |
+| 刷新 / 帮助 / 退出 | — |
+
+输入关键字模糊匹配，回车执行。
 
 ## 状态标记
 
@@ -174,8 +206,9 @@ alias pdm='/path/to/ProjectDevelopManger/run.sh'
 pdev/tui/
 ├── __init__.py     # 延迟导入，未装 textual 时可安全 import
 ├── app.py          # PDMApp 主应用、绑定、筛选与验证动作
-├── panels.py       # CommitList / NoteList / DetailPane
-├── screens.py      # FilterScreen / HelpScreen
+├── commands.py     # 命令面板 Provider（Ctrl+P / p）
+├── panels.py       # CommitList / NoteList / DetailPane（含语法高亮）
+├── screens.py      # FilterScreen / VerifyScreen / HelpScreen
 └── app.tcss        # 样式
 ```
 
