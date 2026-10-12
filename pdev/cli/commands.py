@@ -1,0 +1,492 @@
+# -*- coding: utf-8 -*-
+"""命令实现：解析后的参数 + 上下文 -> 输出与退出码。
+
+命令只依赖 :class:`~pdev.cli.context.AppContext`，不自己读配置或打开存储。
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import asdict
+from typing import List
+
+from .. import utcnow
+from ..common import Actor
+from ..note import (
+    CommitNote,
+    NoteKind,
+    NoteStatus,
+    VerificationStatus,
+)
+from ..query import Query, search
+from ..stats import compute_note_stats
+from ..store import NoteStore
+from ..verify import pick_notes, run_note
+from .context import AppContext
+
+__all__ = [
+    "cmd_note_add",
+    "cmd_note_list",
+    "cmd_query",
+    "cmd_show",
+    "cmd_verify_list",
+    "cmd_verify_run",
+    "cmd_verify_show",
+    "cmd_ui",
+    "cmd_stats",
+    "print_notes",
+    "format_note",
+]
+
+_MARK = {
+    NoteStatus.OPEN: "○",
+    NoteStatus.RESOLVED: "●",
+    NoteStatus.NOTED: "·",
+}
+
+_COLOR = {
+    NoteKind.BUG: "31",                   # 红（负债）
+    NoteKind.PROBLEM: "31",               # 红
+    NoteKind.CONTROLLED_EXCEPTION: "32",  # 绿（可控，资产）
+    NoteKind.PITFALL: "35",               # 紫
+    NoteKind.DIFFICULTY: "36",            # 青
+}
+
+
+# ---------------------------------------------------------------------------
+# 渲染
+# ---------------------------------------------------------------------------
+
+
+def note_to_dict(n: CommitNote) -> dict:
+    """笔记 -> 可 JSON 化的 dict。"""
+    d = asdict(n)
+    d["kind"] = n.kind.value
+    d["status"] = n.status.value
+    d["author"] = str(n.author)
+    d["severity"] = n.severity.value if n.severity else None
+    d["created_at"] = n.created_at.isoformat() if n.created_at else None
+    d["verifications"] = [verification_to_dict(v) for v in n.verifications]
+    return d
+
+
+def format_note(n: CommitNote, color: bool = False) -> str:
+    """把一条笔记渲染成多行文本。"""
+    kind = n.kind.value.upper()
+    mark = _MARK[n.status]
+    lines = [f"{mark} [{kind:<10}] {n.title}"]
+
+    meta = [f"commit={n.commit[:12]}"]
+    if n.files:
+        meta.append(",".join(n.files))
+    if n.tags:
+        meta.append("#" + " #".join(n.tags))
+    if n.catches:
+        meta.append("catches=" + ",".join(n.catches))
+    if n.issue_id:
+        meta.append(f"issue={n.issue_id}")
+    if n.resolves:
+        meta.append("resolves=" + ",".join(n.resolves))
+    if n.severity:
+        meta.append(f"sev={n.severity.value}")
+    lines.append("    " + "  ".join(meta))
+
+    text = "\n".join(lines)
+    if color:
+        c = _COLOR.get(n.kind, "0")
+        return f"\033[{c}m{text}\033[0m"
+    return text
+
+
+def print_notes(
+    notes: List[CommitNote],
+    *,
+    as_json: bool,
+    color: bool,
+    out=None,
+) -> None:
+    """打印笔记列表。"""
+    out = out or sys.stdout
+    if as_json:
+        payload = [note_to_dict(n) for n in notes]
+        print(json.dumps(payload, ensure_ascii=False, indent=2), file=out)
+        return
+    if not notes:
+        print("（无匹配的笔记）", file=out)
+        return
+    for n in notes:
+        print(format_note(n, color=color), file=out)
+        print(file=out)
+
+
+# ---------------------------------------------------------------------------
+# 验证渲染
+# ---------------------------------------------------------------------------
+
+_VERIFY_MARK = {
+    VerificationStatus.PASSED: "\u2713",   # ✓
+    VerificationStatus.FAILED: "\u2717",   # ✗
+    VerificationStatus.ERROR: "!",
+    VerificationStatus.SKIPPED: "-",
+    VerificationStatus.UNKNOWN: "?",
+}
+
+
+def format_verification(v, color: bool = False, verbose: bool = False) -> str:
+    """渲染单条验证。"""
+    mark = _VERIFY_MARK.get(v.last_status, "?")
+    cmd = v.effective_command or (v.note if v.note else "(人工)")
+    line = f"  {mark} [{v.kind.value:<7}] {cmd}"
+    if v.expected:
+        line += f"  (期望: {v.expected})"
+    if color:
+        c = {
+            VerificationStatus.PASSED: "32",
+            VerificationStatus.FAILED: "31",
+            VerificationStatus.ERROR: "33",
+        }.get(v.last_status)
+        if c:
+            line = f"\033[{c}m{line}\033[0m"
+    if verbose and v.method:
+        line += f"\n            \u65b9\u6cd5: {v.method}"
+    return line
+
+
+def _rule(title: str = "", width: int = 68) -> str:
+    """分隔线。"""
+    if not title:
+        return "\u2500" * width
+    return f"\u2500\u2500 {title} " + "\u2500" * max(0, width - len(title) - 4)
+
+
+def verification_to_dict(v) -> dict:
+    """验证 -> 可 JSON 化的 dict。"""
+    return {
+        "kind": v.kind.value,
+        "target": v.target,
+        "command": v.command,
+        "effective_command": v.effective_command,
+        "method": v.method,
+        "script": v.script,
+        "expected": v.expected,
+        "note": v.note,
+        "last_status": v.last_status.value,
+        "last_run_at": v.last_run_at.isoformat() if v.last_run_at else None,
+        "last_output": v.last_output,
+    }
+
+
+def print_note_with_verifications(n, color: bool, out=None,
+                                  verbose: bool = False) -> None:
+    """打印一条笔记及其验证。"""
+    out = out or sys.stdout
+    print(format_note(n, color=color), file=out)
+    for v in n.verifications:
+        print(format_verification(v, color=color, verbose=verbose), file=out)
+
+
+# ---------------------------------------------------------------------------
+# 命令
+# ---------------------------------------------------------------------------
+
+
+def cmd_verify_show(ctx: AppContext, args) -> int:
+    """展开某次提交的全部笔记及其验证详情与脚本。"""
+    from ..scripts import extract_script
+
+    notes = ctx.store.by_commit(args.commit)
+    if not notes:
+        print(f"commit {args.commit} 没有笔记", file=sys.stderr)
+        return 1
+
+    if not args.no_script:
+        for n in notes:
+            for v in n.verifications:
+                if v.script or v.kind.value != "test" or not v.target:
+                    continue
+                r = extract_script(v.target, root=ctx.cwd)
+                if r.ok:
+                    v.script = r.code
+
+    if args.json:
+        payload = [
+            {"commit": n.commit, "title": n.title, "kind": n.kind.value,
+             "verifications": [verification_to_dict(v) for v in n.verifications]}
+            for n in notes
+        ]
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    for n in notes:
+        print(format_note(n, color=ctx.color))
+        if not n.verifications:
+            print("  （未登记验证方法）")
+            print()
+            continue
+        for i, v in enumerate(n.verifications, 1):
+            print()
+            print(f"  验证 {i}: {v.kind.value}")
+            if v.method:
+                print(f"    方法: {v.method}")
+            if v.effective_command:
+                print(f"    命令: {v.effective_command}")
+            if v.expected:
+                print(f"    期望: {v.expected}")
+            if v.note:
+                print(f"    说明: {v.note}")
+            status_line = f"    状态: {v.last_status.value}"
+            if v.last_run_at:
+                status_line += f"  上次: {v.last_run_at:%Y-%m-%d %H:%M}"
+            print(status_line)
+            if v.script:
+                print()
+                print("  " + _rule("脚本"))
+                for line in v.script.splitlines():
+                    print("    " + line)
+                print("  " + _rule())
+        print()
+    return 0
+
+
+def cmd_verify_list(ctx: AppContext, args) -> int:
+    """列出验证条目。"""
+    from ..doc import match_glob
+
+    notes = list(ctx.store.all())
+    if args.commit:
+        notes = [n for n in notes if n.commit == args.commit]
+    if args.kind:
+        notes = [n for n in notes if n.kind is args.kind]
+    if args.file:
+        notes = [n for n in notes
+                 if any(match_glob(args.file, f) for f in n.files)]
+
+    if args.unverified:
+        pending = [n for n in notes if n.needs_verification]
+        if not pending:
+            print("（没有需要补充验证的笔记）")
+            return 0
+        for n in pending:
+            print(format_note(n, color=ctx.color))
+        print(f"共 {len(pending)} 条需要验证")
+        return 0
+
+    notes = [n for n in notes if n.verifications]
+    if args.target:
+        notes = [n for n in notes
+                 if any(args.target in v.target or args.target in v.command
+                        for v in n.verifications)]
+    if args.status:
+        notes = [n for n in notes
+                 if any(v.last_status is args.status for v in n.verifications)]
+
+    if not notes:
+        print("（无匹配的验证）")
+        return 0
+
+    if args.json:
+        payload = [
+            {"commit": n.commit, "title": n.title, "kind": n.kind.value,
+             "verifications": [verification_to_dict(v) for v in n.verifications]}
+            for n in notes
+        ]
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    for n in notes:
+        print_note_with_verifications(n, color=ctx.color,
+                                      verbose=getattr(args, "verbose", False))
+        print()
+    print(f"共 {len(notes)} 条笔记，"
+          f"{sum(len(n.verifications) for n in notes)} 条验证")
+    return 0
+
+
+def cmd_verify_run(ctx: AppContext, args) -> int:
+    """执行验证并回写结果。"""
+    from ..doc import match_glob
+
+    notes = list(ctx.store.all())
+    if args.file:
+        notes = [n for n in notes
+                 if any(match_glob(args.file, f) for f in n.files)]
+    notes = pick_notes(
+        notes, commit=args.commit, status=args.status, target=args.target
+    )
+
+    if not notes:
+        print("（没有可执行的验证）")
+        return 0
+
+    if args.dry_run:
+        for n in notes:
+            print(f"{n.commit[:12]}  {n.title}")
+            for v in n.runnable_verifications:
+                print(f"    $ {v.effective_command}")
+        return 0
+
+    cwd = str(ctx.cwd)
+    total = passed = failed = 0
+    for n in notes:
+        print(f"{n.commit[:12]}  {n.title}")
+        for r in run_note(n, cwd=cwd, timeout=args.timeout):
+            total += 1
+            if r.status is VerificationStatus.PASSED:
+                passed += 1
+            elif r.status in (VerificationStatus.FAILED,
+                              VerificationStatus.ERROR):
+                failed += 1
+            print(format_verification(r.verification, color=ctx.color))
+        ctx.store.update(n)
+        print()
+
+    print(f"共 {total} 条验证：通过 {passed}，失败 {failed}")
+    return 0 if failed == 0 else 1
+
+
+def cmd_ui(ctx: AppContext, args) -> int:
+    """启动 TUI。"""
+    try:
+        from ..tui import run as run_tui
+    except ImportError:
+        print(
+            "需要安装 textual 才能使用 TUI：pip install textual",
+            file=sys.stderr,
+        )
+        return 2
+    if not _tui_available():
+        print(
+            "需要安装 textual 才能使用 TUI：pip install textual",
+            file=sys.stderr,
+        )
+        return 2
+    if not sys.stdout.isatty():
+        print("TUI 需要交互式终端", file=sys.stderr)
+        return 2
+    return run_tui(ctx.store, cwd=str(ctx.cwd))
+
+
+def _tui_available() -> bool:
+    try:
+        import textual  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def cmd_note_add(ctx: AppContext, args) -> int:
+    """新增一条笔记。"""
+    if ctx.config.note.require_detail and not args.detail:
+        print("错误：配置要求必须提供 --detail", file=sys.stderr)
+        return 2
+
+    # 未在命令行指定时，回退到配置
+    author = args.author or Actor(ctx.config.default_author)
+    status = args.status or ctx.config.note.default_status
+
+    note = CommitNote(
+        commit=args.commit,
+        kind=args.kind,
+        title=args.title,
+        detail=args.detail or "",
+        author=author,
+        files=args.files or [],
+        severity=args.severity,
+        status=status,
+        catches=args.catches or [],
+        verifications=args.verify or [],
+        issue_id=args.issue,
+        resolves=args.resolves or [],
+        tags=args.tags or [],
+    )
+    if not args.no_time:
+        note.created_at = utcnow()
+
+    try:
+        ctx.store.add(note)
+    except ValueError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+
+    print(f"已记录：{format_note(note, color=ctx.color)}")
+    return 0
+
+
+def _build_query(ctx: AppContext, args) -> Query:
+    limit = getattr(args, "limit", None)
+    if limit is None:
+        limit = ctx.config.query.default_limit
+    return Query(
+        kind=getattr(args, "kind", None),
+        status=getattr(args, "status", None),
+        file=getattr(args, "file", None),
+        tag=getattr(args, "tag", None),
+        text=getattr(args, "text", None),
+        commit=getattr(args, "commit", None),
+        issue_id=getattr(args, "issue", None),
+        author=getattr(args, "author", None),
+        limit=limit,
+    )
+
+
+def _run_query(ctx: AppContext, args) -> int:
+    hits = search(ctx.store, _build_query(ctx, args))
+    print_notes(hits, as_json=args.json, color=ctx.color)
+    if not args.json:
+        print(f"共 {len(hits)} 条")
+    return 0
+
+
+def cmd_note_list(ctx: AppContext, args) -> int:
+    """列出笔记。"""
+    return _run_query(ctx, args)
+
+
+def cmd_query(ctx: AppContext, args) -> int:
+    """组合查询。"""
+    return _run_query(ctx, args)
+
+
+def cmd_show(ctx: AppContext, args) -> int:
+    """查看某次提交的全部笔记。"""
+    notes = ctx.store.by_commit(args.commit)
+    if not notes:
+        print(f"commit {args.commit} 没有笔记", file=sys.stderr)
+        return 1
+    print_notes(notes, as_json=args.json, color=ctx.color)
+    return 0
+
+
+def cmd_stats(ctx: AppContext, args) -> int:
+    """汇总统计。"""
+    s = compute_note_stats(ctx.store)
+    if args.json:
+        print(json.dumps(s.__dict__, ensure_ascii=False, indent=2))
+        return 0
+
+    print("笔记统计")
+    print(f"  总数      {s.total}")
+    print(f"  覆盖提交  {s.commits}")
+    print(f"  覆盖文件  {s.files}")
+    print(f"  未解决    {s.open}")
+    print(f"  已升级    {s.promoted}")
+    print(f"  已解决    {s.resolved}")
+    print(f"  AI 撰写   {s.written_by_ai}")
+    print(f"  风险项    {s.risky}")
+    print("  负债（缺陷）")
+    print(f"    总数    {s.bugs}")
+    print(f"    未修复  {s.bugs_open}")
+    print("  资产（可控异常）")
+    print(f"    条数    {s.controlled_exceptions}")
+    print(f"    已覆盖类型 {s.caught_types}")
+    print("  验证")
+    print(f"    已登记  {s.verified_notes} 条笔记 / {s.verifications} 条验证")
+    print(f"    通过    {s.verification_passed}")
+    print(f"    失败    {s.verification_failed}")
+    print(f"    待补充  {s.needs_verification}")
+    if s.by_kind:
+        print("  按类型")
+        for k, v in sorted(s.by_kind.items()):
+            print(f"    {k:<22}{v}")
+    return 0

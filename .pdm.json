@@ -1,0 +1,28 @@
+{
+  "store": "notes",
+  "default_author": "human:lwy",
+  "color": true,
+  "editor": "",
+  "note": {
+    "default_status": "noted",
+    "require_detail": false
+  },
+  "query": {
+    "default_limit": null
+  },
+  "git": {
+    "repo": ".",
+    "auto_commit": false
+  },
+  "issue": {
+    "store": "issues"
+  },
+  "doc": {
+    "dir": "doc"
+  },
+  "github": {
+    "repo": "",
+    "token": "",
+    "auto_push": false
+  }
+}

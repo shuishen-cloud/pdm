@@ -1,0 +1,45 @@
+Screen {
+    layout: vertical;
+}
+
+#main {
+    height: 1fr;
+}
+
+CommitList {
+    width: 32;
+    border: round $primary;
+    border-title-color: $accent;
+    background: $surface;
+}
+
+NoteList {
+    width: 40;
+    border: round $primary;
+    border-title-color: $accent;
+    background: $surface;
+}
+
+DetailPane {
+    width: 1fr;
+    border: round $primary;
+    border-title-color: $accent;
+    background: $surface;
+    padding: 0 1;
+}
+
+ListView:focus {
+    border: round $accent;
+}
+
+ListItem {
+    padding: 0 1;
+}
+
+ListItem.--highlight {
+    background: $accent 30%;
+}
+
+#detail-body {
+    width: 1fr;
+}

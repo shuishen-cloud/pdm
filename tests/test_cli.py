@@ -1,0 +1,584 @@
+# -*- coding: utf-8 -*-
+"""pdev.cli 的测试。
+
+直接调 ``pdev.cli.main(argv)``，用 ``capsys`` 检查输出、``tmp_path`` 隔离存储。
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from pdev import NoteKind, NoteStatus, NoteStore
+from pdev.cli import main, parse_actor, parse_kind
+
+
+@pytest.fixture(autouse=True)
+def isolated(tmp_path, monkeypatch):
+    """隔离项目/用户配置，避免真实环境干扰。"""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    for key in list(__import__("os").environ):
+        if key.startswith("PDM_"):
+            monkeypatch.delenv(key, raising=False)
+    yield
+
+
+@pytest.fixture
+def store_dir(tmp_path):
+    return str(tmp_path / "notes")
+
+
+def run(store_dir, *argv) -> int:
+    """以给定存储目录运行 CLI。"""
+    return main(["--store", store_dir, *argv])
+
+
+def add_sample(store_dir):
+    """写入三条示例笔记。"""
+    assert run(store_dir, "note", "add", "abc123", "-k", "pitfall",
+               "-t", "token 刷新有竞态", "-F", "src/auth/token.py",
+               "-T", "auth", "-p", "high", "--status", "open",
+               "-a", "human:lwy") == 0
+    assert run(store_dir, "note", "add", "abc123", "-k", "difficulty",
+               "-t", "异步上下文拿不到 config", "-F", "src/auth/token.py",
+               "-T", "async", "-a", "ai:claude") == 0
+    assert run(store_dir, "note", "add", "def456", "-k", "bug",
+               "-t", "Redis 偶发超时", "-F", "src/cache/redis.py",
+               "-i", "0001", "-a", "human:lwy") == 0
+
+
+# ---------------------------------------------------------------------------
+# 解析辅助
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("problem", NoteKind.PROBLEM),
+        ("pit", NoteKind.PITFALL),
+        ("PITFALL", NoteKind.PITFALL),
+        ("bug", NoteKind.BUG),
+        ("B", NoteKind.BUG),
+        ("ce", NoteKind.CONTROLLED_EXCEPTION),
+        ("controlled-exception", NoteKind.CONTROLLED_EXCEPTION),
+        ("controlledexception", NoteKind.CONTROLLED_EXCEPTION),
+        ("exc", NoteKind.CONTROLLED_EXCEPTION),
+        ("diff", NoteKind.DIFFICULTY),
+    ],
+)
+def test_parse_kind(raw, expected):
+    assert parse_kind(raw) is expected
+
+
+def test_parse_kind_invalid():
+    import argparse
+
+    with pytest.raises(argparse.ArgumentTypeError):
+        parse_kind("nope")
+
+
+def test_parse_actor_defaults_to_human():
+    assert str(parse_actor("lwy")) == "human:lwy"
+    assert str(parse_actor("ai:claude")) == "ai:claude"
+    assert str(parse_actor("ci")) == "human:ci"
+
+
+# ---------------------------------------------------------------------------
+# note add
+# ---------------------------------------------------------------------------
+
+
+def test_note_add(store_dir, capsys):
+    rc = run(store_dir, "note", "add", "abc123", "-k", "pitfall",
+             "-t", "标题", "-a", "human:lwy")
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "已记录" in out
+    assert "PITFALL" in out
+
+    store = NoteStore(store_dir)
+    assert len(store) == 1
+    n = next(store.all())
+    assert n.commit == "abc123"
+    assert n.kind is NoteKind.PITFALL
+    assert n.author.raw == "human:lwy"
+    assert n.created_at is not None
+
+
+def test_note_add_all_fields(store_dir):
+    run(store_dir, "note", "add", "c1", "-k", "problem", "-t", "标题",
+        "-d", "详情", "-F", "a.py", "-F", "b.py", "-T", "t1", "-T", "t2",
+        "-p", "critical", "--status", "open", "-i", "0007", "-r", "0003",
+        "-a", "ai:bot", "--no-time")
+
+    n = next(NoteStore(store_dir).all())
+    assert n.detail == "详情"
+    assert n.files == ["a.py", "b.py"]
+    assert n.tags == ["t1", "t2"]
+    assert n.severity is not None and n.severity.value == "critical"
+    assert n.status is NoteStatus.OPEN
+    assert n.issue_id == "0007"
+    assert n.resolves == ["0003"]
+    assert n.author.raw == "ai:bot"
+    assert n.created_at is None
+
+
+def test_note_add_empty_title_fails(store_dir, capsys):
+    rc = run(store_dir, "note", "add", "c1", "-k", "pitfall", "-t", "   ")
+    assert rc == 2
+    assert "错误" in capsys.readouterr().err
+
+
+def test_note_add_missing_kind_exits(store_dir):
+    with pytest.raises(SystemExit):
+        run(store_dir, "note", "add", "c1", "-t", "标题")
+
+
+def test_note_add_requires_detail_when_configured(store_dir, tmp_path, capsys):
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": store_dir, "note": {"require_detail": True}}),
+        encoding="utf-8",
+    )
+    rc = main(["note", "add", "c1", "-k", "pitfall", "-t", "标题"])
+    assert rc == 2
+    assert "必须提供" in capsys.readouterr().err
+
+    # 提供了 detail 就能通过
+    assert run(store_dir, "note", "add", "c1", "-k", "pitfall",
+               "-t", "标题", "-d", "详情") == 0
+
+
+# ---------------------------------------------------------------------------
+# show
+# ---------------------------------------------------------------------------
+
+
+def test_show(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    assert run(store_dir, "show", "abc123") == 0
+    out = capsys.readouterr().out
+    assert "token 刷新有竞态" in out
+    assert "Redis 偶发超时" not in out
+
+
+def test_show_unknown_commit(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    assert run(store_dir, "show", "nope") == 1
+    assert "没有笔记" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# query
+# ---------------------------------------------------------------------------
+
+
+def test_query_no_filter_returns_all(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    assert run(store_dir, "query") == 0
+    assert "共 3 条" in capsys.readouterr().out
+
+
+def test_query_by_kind(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-k", "bug")
+    out = capsys.readouterr().out
+    assert "共 1 条" in out
+    assert "Redis" in out
+
+
+def test_query_by_file_glob(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-f", "src/auth/**")
+    assert "共 2 条" in capsys.readouterr().out
+
+
+def test_query_by_text(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-x", "竞态")
+    assert "共 1 条" in capsys.readouterr().out
+
+
+def test_query_by_author_kind(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-a", "ai")
+    assert "共 1 条" in capsys.readouterr().out
+
+
+def test_query_by_issue(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-i", "0001")
+    assert "共 1 条" in capsys.readouterr().out
+
+
+def test_query_limit(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-n", "2")
+    assert "共 2 条" in capsys.readouterr().out
+
+
+def test_query_combined(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-k", "pitfall", "-f", "src/auth/**", "-s", "open")
+    assert "共 1 条" in capsys.readouterr().out
+
+
+def test_query_no_match(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-k", "problem")
+    assert "无匹配的笔记" in capsys.readouterr().out
+
+
+def test_query_json_output(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "query", "-k", "bug", "--json")
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload) == 1
+    assert payload[0]["kind"] == "bug"
+    assert payload[0]["issue_id"] == "0001"
+
+
+def test_note_list_alias(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    assert run(store_dir, "note", "list", "-k", "difficulty") == 0
+    assert "共 1 条" in capsys.readouterr().out
+
+
+def test_default_limit_from_config(store_dir, tmp_path, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": store_dir, "query": {"default_limit": 1}}),
+        encoding="utf-8",
+    )
+    main(["query"])
+    assert "共 1 条" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# stats
+# ---------------------------------------------------------------------------
+
+
+def test_stats(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    assert run(store_dir, "stats") == 0
+    out = capsys.readouterr().out
+    assert "笔记统计" in out
+    assert "总数      3" in out
+    assert "覆盖提交  2" in out
+    assert "pitfall" in out
+
+
+def test_stats_json(store_dir, capsys):
+    add_sample(store_dir)
+    capsys.readouterr()
+    run(store_dir, "stats", "--json")
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["total"] == 3
+    assert payload["commits"] == 2
+
+
+# ---------------------------------------------------------------------------
+# 路径与交互
+# ---------------------------------------------------------------------------
+
+
+def test_store_flag_after_subcommand(store_dir, capsys):
+    # --store 写在子命令之后也应生效
+    rc = main(["note", "add", "c1", "-k", "pitfall", "-t", "t",
+               "--store", store_dir])
+    assert rc == 0
+    assert len(NoteStore(store_dir)) == 1
+
+
+def test_default_store_in_cwd(tmp_path, capsys):
+    assert main(["note", "add", "c1", "-k", "pitfall", "-t", "t"]) == 0
+    assert (tmp_path / "notes" / "by-commit" / "c1.json").exists()
+
+
+def test_store_from_project_config(tmp_path, capsys):
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": "cfg-notes"}), encoding="utf-8"
+    )
+    assert main(["note", "add", "c1", "-k", "pitfall", "-t", "t"]) == 0
+    assert (tmp_path / "cfg-notes" / "by-commit" / "c1.json").exists()
+
+
+def test_store_from_env(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("PDM_STORE", "env-notes")
+    assert main(["note", "add", "c1", "-k", "pitfall", "-t", "t"]) == 0
+    assert (tmp_path / "env-notes" / "by-commit" / "c1.json").exists()
+
+
+def test_cli_store_beats_env(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("PDM_STORE", "env-notes")
+    assert main(["--store", "cli-notes", "note", "add", "c1",
+                 "-k", "pitfall", "-t", "t"]) == 0
+    assert (tmp_path / "cli-notes" / "by-commit" / "c1.json").exists()
+    assert not (tmp_path / "env-notes").exists()
+
+
+def test_default_author_from_config(store_dir, tmp_path, capsys):
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": store_dir, "default_author": "human:alice"}),
+        encoding="utf-8",
+    )
+    assert main(["note", "add", "c1", "-k", "pitfall", "-t", "t"]) == 0
+    n = next(NoteStore(store_dir).all())
+    assert n.author.raw == "human:alice"
+
+
+def test_cli_author_overrides_config(store_dir, tmp_path, capsys):
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": store_dir, "default_author": "human:alice"}),
+        encoding="utf-8",
+    )
+    main(["note", "add", "c1", "-k", "pitfall", "-t", "t", "-a", "ai:bot"])
+    n = next(NoteStore(store_dir).all())
+    assert n.author.raw == "ai:bot"
+
+
+def test_default_status_from_config(store_dir, tmp_path, capsys):
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": store_dir, "note": {"default_status": "open"}}),
+        encoding="utf-8",
+    )
+    assert main(["note", "add", "c1", "-k", "pitfall", "-t", "t"]) == 0
+    n = next(NoteStore(store_dir).all())
+    assert n.status is NoteStatus.OPEN
+
+
+def test_cli_status_overrides_config(store_dir, tmp_path, capsys):
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": store_dir, "note": {"default_status": "open"}}),
+        encoding="utf-8",
+    )
+    main(["note", "add", "c1", "-k", "pitfall", "-t", "t", "--status", "noted"])
+    n = next(NoteStore(store_dir).all())
+    assert n.status is NoteStatus.NOTED
+
+
+def test_broken_config_reports_error(tmp_path, capsys):
+    (tmp_path / ".pdm.json").write_text("{ bad", encoding="utf-8")
+    rc = main(["note", "add", "c1", "-k", "pitfall", "-t", "t"])
+    assert rc == 2
+    assert "配置错误" in capsys.readouterr().err
+
+
+def test_jsonc_config_rejected(tmp_path, capsys):
+    (tmp_path / ".pdm.json").write_text(
+        '{ \n  // comment\n  "store": "x"\n}', encoding="utf-8"
+    )
+    rc = main(["note", "add", "c1", "-k", "pitfall", "-t", "t"])
+    assert rc == 2
+    assert "配置错误" in capsys.readouterr().err
+
+
+def test_query_on_empty_store(store_dir, capsys):
+    assert run(store_dir, "query") == 0
+    assert "无匹配的笔记" in capsys.readouterr().out
+
+
+def test_no_color_flag_accepted(store_dir, capsys):
+    # --no-color 是顶层选项，放在子命令之前
+    rc = main(["--no-color", "--store", store_dir, "note", "add", "c1",
+               "-k", "pitfall", "-t", "t"])
+    assert rc == 0
+    assert "\033[" not in capsys.readouterr().out  # 无 ANSI 转义
+
+
+# ---------------------------------------------------------------------------
+# verify
+# ---------------------------------------------------------------------------
+
+
+def test_parse_verification_forms():
+    from pdev.cli import parse_verification
+    from pdev.note import VerificationKind
+
+    t = parse_verification("test=tests/x.py::test_y")
+    assert t.kind is VerificationKind.TEST and t.target == "tests/x.py::test_y"
+
+    c = parse_verification("cmd=make check")
+    assert c.kind is VerificationKind.COMMAND and c.command == "make check"
+
+    m = parse_verification("manual=手动步骤")
+    assert m.kind is VerificationKind.MANUAL and m.note == "手动步骤"
+
+    bare = parse_verification("pytest -q")
+    assert bare.kind is VerificationKind.COMMAND and bare.command == "pytest -q"
+
+    import argparse
+
+    with pytest.raises(argparse.ArgumentTypeError):
+        parse_verification("bogus=x")
+
+
+def test_note_add_with_verifications(store_dir):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "test=tests/x.py::test_y",
+        "--verify", "cmd=make check",
+        "--verify", "manual=手动登录")
+    n = next(NoteStore(store_dir).all())
+    assert len(n.verifications) == 3
+    assert n.verifications[0].kind.value == "test"
+    assert n.verifications[0].effective_command == "pytest tests/x.py::test_y -q"
+    assert n.verifications[2].kind.value == "manual"
+
+
+def test_verify_list(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "test=tests/x.py::test_y")
+    capsys.readouterr()
+    assert run(store_dir, "verify", "list") == 0
+    out = capsys.readouterr().out
+    assert "pytest tests/x.py::test_y -q" in out
+    assert "共 1 条笔记，1 条验证" in out
+
+
+def test_verify_list_json(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "cmd=make check")
+    capsys.readouterr()
+    run(store_dir, "verify", "list", "--json")
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["verifications"][0]["kind"] == "command"
+    assert payload[0]["verifications"][0]["effective_command"] == "make check"
+
+
+def test_verify_run_dry_run(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "cmd=echo hello")
+    capsys.readouterr()
+    assert run(store_dir, "verify", "run", "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "$ echo hello" in out
+
+
+def test_verify_run_executes_and_persists(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "cmd=echo ok")
+    capsys.readouterr()
+    rc = run(store_dir, "verify", "run", "c1")
+    assert rc == 0
+    assert "通过 1" in capsys.readouterr().out
+
+    # 结果已回写
+    n = next(NoteStore(store_dir).all())
+    assert n.verifications[0].last_status.value == "passed"
+
+
+def test_verify_run_failure_exit_code(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "cmd=exit 3")
+    capsys.readouterr()
+    assert run(store_dir, "verify", "run", "c1") == 1
+    assert "失败 1" in capsys.readouterr().out
+
+
+def test_verify_list_unverified(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "没验证")
+    capsys.readouterr()
+    assert run(store_dir, "verify", "list", "--unverified") == 0
+    assert "需要验证" in capsys.readouterr().out
+
+
+def test_verify_run_by_status(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "t",
+        "--verify", "cmd=exit 1")
+    capsys.readouterr()
+    run(store_dir, "verify", "run", "c1")     # 变成 failed
+    capsys.readouterr()
+    assert run(store_dir, "verify", "run", "--status", "failed") == 1
+    assert "失败 1" in capsys.readouterr().out
+
+
+def test_verify_run_no_match(store_dir, capsys):
+    assert run(store_dir, "verify", "run") == 0
+    assert "没有可执行的验证" in capsys.readouterr().out
+
+
+def test_parse_verification_with_method_suffix():
+    from pdev.cli import parse_verification
+
+    v = parse_verification(
+        "test=tests/x.py::test_y;method=并发只刷新一次;expected=passed"
+    )
+    assert v.target == "tests/x.py::test_y"
+    assert v.method == "并发只刷新一次"
+    assert v.expected == "passed"
+
+    c = parse_verification("cmd=make check;expected=退出码 0")
+    assert c.command == "make check"
+    assert c.expected == "退出码 0"
+
+
+def test_verify_list_verbose_shows_method(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "cmd=make check;method=类型检查通过")
+    capsys.readouterr()
+    run(store_dir, "verify", "list", "-v")
+    assert "方法: 类型检查通过" in capsys.readouterr().out
+
+
+def test_verify_show_displays_details(store_dir, capsys):
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "cmd=make check;method=类型检查;expected=退出码 0",
+        "--verify", "manual=手动登录")
+    capsys.readouterr()
+    assert run(store_dir, "verify", "show", "c1") == 0
+    out = capsys.readouterr().out
+    assert "验证 1: command" in out
+    assert "方法: 类型检查" in out
+    assert "命令: make check" in out
+    assert "期望: 退出码 0" in out
+    assert "验证 2: manual" in out
+
+
+def test_verify_show_extracts_script(store_dir, tmp_path, capsys):
+    # 建一个真实测试文件供抽取
+    (tmp_path / "tests").mkdir(exist_ok=True)
+    (tmp_path / "tests" / "t.py").write_text(
+        "def test_ok():\n    assert 1 == 1\n", encoding="utf-8"
+    )
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "test=tests/t.py::test_ok")
+    capsys.readouterr()
+    assert run(store_dir, "verify", "show", "c1") == 0
+    out = capsys.readouterr().out
+    assert "脚本" in out
+    assert "def test_ok():" in out
+
+
+def test_verify_show_no_script(store_dir, tmp_path, capsys):
+    (tmp_path / "tests").mkdir(exist_ok=True)
+    (tmp_path / "tests" / "t.py").write_text(
+        "def test_ok():\n    pass\n", encoding="utf-8"
+    )
+    run(store_dir, "note", "add", "c1", "-k", "bug", "-t", "标题",
+        "--verify", "test=tests/t.py::test_ok")
+    capsys.readouterr()
+    run(store_dir, "verify", "show", "c1", "--no-script")
+    assert "def test_ok" not in capsys.readouterr().out
+
+
+def test_verify_show_unknown_commit(store_dir, capsys):
+    assert run(store_dir, "verify", "show", "nope") == 1
+    assert "没有笔记" in capsys.readouterr().err
