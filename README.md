@@ -14,17 +14,19 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev,tui]"
 
 # 2. 记一条笔记（绑定到某次提交）
-.venv/bin/pdm note add abc123 -k pitfall -t "token 刷新有竞态" \
+./run.sh note add abc123 -k pitfall -t "token 刷新有竞态" \
     -F src/auth/token.py -T auth -p high \
     --verify 'test=tests/test_token.py::test_refresh_concurrent;method=200 并发断言只刷新一次'
 
 # 3. 查询
-.venv/bin/pdm query -k pitfall -f 'src/auth/**'
-.venv/bin/pdm verify show abc123          # 看验证方法与脚本
+./run.sh query -k pitfall -f 'src/auth/**'
+./run.sh verify show abc123          # 看验证方法与脚本
 
 # 4. 图形界面
-.venv/bin/pdm ui
+./run.sh ui                          # 或 ./run.sh ui demo-notes
 ```
+
+`./run.sh` 会自动使用项目内的 `.venv`，无需先激活。也可 `source .venv/bin/activate` 后直接用 `pdm`。
 
 ## 文档
 

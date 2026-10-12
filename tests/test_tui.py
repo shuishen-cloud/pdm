@@ -573,3 +573,51 @@ async def test_app_has_icon(store):
         await pilot.pause()
         assert app.ICON
         assert app.ICON.strip()
+
+
+# ---------------------------------------------------------------------------
+# 方向键切面板
+# ---------------------------------------------------------------------------
+
+
+async def test_arrow_keys_move_between_panels(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(CommitList).focus()
+
+        await pilot.press("right")
+        await pilot.pause()
+        assert isinstance(app.focused, NoteList)
+
+        await pilot.press("right")
+        await pilot.pause()
+        assert isinstance(app.focused, DetailPane)
+
+        await pilot.press("left")
+        await pilot.pause()
+        assert isinstance(app.focused, NoteList)
+
+        await pilot.press("left")
+        await pilot.pause()
+        assert isinstance(app.focused, CommitList)
+
+
+async def test_arrow_left_stops_at_first_panel(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(CommitList).focus()
+        await pilot.press("left")
+        await pilot.pause()
+        assert isinstance(app.focused, CommitList)
+
+
+async def test_arrow_right_stops_at_last_panel(store):
+    app = make_app(store)
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.query_one(DetailPane).focus()
+        await pilot.press("right")
+        await pilot.pause()
+        assert isinstance(app.focused, DetailPane)

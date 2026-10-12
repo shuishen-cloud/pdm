@@ -241,6 +241,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- ui ---
     ui = sub.add_parser("ui", help="图形界面（TUI，仿 lazygit）")
+    ui.add_argument("store_arg", nargs="?", metavar="STORE",
+                    help="笔记存储目录（等同 --store）")
     ui.add_argument("--store", default=argparse.SUPPRESS)
     ui.set_defaults(func=commands.cmd_ui)
 

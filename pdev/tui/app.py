@@ -44,6 +44,8 @@ class PDMApp(App):
         Binding("3", "focus_detail", "详情"),
         Binding("h", "focus_left", "左移", show=False),
         Binding("l", "focus_right", "右移", show=False),
+        Binding("left", "focus_left", "左移", show=False),
+        Binding("right", "focus_right", "右移", show=False),
         Binding("j", "cursor_down", "下移", show=False),
         Binding("k", "cursor_up", "上移", show=False),
         Binding("enter", "toggle_zoom", "放大/还原"),

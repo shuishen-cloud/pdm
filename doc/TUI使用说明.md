@@ -8,10 +8,30 @@
 # 首次：建虚拟环境并安装
 python3 -m venv .venv
 .venv/bin/pip install -e ".[tui]"
+```
 
-.venv/bin/pdm ui                       # 用配置里的 store
-.venv/bin/pdm ui --store demo-notes    # 指定存储目录
-.venv/bin/python main.py ui            # 等价入口
+### 启动方式
+
+| 方式 | 命令 | 说明 |
+|------|------|------|
+| **便捷脚本** | `./run.sh ui` | 自动使用项目内 `.venv`，无需激活 |
+| **便捷脚本 + store** | `./run.sh ui demo-notes` | 位置参数直接指定 store |
+| 安装后的入口 | `.venv/bin/pdm ui` | pip 安装时生成 |
+| 模块方式 | `.venv/bin/python -m pdev.cli ui` | 不经 console script |
+| 主入口 | `.venv/bin/python main.py ui` | 等价 |
+
+激活虚拟环境后可直接用 `pdm`：
+
+```bash
+source .venv/bin/activate
+pdm ui
+deactivate
+```
+
+或设为别名（加到 `~/.bashrc`）：
+
+```bash
+alias pdm='/path/to/ProjectDevelopManger/run.sh'
 ```
 
 > TUI 需要交互式终端；`stdout` 不是 tty 时会提示并退出（退出码 2）。
@@ -76,7 +96,7 @@ python3 -m venv .venv
 |----|------|
 | `1` / `2` / `3` | 直接跳到 提交 / 笔记 / 详情 面板 |
 | `Tab` / `Shift+Tab` | 在面板间循环切换 |
-| `h` / `l` | 焦点左移 / 右移（Vim 风格，按面板顺序） |
+| `←` / `→` 或 `h` / `l` | 焦点左移 / 右移（按面板顺序） |
 | `j` / `k` | 当前面板内上下移动 |
 | `Enter` / `z` | **放大当前面板**（占满宽度）/ 再按还原 |
 | `/` | 打开筛选弹窗 |

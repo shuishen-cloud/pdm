@@ -582,3 +582,29 @@ def test_verify_show_no_script(store_dir, tmp_path, capsys):
 def test_verify_show_unknown_commit(store_dir, capsys):
     assert run(store_dir, "verify", "show", "nope") == 1
     assert "没有笔记" in capsys.readouterr().err
+
+
+def test_ui_accepts_positional_store(store_dir):
+    from pdev.cli import build_parser
+
+    args = build_parser().parse_args(["ui", store_dir])
+    assert args.store_arg == store_dir
+    assert args.func.__name__ == "cmd_ui"
+
+
+def test_ui_store_flag_also_works(store_dir):
+    from pdev.cli import build_parser
+
+    args = build_parser().parse_args(["ui", "--store", store_dir])
+    assert args.store == store_dir
+    assert args.store_arg is None
+
+
+def test_ui_positional_takes_priority(store_dir, tmp_path):
+    """位置参数优先于 --store。"""
+    from pdev.cli import build_parser
+
+    other = str(tmp_path / "other")
+    args = build_parser().parse_args(["ui", store_dir, "--store", other])
+    assert args.store_arg == store_dir
+    assert args.store == other

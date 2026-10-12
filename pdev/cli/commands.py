@@ -346,7 +346,21 @@ def cmd_verify_run(ctx: AppContext, args) -> int:
 
 
 def cmd_ui(ctx: AppContext, args) -> int:
-    """启动 TUI。"""
+    """启动 TUI。
+
+    ``pdm ui`` 用配置里的 store；``pdm ui <dir>`` 直接指定。
+    """
+    store = ctx.store
+    positional = getattr(args, "store_arg", None)
+    if positional:
+        from pathlib import Path
+
+        from ..store import NoteStore
+
+        p = Path(positional)
+        if not p.is_absolute():
+            p = ctx.cwd / p
+        store = NoteStore(p)
     try:
         from ..tui import run as run_tui
     except ImportError:
@@ -364,7 +378,7 @@ def cmd_ui(ctx: AppContext, args) -> int:
     if not sys.stdout.isatty():
         print("TUI 需要交互式终端", file=sys.stderr)
         return 2
-    return run_tui(ctx.store, cwd=str(ctx.cwd))
+    return run_tui(store, cwd=str(ctx.cwd))
 
 
 def _tui_available() -> bool:
