@@ -17,11 +17,20 @@ from ..note import CommitNote, NoteKind, NoteStatus, VerificationStatus
 __all__ = ["CommitList", "NoteList", "DetailPane"]
 
 _KIND_COLOR = {
-    NoteKind.PROBLEM: "red",
+    NoteKind.PROBLEM: "bright_red",
     NoteKind.BUG: "red",
-    NoteKind.PITFALL: "magenta",
+    NoteKind.PITFALL: "yellow",
     NoteKind.DIFFICULTY: "cyan",
     NoteKind.CONTROLLED_EXCEPTION: "green",
+}
+
+# 提交面板里类型缩写的颜色（比详情更饱和，便于扫视）
+_KIND_COLOR_LIST = {
+    NoteKind.PROBLEM: "bright_red",
+    NoteKind.BUG: "red",
+    NoteKind.PITFALL: "bright_yellow",
+    NoteKind.DIFFICULTY: "bright_cyan",
+    NoteKind.CONTROLLED_EXCEPTION: "bright_green",
 }
 
 _STATUS_MARK = {
@@ -77,9 +86,15 @@ class CommitItem(ListItem):
         kinds: dict = {}
         for n in self.notes:
             kinds[n.kind] = kinds.get(n.kind, 0) + 1
-        parts = [f"{short.get(k, '?')}:{c}"
-                 for k, c in sorted(kinds.items(), key=lambda kv: kv[0].value)]
-        t.append("\n  " + " ".join(parts), style="dim")
+
+        t.append("\n  ")
+        for i, (k, c) in enumerate(
+            sorted(kinds.items(), key=lambda kv: kv[0].value)
+        ):
+            if i:
+                t.append(" ")
+            t.append(f"{short.get(k, '?')}:{c}",
+                     style=_KIND_COLOR_LIST.get(k, "white"))
         return t
 
 

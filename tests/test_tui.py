@@ -410,3 +410,46 @@ async def test_commit_subject_from_git(tmp_path):
         item = app.query_one(CommitList).children[0]
         assert item.info is not None
         assert item.info.subject  # 拿到了提交标题
+
+
+# ---------------------------------------------------------------------------
+# 提交面板：类型分布染色
+# ---------------------------------------------------------------------------
+
+
+async def test_commit_item_colors_by_kind(tmp_path):
+    from pdev.tui.panels import CommitItem
+
+    notes = [
+        CommitNote(commit="c1", kind=NoteKind.BUG, title="b"),
+        CommitNote(commit="c1", kind=NoteKind.CONTROLLED_EXCEPTION, title="e"),
+        CommitNote(commit="c1", kind=NoteKind.PITFALL, title="p"),
+    ]
+    text = CommitItem("c1", notes).render()
+    styles = {text.plain[s.start:s.end]: s.style for s in text.spans}
+    # 三种类型必须是不同颜色，否则扫视没意义
+    assert styles["bug:1"] != styles["exc:1"]
+    assert styles["exc:1"] != styles["pit:1"]
+    assert styles["bug:1"] != styles["pit:1"]
+
+
+async def test_commit_item_shows_subject_when_available(tmp_path):
+    from pdev.git import CommitInfo
+    from pdev.tui.panels import CommitItem
+
+    info = CommitInfo(hash="abcdef1234567890", subject="feat: 某功能",
+                      author="T")
+    text = CommitItem("abcdef12",
+                      [CommitNote(commit="abcdef12", kind=NoteKind.BUG,
+                                  title="x")], info).render()
+    assert "feat: 某功能" in text.plain
+
+
+async def test_commit_item_without_info_still_renders(tmp_path):
+    from pdev.tui.panels import CommitItem
+
+    text = CommitItem("c1",
+                      [CommitNote(commit="c1", kind=NoteKind.BUG,
+                                  title="x")]).render()
+    assert "c1" in text.plain
+    assert "bug:1" in text.plain

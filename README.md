@@ -102,3 +102,18 @@ doc/                 文档
 .venv/bin/python scripts/seed_demo.py --store demo-notes --reset
 .venv/bin/pdm ui --store demo-notes
 ```
+
+### 两个演示脚本的区别
+
+| 脚本 | 产出 | 特点 |
+|------|------|------|
+| `scripts/seed_demo.py` | 纯笔记数据 | 伪造 hash（`c0ffee1`），无 git、无真测试；适合看统计与筛选 |
+| `scripts/setup_demo_project.py` | 完整演示项目 | **真 git 仓库 + 真提交 + 真测试**；笔记绑定真实 commit，能看到提交标题、抽取并运行测试脚本 |
+
+```bash
+# 完整演示项目（推荐）
+.venv/bin/python scripts/setup_demo_project.py --dir demo-project --reset
+cd demo-project
+../.venv/bin/pdm ui        # 提交标题、测试脚本、验证执行 全部可用
+../.venv/bin/pdm verify run
+```

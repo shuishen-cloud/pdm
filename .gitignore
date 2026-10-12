@@ -31,4 +31,5 @@ htmlcov/
 notes/
 issues/
 demo-notes/
+demo-project/
 .pdm.local.json
