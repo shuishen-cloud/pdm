@@ -1182,3 +1182,111 @@ async def test_feat_screen_empty_store(store, tmp_path):
         app.push_screen(FeatScreen(fs))
         await pilot.pause()
         assert isinstance(app.screen, FeatScreen)
+
+
+async def test_feat_screen_q_closes_not_quits_app(store, tmp_path):
+    """按 q 只关弹窗，不应退出整个应用（曾把 App 一起退掉）。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d", api=["f()"], fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        assert not isinstance(app.screen, FeatScreen)
+        assert app.is_running          # 应用还活着
+
+
+# ---------------------------------------------------------------------------
+# 弹窗按键规范（见 docs/feat/modal-keys.md）
+#
+# 规范：关闭键必须在弹窗自己的 BINDINGS 里声明，不冒泡到 App；
+#       有输入框的弹窗（FilterScreen）例外，q 是普通字符。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["escape", "q"])
+async def test_all_modals_close_without_quitting_app(store, tmp_path, key):
+    """Esc / q 都应只关弹窗，App 保持存活。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen, HelpScreen, ThemeScreen
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d", api=["f()"], fallbacks=["x"]))
+
+    screens = [
+        lambda a: FeatScreen(fs),
+        lambda a: HelpScreen(),
+        lambda a: ThemeScreen(),
+    ]
+    for make in screens:
+        app = make_app(store, cwd=str(tmp_path))
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.pause()
+            app.push_screen(make(app))
+            await pilot.pause()
+            await pilot.press(key)
+            await pilot.pause()
+            assert app.is_running, f"{make} 按 {key} 后退出了 App"
+
+
+async def test_modal_close_leaves_app_screen(store, tmp_path):
+    from pdev.tui.screens import HelpScreen
+
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(HelpScreen())
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpScreen)
+        assert app.is_running
+
+
+async def test_filter_screen_q_is_character_not_close(store, tmp_path):
+    """有输入框的弹窗：q 必须是字符输入，只有 Esc 关闭。"""
+    from pdev.tui.screens import FilterScreen
+    from textual.widgets import Input
+
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FilterScreen())
+        await pilot.pause()
+        app.screen.query_one("#text", Input).focus()
+        await pilot.press("q")
+        await pilot.pause()
+        assert isinstance(app.screen, FilterScreen)
+        assert "q" in app.screen.query_one("#text", Input).value
+
+
+def test_no_modal_uses_key_q_without_binding():
+    """规范：非输入型弹窗不得用 key_q() 拦截（会冒泡退 App）。
+
+    见 docs/feat/modal-keys.md 规则 2。FilterScreen 是唯一合法例外
+    （它有输入框，q 必须是字符）。
+    """
+    import ast
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parent.parent / "pdev" / "tui" / "screens.py"
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+
+    allowed = {"FilterScreen"}       # 有输入框的例外
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ClassDef)
+                and node.name.endswith("Screen")):
+            continue
+        has_key_q = any(isinstance(n, ast.FunctionDef) and n.name == "key_q"
+                        for n in node.body)
+        if has_key_q:
+            assert node.name in allowed, (
+                f"{node.name} 使用了 key_q()，应改为声明式 BINDINGS"
+                f"（见 docs/feat/modal-keys.md）"
+            )

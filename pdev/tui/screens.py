@@ -435,11 +435,6 @@ class ThemeScreen(ModalScreen):
     def action_cancel(self) -> None:
         self.dismiss(None)
 
-    def key_q(self) -> bool:
-        """q 关闭（没有输入框，直接关）。"""
-        self.dismiss(None)
-        return True
-
 
 class FeatScreen(ModalScreen):
     """Feat 与自约束校验：左列 feat，右侧详情 + check 结果。
@@ -474,6 +469,7 @@ class FeatScreen(ModalScreen):
 
     BINDINGS = [
         ("escape", "close", "关闭"),
+        ("q", "close", "关闭"),
         ("c", "check", "校验"),
         ("r", "reload", "刷新"),
     ]
@@ -510,10 +506,6 @@ class FeatScreen(ModalScreen):
 
     def on_list_view_highlighted(self, event) -> None:
         self._refresh_detail()
-
-    def key_q(self) -> bool:
-        self.action_close()
-        return True
 
     def action_close(self) -> None:
         self.dismiss(None)
