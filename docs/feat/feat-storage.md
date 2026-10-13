@@ -28,3 +28,23 @@ draft → testing → integrated → fixing → closed
 ```
 
 不可倒退；每步带 `next_step` 提示下一步该做什么。
+
+## 纪律：note 随 commit 即时记录
+
+每个 commit 完成后**立即**记录它的 note，而不是事后回头补：
+
+```bash
+git commit -m "test(feat-x): ..."        # 1. 先提交
+pdm note add <刚提交的 hash> -k ... -t ... # 2. 立刻记这一步的坑/难点
+```
+
+**为什么不能事后回填**：
+
+- note 的价值在于**开发当下的真实记录**（踩了什么坑、卡在哪、怎么绕）,
+  事后回忆会丢细节，且 `created_at` 会与 commit 时间严重脱节。
+- 「回头补 note」这个动作**本身又是一个 commit**,那个 commit 又需要再补——
+  陷入无限套娃（本仓库真实发生过：`dac9538` → `d042b67` → …）。
+- 与「看不到就是没记」（见 `feat-ui.md`）同源：提交当时不记，就等于没记。
+
+**判定滞后**：`pdm query` 里看 `created_at` 与 `git log` 的 commit 时间，
+若普遍晚于 commit，说明在事后回填。
