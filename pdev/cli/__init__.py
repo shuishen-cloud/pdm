@@ -40,6 +40,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    # 子命令的 --json 用 SUPPRESS，未传时属性缺失；补成 False
+    # 以免各命令里 args.json 直接访问报 AttributeError。
+    args.json = getattr(args, "json", False)
+
     # --no-color 与 --json 是相反的开关
     if getattr(args, "no_color", None):
         args.color = False

@@ -42,6 +42,14 @@ from .doc import (
     match_glob,
 )
 from .fingerprint import Fingerprint, Generated
+from .feat import (
+    Feat,
+    FeatError,
+    FeatKind,
+    FeatStatus,
+    FeatStore,
+    valid_slug,
+)
 from .issue import (
     Event,
     EventType,
@@ -90,6 +98,13 @@ __all__ = [
     # fingerprint
     "Fingerprint",
     "Generated",
+    # feat
+    "Feat",
+    "FeatKind",
+    "FeatStatus",
+    "FeatStore",
+    "FeatError",
+    "valid_slug",
     # note
     "CommitNote",
     "NoteKind",

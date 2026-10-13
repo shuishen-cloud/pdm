@@ -1,0 +1,52 @@
+{
+  "slug": "feat-storage",
+  "title": "Feat 存储：用自身记录开发设计，暴露 CLI 给 Agent 检索",
+  "kind": "feat",
+  "status": "closed",
+  "design": "新增 pdev/feat.py：Feat dataclass + FeatStore。存储沿用 NoteStore 的分片 JSON 模式——一条 feat 一个文件（feats/by-id/<slug>.json），写入即落盘，内容可进 git、可 review、可 diff。",
+  "api": [
+    "pdm feat new <slug> -t TITLE [-k KIND] [--design/--data-model/--debug]",
+    "pdm feat new ... [--api/--fixture/--fallback/--touch/--follow/--log]",
+    "pdm feat list [--status/--kind/--open] [--json]",
+    "pdm feat show <slug> [--json] [--debug]",
+    "pdm feat set <slug> <draft|testing|integrated|fixing|closed>",
+    "pdm feat link <slug> <commit>",
+    "pdm feat found <slug> TEXT"
+  ],
+  "data_model": "Feat{slug(唯一键), title, kind(feat/fix/refactor/doc/test), status(draft/testing/integrated/fixing/closed), design, api[], data_model, fixtures[], fallbacks[], touches[], follows[], logs[], debug, commits[], notes[], discovered[], created_at, updated_at}",
+  "fixtures": [
+    "tests/fixtures/feat_storage.py"
+  ],
+  "fallbacks": [
+    "非法 slug（大写/下划线/首尾连字符）→ FeatError，明确报错不静默",
+    "slug 重复 → FeatError，提示已存在",
+    "JSON 损坏 / OSError → 加载时跳过该文件，不阻断其他 feat",
+    "状态倒退（如 integrated → draft）→ FeatError"
+  ],
+  "touches": [
+    "pdev/__init__.py（导出 Feat/FeatStore 等）",
+    "pdev/config.py（新增 feat.store，默认 feats）",
+    "pdev/cli/parser.py + commands.py（新增 feat 子命令）"
+  ],
+  "follows": [
+    "存储哲学：JSON 分片 + 一条一文件 + 可进 git（同 NoteStore）",
+    "配置严格 JSON、坏配置明确报错（同 config.py）",
+    "枚举跟领域走，不集中到 enums.py（同 NoteKind）"
+  ],
+  "logs": [
+    "feat.created slug=<slug>",
+    "feat.status slug=<slug> from=<old> to=<new>",
+    "feat.linked slug=<slug> commit=<hash>",
+    "feat.found slug=<slug> count=<n>"
+  ],
+  "debug": "pdm feat show <slug> --debug 打印原始 JSON 与存储路径；pdm feat list --json 供程序消费",
+  "commits": [
+    "10a888c"
+  ],
+  "notes": [],
+  "discovered": [
+    "全局 --json 被子命令的同名 --json(default=None) 覆盖，导致 pdm --json show/verify/stats 静默失效；修复：子命令改用 argparse.SUPPRESS，main 中补默认 False"
+  ],
+  "created_at": "2026-10-13T08:47:20.394717+00:00",
+  "updated_at": "2026-10-13T08:49:35.641426+00:00"
+}

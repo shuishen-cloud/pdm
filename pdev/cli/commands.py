@@ -35,6 +35,12 @@ __all__ = [
     "cmd_verify_show",
     "cmd_ui",
     "cmd_theme",
+    "cmd_feat_new",
+    "cmd_feat_list",
+    "cmd_feat_show",
+    "cmd_feat_set",
+    "cmd_feat_link",
+    "cmd_feat_found",
     "cmd_stats",
     "print_notes",
     "format_note",
@@ -387,6 +393,167 @@ def cmd_ui(ctx: AppContext, args) -> int:
         config=ctx.config,
         config_path=find_project_config(ctx.cwd),
     )
+
+
+def _feat_store(ctx: AppContext):
+    """按配置构造 FeatStore（相对路径按 cwd 解析）。"""
+    from pathlib import Path
+
+    from ..feat import FeatStore
+
+    p = Path(ctx.config.feat.store)
+    if not p.is_absolute():
+        p = ctx.cwd / p
+    return FeatStore(p)
+
+
+def cmd_feat_new(ctx: AppContext, args) -> int:
+    """新建一条 feat。"""
+    from ..feat import Feat, FeatError, FeatKind
+
+    try:
+        feat = Feat(
+            slug=args.slug,
+            title=args.title,
+            kind=FeatKind(args.kind),
+            design=args.design or "",
+            data_model=args.data_model or "",
+            debug=args.debug or "",
+            api=list(args.api),
+            fixtures=list(args.fixture),
+            fallbacks=list(args.fallback),
+            touches=list(args.touch),
+            follows=list(args.follow),
+            logs=list(args.log),
+        )
+        _feat_store(ctx).add(feat)
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+    print(f"已创建 feat：{feat.slug} [{feat.status.value}] {feat.title}")
+    if feat.next_step:
+        print(f"下一步：{feat.next_step}")
+    return 0
+
+
+def cmd_feat_list(ctx: AppContext, args) -> int:
+    """列出 feat。"""
+    from ..feat import FeatKind, FeatStatus
+
+    store = _feat_store(ctx)
+    feats = list(store.open() if args.open else store.all())
+    if args.status:
+        st = FeatStatus(args.status)
+        feats = [f for f in feats if f.status is st]
+    if args.kind:
+        k = FeatKind(args.kind)
+        feats = [f for f in feats if f.kind is k]
+
+    if ctx.config.json_output:
+        from ..feat import _to_dict
+
+        print(json.dumps([_to_dict(f) for f in feats],
+                         ensure_ascii=False, indent=2))
+        return 0
+
+    if not feats:
+        print("（无 feat）")
+        return 0
+    for f in feats:
+        commits = f"  commits={len(f.commits)}" if f.commits else ""
+        print(f"[{f.status.value:10}] {f.slug:28} {f.title}{commits}")
+    return 0
+
+
+def cmd_feat_show(ctx: AppContext, args) -> int:
+    """查看一条 feat。"""
+    from ..feat import _to_dict
+
+    store = _feat_store(ctx)
+    feat = store.get(args.slug)
+    if feat is None:
+        print(f"找不到 feat：{args.slug}", file=sys.stderr)
+        return 2
+
+    if ctx.config.json_output or args.json:
+        print(json.dumps(_to_dict(feat), ensure_ascii=False, indent=2))
+        return 0
+    print(f"{feat.slug}  [{feat.kind.value} / {feat.status.value}]")
+    print(f"{feat.title}")
+    print("═" * 50)
+
+    sections = [
+        ("实现方式", [feat.design] if feat.design else []),
+        ("交付 API", feat.api),
+        ("数据结构", [feat.data_model] if feat.data_model else []),
+        ("Mock 数据", feat.fixtures),
+        ("异常兜底", feat.fallbacks),
+        ("既有代码边界", feat.touches),
+        ("约定跟随", feat.follows),
+        ("外化日志", feat.logs),
+        ("Debug 方式", [feat.debug] if feat.debug else []),
+        ("实现 commit", feat.commits),
+        ("发现的异常", feat.discovered),
+    ]
+    for name, items in sections:
+        if not items:
+            continue
+        print(f"\n{name}")
+        for x in items:
+            print(f"  · {x}")
+
+    if feat.next_step:
+        print(f"\n下一步：{feat.next_step}")
+
+    if args.debug:
+        from ..feat import _to_dict
+        from ..store import NoteStore  # noqa: F401
+
+        print(f"\n路径：{store._path(feat.slug)}")
+        print(f"原始 JSON：\n{json.dumps(_to_dict(feat), ensure_ascii=False, indent=2)}")
+    return 0
+
+
+def cmd_feat_set(ctx: AppContext, args) -> int:
+    """推进 feat 状态。"""
+    from ..feat import FeatError, FeatStatus
+
+    store = _feat_store(ctx)
+    try:
+        feat = store.set_status(args.slug, FeatStatus(args.status))
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+    print(f"{feat.slug} → [{feat.status.value}]")
+    if feat.next_step:
+        print(f"下一步：{feat.next_step}")
+    return 0
+
+
+def cmd_feat_link(ctx: AppContext, args) -> int:
+    """回填实现 commit。"""
+    from ..feat import FeatError
+
+    try:
+        feat = _feat_store(ctx).link_commit(args.slug, args.commit)
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+    print(f"{feat.slug} ← {args.commit}（现有 {len(feat.commits)} 个）")
+    return 0
+
+
+def cmd_feat_found(ctx: AppContext, args) -> int:
+    """记录 fix 阶段发现的异常。"""
+    from ..feat import FeatError
+
+    try:
+        feat = _feat_store(ctx).add_discovered(args.slug, args.text)
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+    print(f"{feat.slug} 发现 {len(feat.discovered)} 条异常")
+    return 0
 
 
 def cmd_theme(ctx: AppContext, args) -> int:

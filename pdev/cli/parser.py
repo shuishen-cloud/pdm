@@ -11,6 +11,7 @@ import argparse
 from typing import Optional, Sequence
 
 from ..common import Actor
+from ..feat import FeatKind, FeatStatus
 from ..issue import Priority
 from ..note import (
     NoteKind,
@@ -143,9 +144,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--store", default=argparse.SUPPRESS,
                         help="笔记存储目录")
-    parser.add_argument("--json", action="store_true", default=None,
+    parser.add_argument("--json", action="store_true",
+                        default=argparse.SUPPRESS,
                         help="以 JSON 输出")
-    parser.add_argument("--no-color", action="store_true", default=None,
+    parser.add_argument("--no-color", action="store_true",
+                        default=argparse.SUPPRESS,
                         help="禁用彩色输出")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -196,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- show ---
     show = sub.add_parser("show", help="查看某提交的全部笔记")
     show.add_argument("commit")
-    show.add_argument("--json", action="store_true", default=None)
+    show.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     show.add_argument("--store", default=argparse.SUPPRESS)
     show.set_defaults(func=commands.cmd_show)
 
@@ -208,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     vshow.add_argument("commit", help="提交 hash")
     vshow.add_argument("--no-script", action="store_true",
                        help="不抽取测试脚本")
-    vshow.add_argument("--json", action="store_true", default=None)
+    vshow.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     vshow.add_argument("--store", default=argparse.SUPPRESS)
     vshow.set_defaults(func=commands.cmd_verify_show)
 
@@ -223,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
                        type=VerifyStatus, help="按上次结果筛选")
     vlist.add_argument("--unverified", action="store_true",
                        help="只看需要验证却没有验证方法的笔记")
-    vlist.add_argument("--json", action="store_true", default=None)
+    vlist.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     vlist.add_argument("--store", default=argparse.SUPPRESS)
     vlist.set_defaults(func=commands.cmd_verify_list)
 
@@ -238,6 +241,61 @@ def build_parser() -> argparse.ArgumentParser:
     vrun.add_argument("--timeout", type=int, default=600, help="单条超时秒数")
     vrun.add_argument("--store", default=argparse.SUPPRESS)
     vrun.set_defaults(func=commands.cmd_verify_run)
+
+    # --- feat ---
+    feat = sub.add_parser("feat", help="功能开发记录（设计→测试→实现）")
+    feat_sub = feat.add_subparsers(dest="feat_command", required=True)
+
+    fnew = feat_sub.add_parser("new", help="新建一条 feat")
+    fnew.add_argument("slug", help="唯一标识，如 feat-doc-storage")
+    fnew.add_argument("-t", "--title", required=True, help="一句话标题")
+    fnew.add_argument("-k", "--kind", default="feat",
+                      choices=[k.value for k in FeatKind])
+    fnew.add_argument("--design", default="", help="实现方式")
+    fnew.add_argument("--data-model", default="", help="数据结构")
+    fnew.add_argument("--debug", default="", help="Debug 方式")
+    fnew.add_argument("--api", action="append", default=[], metavar="API")
+    fnew.add_argument("--fixture", action="append", default=[],
+                      metavar="PATH", help="Mock 数据文件（可多次）")
+    fnew.add_argument("--fallback", action="append", default=[],
+                      metavar="TEXT", help="异常兜底（可多次）")
+    fnew.add_argument("--touch", action="append", default=[],
+                      metavar="PATH", help="影响的既有代码（可多次）")
+    fnew.add_argument("--follow", action="append", default=[],
+                      metavar="TEXT", help="跟随的约定（可多次）")
+    fnew.add_argument("--log", action="append", default=[],
+                      metavar="EVENT", help="外化日志事件（可多次）")
+    fnew.set_defaults(func=commands.cmd_feat_new)
+
+    flist = feat_sub.add_parser("list", help="列出 feat")
+    flist.add_argument("--status", default=None,
+                       choices=[s.value for s in FeatStatus])
+    flist.add_argument("--kind", default=None,
+                       choices=[k.value for k in FeatKind])
+    flist.add_argument("--open", action="store_true", help="只看未关闭")
+    flist.set_defaults(func=commands.cmd_feat_list)
+
+    fshow = feat_sub.add_parser("show", help="查看一条 feat")
+    fshow.add_argument("slug")
+    fshow.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    fshow.add_argument("--debug", action="store_true",
+                       help="额外打印原始 JSON 与存储路径")
+    fshow.set_defaults(func=commands.cmd_feat_show)
+
+    fset = feat_sub.add_parser("set", help="推进状态")
+    fset.add_argument("slug")
+    fset.add_argument("status", choices=[s.value for s in FeatStatus])
+    fset.set_defaults(func=commands.cmd_feat_set)
+
+    flink = feat_sub.add_parser("link", help="回填实现 commit")
+    flink.add_argument("slug")
+    flink.add_argument("commit")
+    flink.set_defaults(func=commands.cmd_feat_link)
+
+    fbug = feat_sub.add_parser("found", help="记录 fix 阶段发现的异常")
+    fbug.add_argument("slug")
+    fbug.add_argument("text")
+    fbug.set_defaults(func=commands.cmd_feat_found)
 
     # --- theme ---
     theme = sub.add_parser("theme", help="查看 / 设置 TUI 主题")
@@ -254,7 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- stats ---
     stats = sub.add_parser("stats", help="汇总统计")
-    stats.add_argument("--json", action="store_true", default=None)
+    stats.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     stats.add_argument("--store", default=argparse.SUPPRESS)
     stats.set_defaults(func=commands.cmd_stats)
 

@@ -31,6 +31,7 @@ __all__ = [
     "QueryConfig",
     "IssueConfig",
     "DocConfig",
+    "FeatConfig",
     "UIConfig",
     "GitHubConfig",
     "load_config",
@@ -92,6 +93,13 @@ class DocConfig:
 
 
 @dataclass
+class FeatConfig:
+    """Feat（开发记录）相关。"""
+
+    store: str = "feats"
+
+
+@dataclass
 class UIConfig:
     """TUI 外观与交互设置。
 
@@ -131,6 +139,7 @@ class Config:
     query: QueryConfig = field(default_factory=QueryConfig)
     issue: IssueConfig = field(default_factory=IssueConfig)
     doc: DocConfig = field(default_factory=DocConfig)
+    feat: FeatConfig = field(default_factory=FeatConfig)
     ui: UIConfig = field(default_factory=UIConfig)
     github: GitHubConfig = field(default_factory=GitHubConfig)
 
@@ -157,6 +166,7 @@ _SEGMENTS = {
     "query": QueryConfig,
     "issue": IssueConfig,
     "doc": DocConfig,
+    "feat": FeatConfig,
     "ui": UIConfig,
     "github": GitHubConfig,
 }
@@ -275,6 +285,7 @@ def _env_overrides(env: Mapping[str, str]) -> Dict[str, Any]:
         "PDM_GIT_AUTO_COMMIT": ["git", "auto_commit"],
         "PDM_ISSUE_STORE": ["issue", "store"],
         "PDM_DOC_DIR": ["doc", "dir"],
+        "PDM_FEAT_STORE": ["feat", "store"],
         "PDM_UI_THEME": ["ui", "theme"],
         "PDM_UI_COMMIT_WIDTH": ["ui", "commit_width"],
         "PDM_GITHUB_REPO": ["github", "repo"],

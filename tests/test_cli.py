@@ -669,3 +669,172 @@ def test_theme_shows_current_after_set(capsys):
     # gruvbox 那行应有 ● 标记
     line = next(x for x in out.splitlines() if "gruvbox" in x)
     assert "●" in line
+
+
+# ---------------------------------------------------------------------------
+# pdm feat
+# ---------------------------------------------------------------------------
+
+
+def test_feat_new_and_show(capsys):
+    code = main(["feat", "new", "my-feat", "-t", "我的功能",
+                 "--design", "先这样再那样",
+                 "--api", "pdm foo",
+                 "--fallback", "坏输入报错"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "my-feat" in out and "draft" in out
+
+    main(["feat", "show", "my-feat"])
+    out = capsys.readouterr().out
+    assert "我的功能" in out
+    assert "先这样再那样" in out
+    assert "pdm foo" in out
+    assert "坏输入报错" in out
+
+
+def test_feat_new_bad_slug_fails(capsys):
+    code = main(["feat", "new", "BadSlug", "-t", "x"])
+    assert code == 2
+    assert "错误" in capsys.readouterr().err
+
+
+def test_feat_new_duplicate_fails(capsys):
+    main(["feat", "new", "dup", "-t", "A"])
+    capsys.readouterr()
+    code = main(["feat", "new", "dup", "-t", "B"])
+    assert code == 2
+    assert "已存在" in capsys.readouterr().err
+
+
+def test_feat_list_and_filters(capsys):
+    main(["feat", "new", "a", "-t", "A", "-k", "feat"])
+    main(["feat", "new", "b", "-t", "B", "-k", "fix"])
+    main(["feat", "set", "a", "integrated"])
+    capsys.readouterr()
+
+    main(["feat", "list"])
+    out = capsys.readouterr().out
+    assert "a" in out and "b" in out
+
+    main(["feat", "list", "--kind", "fix"])
+    out = capsys.readouterr().out
+    assert "b" in out and "\n" + "a" not in out
+
+    main(["feat", "list", "--status", "integrated"])
+    out = capsys.readouterr().out
+    assert "a" in out
+    assert " b " not in out
+
+
+def test_feat_list_json(capsys):
+    main(["feat", "new", "a", "-t", "A", "--api", "x"])
+    capsys.readouterr()
+    code = main(["--json", "feat", "list"])
+    assert code == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data[0]["slug"] == "a"
+    assert data[0]["api"] == ["x"]
+
+
+def test_feat_show_json(capsys):
+    main(["feat", "new", "a", "-t", "A"])
+    capsys.readouterr()
+    main(["feat", "show", "a", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["slug"] == "a"
+    assert data["status"] == "draft"
+
+
+def test_feat_show_missing_fails(capsys):
+    code = main(["feat", "show", "nope"])
+    assert code == 2
+    assert "找不到" in capsys.readouterr().err
+
+
+def test_feat_set_progression(capsys):
+    main(["feat", "new", "a", "-t", "A"])
+    capsys.readouterr()
+    code = main(["feat", "set", "a", "testing"])
+    assert code == 0
+    assert "testing" in capsys.readouterr().out
+
+
+def test_feat_set_backwards_fails(capsys):
+    main(["feat", "new", "a", "-t", "A"])
+    main(["feat", "set", "a", "integrated"])
+    capsys.readouterr()
+    code = main(["feat", "set", "a", "draft"])
+    assert code == 2
+    assert "倒退" in capsys.readouterr().err
+
+
+def test_feat_link_and_found(capsys):
+    main(["feat", "new", "a", "-t", "A"])
+    capsys.readouterr()
+    assert main(["feat", "link", "a", "deadbeef"]) == 0
+    assert main(["feat", "found", "a", "接入时列表多一行"]) == 0
+    capsys.readouterr()
+
+    main(["feat", "show", "a", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["commits"] == ["deadbeef"]
+    assert data["discovered"] == ["接入时列表多一行"]
+
+
+def test_feat_uses_config_store_dir(capsys, tmp_path):
+    """feat.store 配置生效。"""
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"feat": {"store": "myfeats"}}), encoding="utf-8")
+    main(["feat", "new", "a", "-t", "A"])
+    capsys.readouterr()
+    assert (tmp_path / "myfeats" / "by-id" / "a.json").is_file()
+
+
+# ---------------------------------------------------------------------------
+# 全局 --json（历史 Bug：被子命令的 --json 覆盖）
+# ---------------------------------------------------------------------------
+
+
+def test_global_json_flag_for_show(capsys):
+    """`pdm --json show <commit>` 应输出 JSON（曾被子命令默认值覆盖）。"""
+    main(["note", "add", "abc123", "-k", "bug", "-t", "缺陷"])
+    capsys.readouterr()
+    code = main(["--json", "show", "abc123"])
+    assert code == 0
+    # 能解析即说明是 JSON
+    data = json.loads(capsys.readouterr().out)
+    assert data
+
+
+def test_subcommand_json_flag_still_works(capsys):
+    main(["note", "add", "abc123", "-k", "bug", "-t", "缺陷"])
+    capsys.readouterr()
+    code = main(["show", "abc123", "--json"])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)
+
+
+def test_global_json_flag_for_feat(capsys):
+    main(["feat", "new", "a", "-t", "A"])
+    capsys.readouterr()
+    code = main(["--json", "feat", "show", "a"])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["slug"] == "a"
+
+
+def test_global_json_flag_for_stats(capsys):
+    main(["note", "add", "abc123", "-k", "bug", "-t", "缺陷"])
+    capsys.readouterr()
+    code = main(["--json", "stats"])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)
+
+
+def test_no_json_flag_gives_human_output(capsys):
+    main(["feat", "new", "a", "-t", "A"])
+    capsys.readouterr()
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    assert out.lstrip().startswith("a")     # 不是 JSON
+    assert "{" not in out.splitlines()[0]
