@@ -23,6 +23,7 @@ from pdev import (  # noqa: E402
     Verification,
     VerificationKind,
 )
+from pdev.git import GitRepo  # noqa: E402
 from pdev.tui.app import PDMApp  # noqa: E402
 from pdev.tui.panels import CommitList, DetailPane, NoteList  # noqa: E402
 from pdev.tui.screens import FilterScreen, HelpScreen  # noqa: E402
@@ -45,7 +46,14 @@ def store(tmp_path) -> NoteStore:
     return s
 
 
-def make_app(store, cwd=".") -> PDMApp:
+def make_app(store, cwd=None) -> PDMApp:
+    """构造测试用 app。
+
+    ``cwd`` 默认取 store 根目录所在处：那里通常不是 git 仓库，
+    避免测试意外读到本仓库自身的 git 历史。
+    """
+    if cwd is None:
+        cwd = str(Path(store.root).parent)
     return PDMApp(store, cwd=cwd)
 
 
@@ -816,3 +824,94 @@ async def test_pdm_provider_search(store):
         hits = [hit.text async for hit in provider.search("验证")]
         assert "跑验证" in hits
         assert [hit.text async for hit in provider.search("zzz")] == []
+
+
+# ---------------------------------------------------------------------------
+# 接入 git：没有笔记的提交也要显示
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def git_repo(tmp_path):
+    """一个有两次提交、但没有任何笔记的仓库。"""
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Tester")
+    (tmp_path / "a.txt").write_text("hi", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "first: 初始")
+    (tmp_path / "b.txt").write_text("yo", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "second: 第二次")
+    return tmp_path
+
+
+async def test_git_only_commits_are_listed(git_repo, tmp_path):
+    """仓库有提交但笔记为空时，提交列表仍展示 git 历史。"""
+    s = NoteStore(tmp_path / "notes")
+    app = make_app(s, cwd=str(git_repo))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        cl = app.query_one(CommitList)
+        assert len(cl.children) == 2
+        subjects = [c.info.subject for c in cl.children if c.info]
+        assert "second: 第二次" in subjects
+        assert "first: 初始" in subjects
+
+
+async def test_git_only_commit_selects_empty_notes(git_repo, tmp_path):
+    """选中无笔记的提交：笔记列表为空，详情提示无笔记。"""
+    s = NoteStore(tmp_path / "notes")
+    app = make_app(s, cwd=str(git_repo))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        assert len(app.query_one(NoteList).children) == 0
+        pane = app.query_one(DetailPane)
+        rendered = pane._build(pane.note, str(git_repo), pane.commit_info)
+        assert "暂无笔记" in rendered.plain
+        # 提交标题仍应展示
+        assert "second: 第二次" in rendered.plain
+
+
+async def test_git_and_notes_merged(git_repo, tmp_path):
+    """有笔记的提交与纯 git 提交按 git 顺序合并展示。"""
+    from pdev import Actor, NoteKind, NoteStatus
+
+    s = NoteStore(tmp_path / "notes")
+    # 取 git 里较老的那次提交挂一条笔记
+    r = GitRepo(str(git_repo))
+    oldest = r.log()[-1].hash
+    s.add(CommitNote(commit=oldest, kind=NoteKind.PITFALL, title="坑",
+                     author=Actor("human:lwy"), status=NoteStatus.NOTED))
+
+    app = make_app(s, cwd=str(git_repo))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        cl = app.query_one(CommitList)
+        # 两次提交都在，顺序为新→旧
+        assert len(cl.children) == 2
+        assert cl.children[0].commit == r.log()[0].hash
+        assert cl.children[1].commit == oldest
+        # 老提交带着 1 条笔记，新提交 0 条
+        assert len(cl.children[1].notes) == 1
+        assert len(cl.children[0].notes) == 0
+
+
+async def test_fake_hash_without_git_still_shows(tmp_path):
+    """非 git 仓库里，伪造 hash 的笔记照常显示（不受 git 接入影响）。"""
+    s = NoteStore(tmp_path / "notes")
+    s.add(CommitNote(commit="c0ffee1", kind=NoteKind.BUG, title="缺陷",
+                     author=Actor("human:lwy")))
+    app = make_app(s, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        cl = app.query_one(CommitList)
+        assert len(cl.children) == 1
+        assert cl.children[0].commit == "c0ffee1"
+        assert len(cl.children[0].notes) == 1

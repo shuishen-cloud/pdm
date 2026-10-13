@@ -66,7 +66,10 @@ class CommitItem(ListItem):
     def render(self) -> Text:
         t = Text()
         t.append(self.commit[:8], style="bold yellow")
-        t.append(f"  {len(self.notes)} notes", style="dim")
+        if self.notes:
+            t.append(f"  {len(self.notes)} notes", style="dim")
+        else:
+            t.append("  无笔记", style="dim italic")
 
         # 提交标题（来自 git log，可能拿不到）
         if self.info and self.info.subject:
@@ -87,14 +90,15 @@ class CommitItem(ListItem):
         for n in self.notes:
             kinds[n.kind] = kinds.get(n.kind, 0) + 1
 
-        t.append("\n  ")
-        for i, (k, c) in enumerate(
-            sorted(kinds.items(), key=lambda kv: kv[0].value)
-        ):
-            if i:
-                t.append(" ")
-            t.append(f"{short.get(k, '?')}:{c}",
-                     style=_KIND_COLOR_LIST.get(k, "white"))
+        if kinds:
+            t.append("\n  ")
+            for i, (k, c) in enumerate(
+                sorted(kinds.items(), key=lambda kv: kv[0].value)
+            ):
+                if i:
+                    t.append(" ")
+                t.append(f"{short.get(k, '?')}:{c}",
+                         style=_KIND_COLOR_LIST.get(k, "white"))
         return t
 
 
@@ -236,12 +240,10 @@ class DetailPane(VerticalScroll):
 
     def _build(self, n: Optional[CommitNote], cwd: str,
                commit_info=None) -> Text:
-        if n is None:
-            return Text("（无笔记）", style="dim")
-
         t = Text()
         # 提交标题放在最上方，一眼看到这次提交干了什么
-        if commit_info is not None and commit_info.subject:
+        has_header = commit_info is not None and commit_info.subject
+        if has_header:
             t.append("提交  ", style="dim")
             t.append(commit_info.subject + "\n", style="bold yellow")
             if commit_info.author:
@@ -252,7 +254,18 @@ class DetailPane(VerticalScroll):
                 if when:
                     t.append(f"  {when}", style="dim")
                 t.append("\n")
+            if commit_info.hash:
+                t.append("提交号 ", style="dim")
+                t.append(commit_info.hash + "\n", style="dim")
             t.append("─" * 40 + "\n", style="dim")
+
+        # 没有笔记：只展示提交信息（这是一个尚未记录的提交）
+        if n is None:
+            if has_header:
+                t.append("（该提交暂无笔记）", style="dim italic")
+            else:
+                t.append("（无笔记）", style="dim")
+            return t
 
         t.append(f"[{n.kind.value}] ", style=f"bold {_KIND_COLOR.get(n.kind, 'white')}")
         t.append(n.title + "\n", style="bold")

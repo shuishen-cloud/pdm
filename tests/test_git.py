@@ -105,3 +105,43 @@ def test_bad_path_does_not_raise(tmp_path):
     # 路径不存在也不应抛异常
     r = GitRepo(str(tmp_path / "does" / "not" / "exist"))
     assert r.commit_info("HEAD") is None
+
+
+# ---------------------------------------------------------------------------
+# 完整历史
+# ---------------------------------------------------------------------------
+
+
+def test_log_lists_all_commits(repo):
+    r = GitRepo(str(repo))
+    commits = r.log()
+    assert len(commits) == 2
+    # 新 → 旧
+    assert commits[0].subject == "second: 第二次提交"
+    assert commits[1].subject == "first: 初始提交"
+
+
+def test_log_limit(repo):
+    r = GitRepo(str(repo))
+    assert len(r.log(limit=1)) == 1
+    assert r.log(limit=1)[0].subject == "second: 第二次提交"
+
+
+def test_log_populates_cache(repo):
+    r = GitRepo(str(repo))
+    commits = r.log()
+    # log 之后可直接按 hash 查，无需再次 fork
+    assert r.commit_info(commits[0].hash).subject == "second: 第二次提交"
+
+
+def test_log_not_a_repo(tmp_path):
+    r = GitRepo(str(tmp_path / "nowhere"))
+    assert r.log() == []
+
+
+def test_log_empty_repo(tmp_path):
+    """新 init 但没有提交的仓库，log 应返回空列表而非报错。"""
+    git("init", "-q", cwd=str(tmp_path))
+    r = GitRepo(str(tmp_path))
+    assert r.available
+    assert r.log() == []

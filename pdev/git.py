@@ -122,6 +122,26 @@ class GitRepo:
                 result[r] = info
         return result
 
+    def log(self, limit: int = 0, ref: str = "HEAD") -> List[CommitInfo]:
+        """列出提交历史（新→旧）。
+
+        :param limit: 最多返回多少条，``0`` 表示不限。
+        :param ref: 起始 ref，默认 ``HEAD``。
+        """
+        if not self.available:
+            return []
+
+        args = ["log", "--format=%H%x1f%s%x1f%an%x1f%aI"]
+        if limit > 0:
+            args.append(f"-n{limit}")
+        args += [ref, "--"]
+
+        out = _run(args, self.path)
+        if not out:
+            return []
+        # _absorb 会写缓存；顺序与 git log 一致（新→旧）
+        return self._absorb(out)
+
     def _absorb(self, out: str) -> List[CommitInfo]:
         """把 ``git log --format`` 的输出解析并写入缓存；返回解析出的列表。"""
         parsed: List[CommitInfo] = []

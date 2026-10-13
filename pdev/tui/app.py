@@ -94,7 +94,15 @@ class PDMApp(App):
     # --- 数据加载 ---
 
     def _reload_commits(self) -> None:
-        """重新加载提交列表（按笔记过滤条件）。"""
+        """重新加载提交列表。
+
+        提交来源：
+
+        - 有笔记的提交（笔记驱动的顺序，兼容非 git 仓库）
+        - git 历史里的全部提交（即使没有笔记也显示，笔记为空）
+
+        两者按 git 顺序合并；不在 git 里的伪造 hash 也会保留。
+        """
         notes = list(self.store.all())
         notes = self._apply_filters(notes)
 
@@ -102,17 +110,26 @@ class PDMApp(App):
         for n in notes:
             grouped.setdefault(n.commit, []).append(n)
 
-        commits = sorted(grouped.items(), reverse=True)
+        # git 历史：新→旧，包含无笔记的提交
+        git_infos = self.git.log() if self.git.available else []
+        order = [info.hash for info in git_infos]
+        order_set = set(order)
 
-        # 从 git 补齐 commit message
-        infos = {}
-        if self.git.available and commits:
-            infos = self.git.commit_infos([c for c, _ in commits])
+        # 笔记里出现但不在 git 历史中的（如演示用的伪造 hash）
+        extra = sorted(
+            (c for c in grouped if c not in order_set), reverse=True
+        )
+        # 已筛选时只保留命中的提交；未筛选时展示全部 git 历史
+        if self._note_filters:
+            commits = [c for c in order if c in grouped] + extra
+        else:
+            commits = order + extra
 
         cl = self.query_one(CommitList)
-        cl.load([(c, ns, infos.get(c)) for c, ns in commits])
+        infos = {info.hash: info for info in git_infos}
+        cl.load([(c, grouped.get(c, []), infos.get(c)) for c in commits])
         if commits:
-            self._select_commit(commits[0][0])
+            self._select_commit(commits[0])
         else:
             self._select_commit(None)
 
