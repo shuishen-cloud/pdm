@@ -1005,3 +1005,34 @@ def test_note_list_json_unchanged(capsys):
     assert isinstance(data, list)
     assert data[0]["title"] == "X"
     assert "subject" not in data[0]
+
+
+def test_note_list_finds_git_via_store_dir(capsys, tmp_path, monkeypatch):
+    """cwd 非 git 时，应回溯 store 所在目录找 git（Review 发现）。"""
+    import subprocess
+    from pathlib import Path
+
+    # 在 tmp_path 建 git 仓库，笔记存在其子目录
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "feat(z): 在仓库里")
+    h = git("rev-parse", "--short", "HEAD").stdout.strip()
+
+    store = str(tmp_path / "notes")
+    main(["--store", store, "note", "add", h, "-k", "bug", "-t", "X"])
+    capsys.readouterr()
+
+    # 切到非 git 目录再列
+    outside = tmp_path.parent / "outside"
+    outside.mkdir(exist_ok=True)
+    monkeypatch.chdir(outside)
+    main(["--store", store, "note", "list"])
+    out = capsys.readouterr().out
+    assert "feat(z): 在仓库里" in out

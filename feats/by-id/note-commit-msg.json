@@ -2,7 +2,7 @@
   "slug": "note-commit-msg",
   "title": "note 显示 commit message：按 commit 分组",
   "kind": "feat",
-  "status": "testing",
+  "status": "fixing",
   "doc": "docs/feat/note-commit-msg.md",
   "api": [
     "group_by_commit(notes) -> List[Tuple[str, List[CommitNote]]]",
@@ -18,7 +18,9 @@
   ],
   "commits": [],
   "notes": [],
-  "discovered": [],
+  "discovered": [
+    "cwd 非 git 时查不到 commit message；改为回溯 store 所在目录找 git"
+  ],
   "created_at": "2026-10-13T09:45:19.749436+00:00",
-  "updated_at": "2026-10-13T09:45:24.178195+00:00"
+  "updated_at": "2026-10-13T09:48:00.783182+00:00"
 }

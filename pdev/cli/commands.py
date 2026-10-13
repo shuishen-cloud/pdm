@@ -771,17 +771,22 @@ def _build_query(ctx: AppContext, args) -> Query:
 
 
 def _commit_infos(ctx: AppContext, notes) -> dict:
-    """从 git 查笔记涉及的 commit 信息（非 git 仓库返回空）。"""
+    """从 git 查笔记涉及的 commit 信息（非 git 仓库返回空）。
+
+    优先用 cwd 找 git；找不到则试 store 所在目录（笔记可能在
+    另一个 git 仓库里）。
+    """
     from ..git import GitRepo
 
-    try:
-        git = GitRepo(str(ctx.cwd))
-    except Exception:
-        return {}
-    if not git.available:
-        return {}
     commits = list({n.commit for n in notes})
-    return git.commit_infos(commits)
+    for base in (str(ctx.cwd), str(ctx.store.root)):
+        try:
+            git = GitRepo(base)
+        except Exception:
+            continue
+        if git.available:
+            return git.commit_infos(commits)
+    return {}
 
 
 def _run_query(ctx: AppContext, args) -> int:
