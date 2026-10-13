@@ -30,6 +30,7 @@ if [[ -n "$root" ]]; then
     if [[ -x "$root/.venv/bin/pdm" ]]; then
         exec "$root/.venv/bin/pdm" "$@"
     fi
+    # 项目根没有自带 pdm：落到 PATH 或通用回退（下面处理）
 fi
 
 # 退回 PATH
@@ -37,9 +38,11 @@ if command -v pdm >/dev/null 2>&1; then
     exec pdm "$@"
 fi
 
-# 最后尝试本 skill 所在仓库的 .venv
-repo="$here/../../../.."
-if [[ -x "$repo/.venv/bin/pdm" ]]; then
+# 最后尝试本 skill 所在仓库的 .venv（需 skill 位于 <repo>/.pi/skills/<name>/scripts）
+repo="$(cd "$here/../../../.." 2>/dev/null && pwd || true)"
+if [[ -n "$repo" && -x "$repo/.venv/bin/pdm" ]]; then
+    echo "pdm-workflow: 当前项目无自带 pdm，回退使用 $repo/.venv/bin/pdm" >&2
+    # 保持操作对象为当前项目：不回 cd，直接用其解释器
     exec "$repo/.venv/bin/pdm" "$@"
 fi
 
