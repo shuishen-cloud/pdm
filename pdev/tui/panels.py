@@ -223,18 +223,32 @@ class NoteItem(ListItem):
 
     def render(self) -> Text:
         n = self.note
-        t = Text()
-        t.append(_STATUS_MARK.get(n.status, "·") + " ")
-        t.append(f"[{n.kind.value}] ", style=_KIND_COLOR.get(n.kind, "white"))
-        t.append(n.title)
+
+        # 可用宽度：优先面板宽度，脱离 app 渲染时估值
+        width = self.size.width or 40
+
+        mark = _STATUS_MARK.get(n.status, "·")
+        kind = f"[{n.kind.value}] "
+
+        # 后缀：验证标记 + severity（先算其显示宽度）
+        suffix = Text()
         if n.verifications:
-            # 只显示聚合结果，不逐条堆叠符号
             marks = "".join(
                 _VERIFY_MARK.get(v.last_status, "?") for v in n.verifications
             )
-            t.append(f"  {marks}", style="dim")
+            suffix.append(f"  {marks}", style="dim")
         if n.severity:
-            t.append(f"  {n.severity.value}", style="dim red")
+            suffix.append(f"  {n.severity.value}", style="dim red")
+
+        prefix_len = _display_width(mark) + 1 + _display_width(kind)
+        avail = width - prefix_len - suffix.cell_len - 2
+        title = _ellipsize(n.title, max(avail, 1))
+
+        t = Text()
+        t.append(mark + " ")
+        t.append(kind, style=_KIND_COLOR.get(n.kind, "white"))
+        t.append(title)
+        t.append_text(suffix)
         return t
 
 
