@@ -55,6 +55,7 @@ class PDMApp(App):
         Binding("r", "run_verify", "跑验证"),
         Binding("R", "refresh", "刷新"),
         Binding("p", "command_palette", "命令"),
+        Binding("f", "show_feats", "Feat"),
         Binding("t", "cycle_theme", "主题", show=False),
         Binding("T", "pick_theme", "选主题", show=False),
         Binding("question_mark", "help", "帮助"),
@@ -380,6 +381,22 @@ class PDMApp(App):
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_show_feats(self) -> None:
+        """打开 Feat 面板（开发记录 + 自约束校验）。"""
+        from pathlib import Path
+
+        from ..feat import FeatStore
+        from .screens import FeatScreen
+
+        root = "feats"
+        cfg = getattr(self.config, "feat", None)
+        if cfg is not None:
+            root = getattr(cfg, "store", "feats") or "feats"
+        path = Path(root)
+        if not path.is_absolute():
+            path = Path(self.cwd) / path
+        self.push_screen(FeatScreen(FeatStore(path), self.git))
 
 
 def run(store: NoteStore, cwd: str = ".", config=None,

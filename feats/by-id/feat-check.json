@@ -1,0 +1,29 @@
+{
+  "slug": "feat-check",
+  "title": "Feat 自约束校验：check 命令检查流程合规",
+  "kind": "feat",
+  "status": "closed",
+  "doc": "docs/feat/feat-check.md",
+  "api": [
+    "check_feats(store: FeatStore, git=None) -> List[CheckIssue]",
+    "check_one(store: FeatStore, slug: str, git=None) -> List[CheckIssue]",
+    "format_issue(issue: CheckIssue, color: bool = False) -> str"
+  ],
+  "logs": [
+    "校验开始时记录检查的 feat 数量",
+    "发现 error/warning 时记录 code 与 slug",
+    "校验结束时记录 error 与 warning 总数"
+  ],
+  "fallbacks": [
+    "git 不可用 → 跳过 commit-missing 与 orphan-commit",
+    "有 error → 退出码 1；--strict 时 warning 也算失败",
+    "无 feat → 提示（无 feat），退出码 0"
+  ],
+  "commits": [],
+  "notes": [],
+  "discovered": [
+    "orphan 检测只比全串和 8 位前缀，feat 里存 7 位短 hash 时误报；改为前缀互查"
+  ],
+  "created_at": "2026-10-13T09:14:58.672890+00:00",
+  "updated_at": "2026-10-13T09:16:19.943473+00:00"
+}

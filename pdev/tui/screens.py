@@ -16,7 +16,8 @@ from textual.widgets import Input, Label, Static
 
 from ..note import NoteKind, NoteStatus, VerificationStatus
 
-__all__ = ["FilterScreen", "VerifyScreen", "HelpScreen", "ThemeScreen"]
+__all__ = ["FilterScreen", "VerifyScreen", "HelpScreen",
+           "ThemeScreen", "FeatScreen"]
 
 
 class FilterScreen(ModalScreen):
@@ -161,6 +162,7 @@ _HELP = """\
   [cyan]r[/]                 执行当前笔记的验证
   [cyan]R[/]                 刷新数据
   [cyan]p[/] / [cyan]Ctrl+P[/]       命令面板（搜索并执行动作）
+  [cyan]f[/]                 Feat 面板（开发记录 + 自约束校验）
   [cyan]t[/]                 循环切换主题（自动保存）
   [cyan]T[/]                 弹出主题选择器
   [cyan]?[/]                 本帮助
@@ -437,3 +439,192 @@ class ThemeScreen(ModalScreen):
         """q 关闭（没有输入框，直接关）。"""
         self.dismiss(None)
         return True
+
+
+class FeatScreen(ModalScreen):
+    """Feat 与自约束校验：左列 feat，右侧详情 + check 结果。
+
+    - `j` / `k` 或上下键移动
+    - `c` 对当前 feat 跑校验
+    - `Esc` / `q` 关闭
+    """
+
+    CSS = """
+    FeatScreen { align: center middle; background: $background 70%; }
+    #feat-box {
+        width: 96;
+        height: 80%;
+        padding: 0 1;
+        border: thick $accent;
+        background: $surface;
+    }
+    #feat-title { height: 1; color: $text-muted; margin-bottom: 1; }
+    #feat-body { height: 1fr; }
+    #feat-list { width: 40; height: 1fr; border: round $primary; }
+    #feat-detail {
+        width: 1fr;
+        height: 1fr;
+        border: round $primary;
+        padding: 0 1;
+        overflow-y: auto;
+    }
+    FeatItem { padding: 0 1; height: 1; }
+    #feat-hint { height: 1; color: $text-muted; margin-top: 1; }
+    """
+
+    BINDINGS = [
+        ("escape", "close", "关闭"),
+        ("c", "check", "校验"),
+        ("r", "reload", "刷新"),
+    ]
+
+    def __init__(self, store, git=None) -> None:
+        super().__init__()
+        self.feat_store = store
+        self.git = git
+        self._issues: list = []
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import ListItem, ListView
+
+        feats = list(self.feat_store.all())
+        items = [ListItem(Static(_feat_line(f)), id=f"feat-{f.slug}")
+                 for f in feats]
+        for item, f in zip(items, feats):
+            item.feat_slug = f.slug
+
+        with Vertical(id="feat-box"):
+            yield Static("Feat（开发记录）·  c 校验  ·  Esc 关闭",
+                         id="feat-title")
+            with Horizontal(id="feat-body"):
+                view = ListView(*items, id="feat-list")
+                if feats:
+                    view.index = 0
+                yield view
+                yield Static("", id="feat-detail")
+            yield Static("j/k 移动   ·   c 跑校验   ·   r 刷新   ·   Esc 关闭",
+                         id="feat-hint")
+
+    def on_mount(self) -> None:
+        self._refresh_detail()
+
+    def on_list_view_highlighted(self, event) -> None:
+        self._refresh_detail()
+
+    def key_q(self) -> bool:
+        self.action_close()
+        return True
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def action_reload(self) -> None:
+        self._issues = []
+        self.refresh(recompose=True)
+        self.call_after_refresh(self._refresh_detail)
+
+    def action_check(self) -> None:
+        """对当前 feat 跑自约束校验。"""
+        from ..check import check_one, summarize
+
+        slug = self._current_slug()
+        if slug is None:
+            return
+        try:
+            self._issues = check_one(self.feat_store, slug, self.git)
+        except KeyError:
+            self._issues = []
+        if not self._issues:
+            self._issues = []
+        self._refresh_detail()
+        stats = summarize(self._issues)
+        if stats["total"]:
+            self.notify(
+                f"{slug}：{stats['errors']} 错误，{stats['warnings']} 警告",
+                severity="error" if stats["errors"] else "warning",
+            )
+        else:
+            self.notify(f"{slug}：通过校验")
+
+    def _current_slug(self):
+        from textual.widgets import ListView
+
+        view = self.query_one("#feat-list", ListView)
+        idx = view.index
+        feats = list(self.feat_store.all())
+        if idx is None or idx >= len(feats):
+            return None
+        return feats[idx].slug
+
+    def _refresh_detail(self) -> None:
+        from textual.widgets import Static
+
+        slug = self._current_slug()
+        body = self.query_one("#feat-detail", Static)
+        if slug is None:
+            body.update(Text("（无 feat，用 pdm feat new 创建）", style="dim"))
+            return
+        feat = self.feat_store.get(slug)
+        body.update(_feat_detail(feat, self._issues))
+
+
+def _feat_line(feat) -> Text:
+    """feat 列表的一行。"""
+    t = Text()
+    mark = {
+        "draft": "○", "testing": "◐", "integrated": "◑",
+        "fixing": "◒", "closed": "●",
+    }.get(feat.status.value, "·")
+    t.append(f"{mark} ", style="bold")
+    t.append(f"{feat.slug}", style="bold yellow")
+    t.append(f"  {feat.status.value}", style="dim")
+    if feat.commits:
+        t.append(f"  ×{len(feat.commits)}", style="dim green")
+    return t
+
+
+def _feat_detail(feat, issues) -> Text:
+    """右侧详情：字段 + 校验结果。"""
+    t = Text()
+    t.append(f"{feat.slug}\n", style="bold yellow")
+    t.append(f"{feat.title}\n", style="bold")
+    t.append("─" * 36 + "\n", style="dim")
+
+    if feat.doc:
+        t.append("设计文档  ", style="dim")
+        t.append(f"{feat.doc}\n", style="white")
+    t.append("状态      ", style="dim")
+    t.append(f"{feat.kind.value} / {feat.status.value}\n", style="white")
+
+    if feat.api:
+        t.append("\n交付接口\n", style="bold cyan")
+        for a in feat.api:
+            t.append(f"  · {a}\n")
+    if feat.logs:
+        t.append("\n会打的日志\n", style="bold cyan")
+        for x in feat.logs:
+            t.append(f"  · {x}\n")
+    if feat.fallbacks:
+        t.append("\n异常兜底\n", style="bold cyan")
+        for x in feat.fallbacks:
+            t.append(f"  · {x}\n")
+    if feat.commits:
+        t.append("\n关联 commit\n", style="bold cyan")
+        for c in feat.commits:
+            t.append(f"  · {c[:8]}\n", style="green")
+    if feat.discovered:
+        t.append("\n发现的异常\n", style="bold red")
+        for x in feat.discovered:
+            t.append(f"  · {x}\n")
+
+    t.append("\n校验\n", style="bold cyan")
+    if not issues:
+        t.append("  （按 c 运行校验）\n", style="dim")
+    else:
+        from ..check import format_issue
+
+        for i in issues:
+            style = "red" if i.level == "error" else "yellow"
+            t.append(f"  {i.mark} {i.code}\n", style=style)
+            t.append(f"      {i.message}\n", style="dim")
+    return t

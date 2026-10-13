@@ -42,6 +42,7 @@ __all__ = [
     "cmd_feat_link",
     "cmd_feat_unlink",
     "cmd_feat_found",
+    "cmd_feat_check",
     "cmd_stats",
     "print_notes",
     "format_note",
@@ -558,6 +559,56 @@ def cmd_feat_found(ctx: AppContext, args) -> int:
         print(f"错误：{e}", file=sys.stderr)
         return 2
     print(f"{feat.slug} 发现 {len(feat.discovered)} 条异常")
+    return 0
+
+
+def cmd_feat_check(ctx: AppContext, args) -> int:
+    """自约束校验，返回非 0 表示有问题。
+
+    - ``pdm feat check`` 全检
+    - ``pdm feat check <slug>`` 只检一条
+    - ``--strict`` 时 warning 也算失败
+    """
+    from ..check import check_feats, check_one, format_issue, summarize
+
+    store = _feat_store(ctx)
+    from ..git import GitRepo
+
+    git = GitRepo(str(ctx.cwd))
+
+    try:
+        if args.slug:
+            issues = check_one(store, args.slug, git)
+        else:
+            issues = check_feats(store, git)
+    except KeyError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+
+    stats = summarize(issues)
+
+    if ctx.config.json_output or getattr(args, "json", False):
+        print(json.dumps({
+            "issues": [
+                {"slug": i.slug, "code": i.code, "level": i.level,
+                 "message": i.message}
+                for i in issues
+            ],
+            **stats,
+        }, ensure_ascii=False, indent=2))
+    else:
+        if not issues:
+            print("✓ 全部 feat 均通过校验")
+        else:
+            for i in issues:
+                print(format_issue(i, color=ctx.color))
+            print(f"\n共 {stats['total']} 条："
+                  f"{stats['errors']} 错误，{stats['warnings']} 警告")
+
+    if stats["errors"]:
+        return 1
+    if getattr(args, "strict", False) and stats["warnings"]:
+        return 1
     return 0
 
 

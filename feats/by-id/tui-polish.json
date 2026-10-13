@@ -2,7 +2,7 @@
   "slug": "tui-polish",
   "title": "TUI 打磨：提交栏单行、主题可保存、接入 git 历史",
   "kind": "feat",
-  "status": "draft",
+  "status": "closed",
   "doc": "docs/feat/tui-polish.md",
   "api": [
     "PDMApp(store, cwd, config, config_path)",
@@ -24,7 +24,9 @@
     "ba390f8"
   ],
   "notes": [],
-  "discovered": [],
+  "discovered": [
+    "此前一直停在 draft 却已有 3 个 commit；feat check 发现后补正"
+  ],
   "created_at": "2026-10-13T09:09:40.223839+00:00",
-  "updated_at": "2026-10-13T09:09:40.379103+00:00"
+  "updated_at": "2026-10-13T09:16:18.106365+00:00"
 }

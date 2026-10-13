@@ -840,3 +840,81 @@ def test_no_json_flag_gives_human_output(capsys):
     out = capsys.readouterr().out
     assert out.lstrip().startswith("a")     # 不是 JSON
     assert "{" not in out.splitlines()[0]
+
+
+# ---------------------------------------------------------------------------
+# pdm feat check
+# ---------------------------------------------------------------------------
+
+
+def test_feat_check_clean(capsys):
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+          "--api", "f()", "--fallback", "x"])
+    main(["feat", "set", "a", "testing"])
+    main(["feat", "set", "a", "integrated"])
+    main(["feat", "set", "a", "fixing"])
+    main(["feat", "link", "a", "abc1234"])
+    main(["feat", "set", "a", "closed"])
+    capsys.readouterr()
+    code = main(["feat", "check", "a"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "通过校验" in out
+
+
+def test_feat_check_reports_draft_with_commit(capsys):
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+          "--api", "f()", "--fallback", "x"])
+    main(["feat", "link", "a", "deadbeef"])
+    capsys.readouterr()
+    code = main(["feat", "check", "a"])
+    out = capsys.readouterr().out
+    assert "draft-has-commit" in out
+    assert code == 0        # warning 不导致失败
+
+
+def test_feat_check_closed_without_commit_is_error(capsys):
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+          "--api", "f()", "--fallback", "x"])
+    for st in ("testing", "integrated", "fixing", "closed"):
+        main(["feat", "set", "a", st])
+    capsys.readouterr()
+    code = main(["feat", "check", "a"])
+    out = capsys.readouterr().out
+    assert "closed-no-commit" in out
+    assert code == 1
+
+
+def test_feat_check_strict(capsys):
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+          "--api", "f()", "--fallback", "x"])
+    main(["feat", "link", "a", "deadbeef"])
+    capsys.readouterr()
+    assert main(["feat", "check", "a"]) == 0            # 只有 warning
+    assert main(["feat", "check", "a", "--strict"]) == 1
+
+
+def test_feat_check_json(capsys):
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+          "--api", "f()", "--fallback", "x"])
+    main(["feat", "link", "a", "deadbeef"])
+    capsys.readouterr()
+    main(["--json", "feat", "check", "a"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["warnings"] >= 1
+    assert any(i["code"] == "draft-has-commit" for i in data["issues"])
+
+
+def test_feat_check_all(capsys):
+    main(["feat", "new", "a", "-t", "A"])
+    main(["feat", "new", "b", "-t", "B"])
+    capsys.readouterr()
+    code = main(["feat", "check"])
+    out = capsys.readouterr().out
+    assert "a" in out and "b" in out
+
+
+def test_feat_check_missing_slug_fails(capsys):
+    code = main(["feat", "check", "nope"])
+    assert code == 2
+    assert "找不到" in capsys.readouterr().err

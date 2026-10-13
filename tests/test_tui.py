@@ -1075,3 +1075,110 @@ async def test_no_config_still_opens_theme_screen(store, tmp_path):
         await pilot.press("T")
         await pilot.pause()
         assert isinstance(app.screen, ThemeScreen)
+
+
+# ---------------------------------------------------------------------------
+# Feat 面板
+# ---------------------------------------------------------------------------
+
+
+def _make_feats(tmp_path):
+    from pdev.feat import Feat, FeatStore
+
+    s = FeatStore(tmp_path / "feats")
+    s.add(Feat(slug="a", title="A", doc="d.md", api=["f()"],
+               fallbacks=["x"]))
+    return s
+
+
+async def test_feat_screen_opens(store, tmp_path):
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d.md", api=["f()"],
+                fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)
+
+
+async def test_feat_binding_opens_screen(store, tmp_path):
+    from pdev.tui.screens import FeatScreen
+
+    _make_feats(tmp_path)
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)
+
+
+async def test_feat_screen_lists_feats(store, tmp_path):
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+    from textual.widgets import ListView
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d", api=["f()"], fallbacks=["x"]))
+    fs.add(Feat(slug="b", title="B", doc="d", api=["f()"], fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        lv = app.screen.query_one("#feat-list", ListView)
+        assert len(lv.children) == 2
+
+
+async def test_feat_screen_check_reports_issues(store, tmp_path):
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+
+    fs = FeatStore(tmp_path / "feats")
+    # draft + commit → draft-has-commit warning
+    f = Feat(slug="a", title="A", doc="d", api=["f()"], fallbacks=["x"])
+    fs.add(f)
+    fs.link_commit("a", "deadbeef")
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+        codes = {i.code for i in app.screen._issues}
+        assert "draft-has-commit" in codes
+
+
+async def test_feat_screen_esc_closes(store, tmp_path):
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d", api=["f()"], fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, FeatScreen)
+
+
+async def test_feat_screen_empty_store(store, tmp_path):
+    from pdev.feat import FeatStore
+    from pdev.tui.screens import FeatScreen
+
+    fs = FeatStore(tmp_path / "feats")
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)

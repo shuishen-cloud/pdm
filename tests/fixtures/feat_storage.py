@@ -38,3 +38,29 @@ BAD_SLUGS = ["Bad", "has_underscore", "-lead", "trail-", "", "有空 格"]
 # 已废弃的字段（旧版塞进 Feat 的"文档正文"，重构后应被忽略）
 LEGACY_FIELDS = ["design", "data_model", "fixtures", "touches",
                  "follows", "debug"]
+
+
+# --- feat-check 的 Mock 数据 ---
+
+# 合规的 feat：closed、有 commit、字段齐全
+GOOD_FEAT = {
+    "slug": "good-feat", "title": "合规", "status": "closed",
+    "doc": "docs/feat/good.md", "api": ["f() -> None"],
+    "logs": ["记录调用"], "fallbacks": ["报错"], "commits": ["aaa111"],
+}
+
+# draft 却已有 commit（draft-has-commit）
+DRAFT_WITH_COMMIT = {
+    "slug": "draft-commit", "title": "矛盾", "status": "draft",
+    "doc": "d.md", "api": ["f()"], "logs": ["l"], "fallbacks": ["f"],
+    "commits": ["bbb222"],
+}
+
+# closed 却没有 commit（closed-no-commit）
+CLOSED_NO_COMMIT = {
+    "slug": "closed-empty", "title": "空", "status": "closed",
+    "doc": "d.md", "api": ["f()"], "logs": ["l"], "fallbacks": ["f"],
+}
+
+# 缺字段（empty-doc / no-api / no-fallback）
+BARE_FEAT = {"slug": "bare", "title": "裸", "status": "draft"}

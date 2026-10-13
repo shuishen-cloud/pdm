@@ -42,6 +42,13 @@ from .doc import (
     match_glob,
 )
 from .fingerprint import Fingerprint, Generated
+from .check import (
+    CheckIssue,
+    check_feats,
+    check_one,
+    format_issue,
+    summarize,
+)
 from .feat import (
     Feat,
     FeatError,
@@ -98,6 +105,12 @@ __all__ = [
     # fingerprint
     "Fingerprint",
     "Generated",
+    # check
+    "CheckIssue",
+    "check_feats",
+    "check_one",
+    "format_issue",
+    "summarize",
     # feat
     "Feat",
     "FeatKind",

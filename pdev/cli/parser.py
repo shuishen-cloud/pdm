@@ -291,6 +291,14 @@ def build_parser() -> argparse.ArgumentParser:
     funlink.add_argument("commit")
     funlink.set_defaults(func=commands.cmd_feat_unlink)
 
+    fcheck = feat_sub.add_parser("check", help="自约束校验（检查流程合规）")
+    fcheck.add_argument("slug", nargs="?", help="只检查某条；省略则全检")
+    fcheck.add_argument("--strict", action="store_true",
+                       help="warning 也算失败（退出码 1）")
+    fcheck.add_argument("--json", action="store_true",
+                       default=argparse.SUPPRESS)
+    fcheck.set_defaults(func=commands.cmd_feat_check)
+
     fbug = feat_sub.add_parser("found", help="记录 fix 阶段发现的异常")
     fbug.add_argument("slug")
     fbug.add_argument("text")
