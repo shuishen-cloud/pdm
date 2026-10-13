@@ -1,0 +1,25 @@
+{
+  "slug": "feat-ui",
+  "title": "Feat 界面重构：显示阶段闭环 + 关联笔记",
+  "kind": "feat",
+  "status": "draft",
+  "doc": "docs/feat/feat-ui.md",
+  "api": [
+    "stage_progress(feat: Feat, git) -> List[Tuple[str, bool]]",
+    "notes_for_feat(feat: Feat, note_store) -> List[CommitNote]",
+    "FeatScreen(store, git, note_store)"
+  ],
+  "logs": [
+    "TUI 不打日志（沿用约定）"
+  ],
+  "fallbacks": [
+    "git 不可用 → 阶段显示 ?",
+    "无 commit → 五阶段均未完成",
+    "无关联笔记 → 显示（该 feat 暂无笔记）"
+  ],
+  "commits": [],
+  "notes": [],
+  "discovered": [],
+  "created_at": "2026-10-13T09:32:31.154420+00:00",
+  "updated_at": "2026-10-13T09:32:31.154420+00:00"
+}
