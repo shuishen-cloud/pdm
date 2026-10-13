@@ -1202,6 +1202,53 @@ async def test_feat_screen_q_closes_not_quits_app(store, tmp_path):
         assert app.is_running          # 应用还活着
 
 
+async def test_feat_screen_arrows_switch_focus_and_scroll(store, tmp_path):
+    """←/→ 切焦点，↑/↓ 移动选中，PgUp/PgDn 滚动右侧详情。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+    from textual.containers import VerticalScroll
+    from textual.widgets import ListView
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d", api=["f()"],
+                fallbacks=["x"]))
+    fs.add(Feat(slug="b", title="B", doc="d", api=["f()"],
+                fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        screen = app.screen
+        lv = screen.query_one("#feat-list", ListView)
+        detail = screen.query_one("#feat-detail", VerticalScroll)
+
+        # 初始焦点在列表，↓ 移动选中
+        assert app.focused is lv
+        assert lv.index == 0
+        await pilot.press("down")
+        await pilot.pause()
+        assert lv.index == 1
+        await pilot.press("k")
+        await pilot.pause()
+        assert lv.index == 0
+
+        # → 切到详情
+        await pilot.press("right")
+        await pilot.pause()
+        assert app.focused is detail
+
+        # ← 切回列表
+        await pilot.press("left")
+        await pilot.pause()
+        assert app.focused is lv
+
+        # 焦点在列表时 PgDn 直接作用详情（把焦点带去详情）
+        await pilot.press("pagedown")
+        await pilot.pause()
+        assert app.focused is detail
+
+
 # ---------------------------------------------------------------------------
 # 弹窗按键规范（见 docs/feat/modal-keys.md）
 #
