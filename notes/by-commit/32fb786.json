@@ -1,0 +1,26 @@
+{
+  "commit": "32fb786",
+  "notes": [
+    {
+      "commit": "32fb786",
+      "kind": "difficulty",
+      "title": "缺 fix 阶段是真实欠账，不该为消警告造提交",
+      "detail": "feat-scroll 的 feat check 一直报 missing-stage: fix。根因是实现中的即时修正都并进了 feat( 提交，没有独立 fix 阶段——与 stage-prefix 文档记录的历史欠账同因。为通过检查而造一个空的 fix( 提交是自欺，正确做法是如实保留警告。",
+      "author": "ai:claude",
+      "files": [
+        "docs/feat/feat-scroll.md"
+      ],
+      "severity": null,
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "feat",
+        "check"
+      ],
+      "created_at": "2026-10-13T10:10:26.086273+00:00"
+    }
+  ]
+}

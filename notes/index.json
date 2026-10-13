@@ -1,28 +1,35 @@
 {
-  "count": 14,
+  "count": 24,
   "by_kind": {
     "bug": 5,
-    "difficulty": 4,
-    "pitfall": 3,
-    "problem": 1,
-    "controlled-exception": 1
+    "controlled-exception": 2,
+    "difficulty": 9,
+    "pitfall": 6,
+    "problem": 2
   },
   "by_status": {
     "resolved": 5,
-    "noted": 7,
+    "noted": 17,
     "open": 2
   },
   "by_issue": {},
   "commits": [
     "02a82bb",
+    "03c4582",
     "268bf8d",
+    "32fb786",
     "49be03e",
+    "49c264f",
     "525c1ee",
     "5572343",
     "6a68599",
     "6dd1a16",
     "760c012",
+    "7c5a176",
     "8d84a9b",
+    "bc4c416",
+    "dd22ca6",
+    "e3657f9",
     "ec51f12"
   ]
 }

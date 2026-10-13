@@ -1,0 +1,47 @@
+{
+  "commit": "e3657f9",
+  "notes": [
+    {
+      "commit": "e3657f9",
+      "kind": "pitfall",
+      "title": "测试写了「滚动」却没断言滚动量",
+      "detail": "原测试只断言 PgDn 后 app.focused is detail，没验证 scroll_offset.y 变化——功能即使坏掉也会通过。补测必须断言 max_scroll_y>0（内容确实溢出）且 scroll_offset.y 前后不同，否则是假通过。",
+      "author": "ai:claude",
+      "files": [
+        "tests/test_tui.py"
+      ],
+      "severity": "high",
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "test",
+        "tui"
+      ],
+      "created_at": "2026-10-13T10:09:38.063710+00:00"
+    },
+    {
+      "commit": "e3657f9",
+      "kind": "difficulty",
+      "title": "TUI 滚动测试需要「内容溢出 + 小窗口」两个前提",
+      "detail": "详情内容不溢出时 max_scroll_y=0，任何滚动断言都无意义。要用长 api/logs/fallbacks 造内容，并把 run_test 窗口设小（如 100x24）逼出溢出。实测 max_scroll_y=67，PgDn 0→13→26、↓ 26→27、PgUp 27→14。",
+      "author": "ai:claude",
+      "files": [
+        "tests/test_tui.py"
+      ],
+      "severity": null,
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "test",
+        "tui"
+      ],
+      "created_at": "2026-10-13T10:09:38.123790+00:00"
+    }
+  ]
+}
