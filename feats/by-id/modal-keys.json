@@ -1,0 +1,24 @@
+{
+  "slug": "modal-keys",
+  "title": "弹窗按键规范：q 只关弹窗不退应用",
+  "kind": "feat",
+  "status": "closed",
+  "doc": "docs/feat/modal-keys.md",
+  "api": [
+    "action_close(self) -> None  # 所有 ModalScreen 统一实现"
+  ],
+  "logs": [
+    "弹窗关闭时不必打日志；异常退出由 App 层处理"
+  ],
+  "fallbacks": [
+    "弹窗未声明 q Binding 却用 key_q → 会冒泡退 App，视为违规",
+    "dismiss 后 App 必须仍是 is_running == True"
+  ],
+  "commits": [],
+  "notes": [],
+  "discovered": [
+    "ThemeScreen 同时有 ('q','cancel') Binding 和 key_q，按 q 仍冒泡退 App；按 doc 规则 2 删除 key_q"
+  ],
+  "created_at": "2026-10-13T09:22:30.137148+00:00",
+  "updated_at": "2026-10-13T09:24:42.030488+00:00"
+}

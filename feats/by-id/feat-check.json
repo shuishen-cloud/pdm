@@ -24,8 +24,9 @@
   ],
   "notes": [],
   "discovered": [
-    "orphan 检测只比全串和 8 位前缀，feat 里存 7 位短 hash 时误报；改为前缀互查"
+    "orphan 检测只比全串和 8 位前缀，feat 里存 7 位短 hash 时误报；改为前缀互查",
+    "FeatScreen 按 q 冒泡到 App.quit，关弹窗同时退出应用；根因：key_q 返回 True 不拦截全局 Binding"
   ],
   "created_at": "2026-10-13T09:14:58.672890+00:00",
-  "updated_at": "2026-10-13T09:17:41.687878+00:00"
+  "updated_at": "2026-10-13T09:22:30.191016+00:00"
 }
