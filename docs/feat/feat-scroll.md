@@ -54,8 +54,15 @@ def action_detail_page_up(self) -> None
 
 ## 实现与校验结果（收尾）
 
-实现于本 feat 的 `feat(` 提交。
+实现于 commit dd22ca6，测试于 bc4c416。
 
 新增测试 `test_feat_screen_arrows_switch_focus_and_scroll`：
 验证初焦点在列表、`↓`/`k` 改变 `ListView.index`、`→`/`←` 切焦点、
 `PgDn` 聚焦详情。全部 TUI 测试通过。
+
+### 本次发现的异常
+
+1. `BINDINGS` 用元组写 `show=False` 会 `SyntaxError`
+   （元组形式不支持关键字参数），需改用 `textual.binding.Binding`。
+2. 原详情是 `Static`，即便加了 `overflow-y: auto` 也**无法聚焦**，
+   故不能滚动——必须换成 `VerticalScroll` 才能承接焦点与翻页。
