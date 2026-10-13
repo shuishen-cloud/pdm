@@ -53,3 +53,27 @@ def print_notes(notes, *, as_json, color, out=None, infos=None)
 - git 不可用 → 平铺（原行为）
 - 某 commit 查不到 subject → 该组只显示 hash
 - `--json` 不变（仍是笔记数组，不含 message）
+
+## 实现与校验结果（收尾）
+
+实现于 5572343，修复于 6dd1a16。
+
+### 效果
+
+```
+$ pdm note list
+★ 8d84a9b  fix(tui): 修正 notes_for_feat 短串误匹配
+    ○ [BUG    ] 短 commit 前缀匹配笔记会串号
+        pdev/tui/screens.py  #feats
+★ 760c012  feat(tui): Feat 界面显示阶段闭环与关联笔记
+    ! [PITFALL] commit 未 link 到 feat 时阶段显示全空
+    · [PROBLEM] Feat 详情要聚合三处数据源
+```
+
+`pdm show <commit>` 顶部同样显示提交标题。TUI 详情面板沿用原有的
+commit 信息展示，FeatScreen 关联笔记增加了短 hash。
+
+### 本次发现的异常
+
+1. `query_parent` 的 `--json` 未用 SUPPRESS，导致 `pdm --json note list` 失效
+2. `cwd` 非 git 时查不到 message → 改为回溯 `store.root` 找 git
