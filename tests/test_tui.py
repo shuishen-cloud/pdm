@@ -1013,7 +1013,7 @@ async def test_bad_theme_falls_back(store, tmp_path):
     app = PDMApp(store, cwd=str(tmp_path), config=cfg)
     async with app.run_test(size=(110, 30)) as pilot:
         await pilot.pause()
-        assert app.theme == "textual-dark"
+        assert app.theme == "catppuccin-macchiato"
 
 
 async def test_cycle_theme_changes_and_persists(store, tmp_path, monkeypatch):

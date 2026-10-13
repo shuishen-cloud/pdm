@@ -630,7 +630,7 @@ def test_theme_lists_json(capsys):
     assert code == 0
     data = json.loads(capsys.readouterr().out)
     assert "textual-dark" in data["themes"]
-    assert data["current"] == "textual-dark"
+    assert data["current"] == "catppuccin-macchiato"
 
 
 def test_theme_sets_and_persists(capsys, tmp_path, monkeypatch):

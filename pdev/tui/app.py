@@ -105,7 +105,7 @@ class PDMApp(App):
         name = getattr(getattr(self.config, "ui", None), "theme", None)
         if name and name in self.available_themes:
             return name
-        return "textual-dark"
+        return "catppuccin-macchiato"
 
     def _apply_theme(self, name: str) -> None:
         """切换主题（无效名静默忽略）。"""

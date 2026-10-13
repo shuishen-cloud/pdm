@@ -227,7 +227,7 @@ def test_token_masked_in_to_dict(tmp_path):
 
 def test_ui_defaults():
     cfg = Config()
-    assert cfg.ui.theme == "textual-dark"
+    assert cfg.ui.theme == "catppuccin-macchiato"
     assert cfg.ui.commit_width == 0
     assert cfg.ui.show_footer is True
 
@@ -258,7 +258,7 @@ def test_ui_show_footer_coerced_to_bool(tmp_path):
 
 def test_to_dict_includes_ui():
     d = Config().to_dict()
-    assert d["ui"]["theme"] == "textual-dark"
+    assert d["ui"]["theme"] == "catppuccin-macchiato"
 
 
 def test_save_config_creates_file(tmp_path):

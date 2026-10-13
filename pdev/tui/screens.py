@@ -403,7 +403,7 @@ class ThemeScreen(ModalScreen):
             self.name = name
             super().__init__()
 
-    def __init__(self, current: str = "textual-dark") -> None:
+    def __init__(self, current: str = "catppuccin-macchiato") -> None:
         super().__init__()
         self.current = current
 

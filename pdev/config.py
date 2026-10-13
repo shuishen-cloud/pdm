@@ -147,11 +147,12 @@ class FeatConfig:
 class UIConfig:
     """TUI 外观与交互设置。
 
-    ``theme`` 可选 Textual 内置主题名（如 ``textual-dark``、``nord``、
+    ``theme`` 可选 Textual 内置主题名（如 ``catppuccin-macchiato``、
+    ``nord``、
     ``gruvbox``、``dracula``、``monokai``、``catppuccin-mocha`` ……）。
     """
 
-    theme: str = "textual-dark"
+    theme: str = "catppuccin-macchiato"
     commit_width: int = 0          # 提交条目最大宽度，0 = 不限制
     show_footer: bool = True
 
