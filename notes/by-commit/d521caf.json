@@ -17,15 +17,15 @@
         {
           "kind": "test",
           "target": "tests/test_tui.py::test_feat_screen_detail_scrolls_with_paging_and_arrows",
-          "command": "",
+          "command": ".venv/bin/python -m pytest tests/test_tui.py::test_feat_screen_detail_scrolls_with_paging_and_arrows -q",
           "method": "滚动验证可执行",
           "script": "",
-          "expected": "",
+          "expected": "passed",
           "note": "",
           "cwd": "",
-          "last_run_at": null,
-          "last_status": "unknown",
-          "last_output": ""
+          "last_run_at": "2026-10-13T18:24:14.300406+08:00",
+          "last_status": "passed",
+          "last_output": ".                                                                        [100%]"
         }
       ],
       "issue_id": null,
