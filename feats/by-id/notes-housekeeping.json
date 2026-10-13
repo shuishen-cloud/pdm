@@ -1,0 +1,24 @@
+{
+  "slug": "notes-housekeeping",
+  "title": "笔记回填与仓库整理",
+  "kind": "doc",
+  "status": "closed",
+  "doc": "docs/feat/note-commit-msg.md",
+  "api": [
+    "（维护性提交，无新增接口）"
+  ],
+  "logs": [
+    "（无）"
+  ],
+  "fallbacks": [
+    "（无）"
+  ],
+  "commits": [
+    "e3f8d8a",
+    "161452e"
+  ],
+  "notes": [],
+  "discovered": [],
+  "created_at": "2026-10-13T09:54:49.284014+00:00",
+  "updated_at": "2026-10-13T09:54:49.636045+00:00"
+}

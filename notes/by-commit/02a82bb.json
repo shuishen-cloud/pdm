@@ -1,0 +1,48 @@
+{
+  "commit": "02a82bb",
+  "notes": [
+    {
+      "commit": "02a82bb",
+      "kind": "bug",
+      "title": "by_commit 精确匹配导致 UI 永远显示无笔记",
+      "detail": "笔记存 7 位短 hash、git 给 8/40 位；by_commit 与 _reload_commits 都只 == 比较，前缀不匹配。改为 >=6 位前缀互匹配",
+      "author": "human:lwy",
+      "files": [
+        "pdev/store.py",
+        "pdev/tui/app.py"
+      ],
+      "severity": null,
+      "status": "resolved",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "tui",
+        "bug"
+      ],
+      "created_at": "2026-10-13T09:54:45.904763+00:00"
+    },
+    {
+      "commit": "02a82bb",
+      "kind": "bug",
+      "title": "FeatScreen 半透明透出主界面 footer，误以为 q 退出应用",
+      "detail": "$background 70% + 尺寸小于屏幕，主界面 'q 退出' 可见；改为不透明并 96%x90% 全遮",
+      "author": "human:lwy",
+      "files": [
+        "pdev/tui/screens.py"
+      ],
+      "severity": null,
+      "status": "resolved",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "tui",
+        "ui"
+      ],
+      "created_at": "2026-10-13T09:54:45.971094+00:00"
+    }
+  ]
+}
