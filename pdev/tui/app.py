@@ -413,8 +413,9 @@ class PDMApp(App):
         path = Path(root)
         if not path.is_absolute():
             path = Path(self.cwd) / path
+        view = getattr(cfg, "view", None) if cfg is not None else None
         self.push_screen(FeatScreen(FeatStore(path), self.git, self.store,
-                                    doc_dir=doc_dir))
+                                    doc_dir=doc_dir, view=view))
 
 
 def run(store: NoteStore, cwd: str = ".", config=None,

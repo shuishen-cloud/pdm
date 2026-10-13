@@ -478,6 +478,10 @@ class FeatScreen(ModalScreen):
         ("q", "close", "关闭"),
         ("c", "check", "校验"),
         ("r", "reload", "刷新"),
+        ("d", "toggle_doc", "文档正文"),
+        ("n", "toggle_notes", "笔记详情"),
+        ("v", "toggle_verify", "验证"),
+        ("s", "toggle_specs", "规格字段"),
         Binding("left", "focus_list", "左移", show=False),
         Binding("h", "focus_list", "左移", show=False),
         Binding("right", "focus_detail", "右移", show=False),
@@ -492,13 +496,26 @@ class FeatScreen(ModalScreen):
     ]
 
     def __init__(self, store, git=None, note_store=None,
-                 doc_dir: str = ".pdm/docs") -> None:
+                 doc_dir: str = ".pdm/docs", view=None) -> None:
         super().__init__()
         self.feat_store = store
         self.git = git
         self.note_store = note_store
         self.doc_dir = doc_dir
         self._issues: list = []
+        # 四开关状态：配置提供默认，屏幕内可临时切换
+        self._view = {
+            "doc_body": False,
+            "notes_detail": False,
+            "verify": True,
+            "specs": True,
+            "notes_grouped": True,
+            "doc_max_lines": 0,
+        }
+        if view is not None:
+            for k in self._view:
+                if hasattr(view, k):
+                    self._view[k] = getattr(view, k)
 
     def compose(self) -> ComposeResult:
         from textual.widgets import ListItem, ListView
@@ -536,6 +553,28 @@ class FeatScreen(ModalScreen):
 
     def action_close(self) -> None:
         self.dismiss(None)
+
+    # --- 四开关（d/n/v/s）---
+
+    def _toggle(self, key: str) -> None:
+        self._view[key] = not self._view[key]
+        self._refresh_detail()
+
+    def action_toggle_doc(self) -> None:
+        """d：切换内联设计文档正文。"""
+        self._toggle("doc_body")
+
+    def action_toggle_notes(self) -> None:
+        """n：切换笔记详情展开。"""
+        self._toggle("notes_detail")
+
+    def action_toggle_verify(self) -> None:
+        """v：切换验证方法显示。"""
+        self._toggle("verify")
+
+    def action_toggle_specs(self) -> None:
+        """s：切换规格字段（api/logs/fallbacks）展开。"""
+        self._toggle("specs")
 
     # --- 焦点与滚动 ---
 
@@ -640,11 +679,49 @@ class FeatScreen(ModalScreen):
         body = self.query_one("#feat-detail-body", Static)
         if slug is None:
             body.update(Text("（无 feat，用 pdm feat new 创建）", style="dim"))
+            self._sync_doc_widget(None)
             return
         feat = self.feat_store.get(slug)
         body.update(_feat_detail(feat, self._issues,
                                  git=self.git, note_store=self.note_store,
-                                 doc_dir=self.doc_dir))
+                                 doc_dir=self.doc_dir, view=self._view))
+        self._sync_doc_widget(feat)
+        self._update_hint()
+
+    def _sync_doc_widget(self, feat) -> None:
+        """按 doc_body 开关挂载/卸载 Markdown 正文。"""
+        from textual.widgets import Markdown
+
+        detail = self._detail()
+        existing = detail.query("#feat-doc")
+        if not self._view.get("doc_body"):
+            if existing:
+                existing.remove()
+            return
+        if feat is None or not feat.doc:
+            if existing:
+                existing.remove()
+            return
+        text = read_doc_body(self.doc_dir, feat.doc,
+                             max_lines=self._view.get("doc_max_lines", 0))
+        if existing:
+            existing.first().update(text)
+        else:
+            detail.mount(Markdown(text, id="feat-doc"))
+
+    def _update_hint(self) -> None:
+        """刷新底部状态栏：显示四开关状态。"""
+        from textual.widgets import Static
+
+        v = self._view
+        flags = "  ".join([
+            f"[d:{'on' if v['doc_body'] else 'off'}]",
+            f"[n:{'on' if v['notes_detail'] else 'off'}]",
+            f"[v:{'on' if v['verify'] else 'off'}]",
+            f"[s:{'on' if v['specs'] else 'off'}]",
+        ])
+        self.query_one("#feat-hint", Static).update(
+            f"{flags}   d/n/v/s 切换   c 校验   r 刷新   Esc 关闭")
 
 
 def _feat_line(feat) -> Text:
@@ -662,9 +739,60 @@ def _feat_line(feat) -> Text:
     return t
 
 
+def read_doc_body(doc_dir: str, feat_doc: str, max_lines: int = 0) -> str:
+    """读设计文档正文（相对 doc.dir 解析）。
+
+    - feat_doc 为空 → ""
+    - 文件不存在 / 读取失败 → "（设计文档不可读）"
+    - max_lines>0 → 截断并提示
+    """
+    if not feat_doc:
+        return ""
+    from pathlib import Path
+
+    from ..config import resolve_doc_path
+
+    path = Path(resolve_doc_path(doc_dir, feat_doc))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return "（设计文档不可读）"
+    lines = text.splitlines()
+    if max_lines and len(lines) > max_lines:
+        kept = lines[:max_lines]
+        kept.append(f"…（已截断，共 {len(lines)} 行）")
+        return "\n".join(kept)
+    return text
+
+
+def group_notes_by_kind(notes) -> list:
+    """把笔记按 kind 分组，保持 kind 首次出现顺序。
+
+    返回 ``[(kind_value, [note, ...]), ...]``。
+    """
+    order = []
+    buckets = {}
+    for n in notes:
+        k = n.kind.value
+        if k not in buckets:
+            buckets[k] = []
+            order.append(k)
+        buckets[k].append(n)
+    return [(k, buckets[k]) for k in order]
+
+
 def _feat_detail(feat, issues, git=None, note_store=None,
-                 doc_dir: str = ".pdm/docs") -> Text:
-    """右侧详情：阶段闭环 + 字段 + 笔记 + 校验。"""
+                 doc_dir: str = ".pdm/docs", view=None) -> Text:
+    """右侧详情：阶段闭环 + 字段 + 笔记 + 校验。
+
+    ``view`` 为四开关字典，控制哪些区块展开（见 feat-inline-design）。
+    """
+    view = view or {}
+    show_specs = view.get("specs", True)
+    show_notes_detail = view.get("notes_detail", False)
+    show_verify = view.get("verify", True)
+    group = view.get("notes_grouped", True)
+
     t = Text()
     t.append(f"{feat.slug}\n", style="bold yellow")
     t.append(f"{feat.title}\n", style="bold")
@@ -688,18 +816,19 @@ def _feat_detail(feat, issues, git=None, note_store=None,
     t.append("状态      ", style="dim")
     t.append(f"{feat.kind.value} / {feat.status.value}\n", style="white")
 
-    if feat.api:
-        t.append("\n交付接口\n", style="bold cyan")
-        for a in feat.api:
-            t.append(f"  · {a}\n")
-    if feat.logs:
-        t.append("\n会打的日志\n", style="bold cyan")
-        for x in feat.logs:
-            t.append(f"  · {x}\n")
-    if feat.fallbacks:
-        t.append("\n异常兜底\n", style="bold cyan")
-        for x in feat.fallbacks:
-            t.append(f"  · {x}\n")
+    if show_specs:
+        if feat.api:
+            t.append("\n交付接口\n", style="bold cyan")
+            for a in feat.api:
+                t.append(f"  · {a}\n")
+        if feat.logs:
+            t.append("\n会打的日志\n", style="bold cyan")
+            for x in feat.logs:
+                t.append(f"  · {x}\n")
+        if feat.fallbacks:
+            t.append("\n异常兜底\n", style="bold cyan")
+            for x in feat.fallbacks:
+                t.append(f"  · {x}\n")
     if feat.commits:
         t.append("\n关联 commit\n", style="bold cyan")
         for c in feat.commits:
@@ -709,16 +838,33 @@ def _feat_detail(feat, issues, git=None, note_store=None,
         for x in feat.discovered:
             t.append(f"  · {x}\n")
 
-    # 关联笔记
+    # 关联笔记（复用 CommitNote）
     notes = notes_for_feat(feat, note_store)
     t.append("\n关联笔记\n", style="bold cyan")
     if not notes:
         t.append("  （该 feat 暂无笔记）\n", style="dim")
     else:
-        for n in notes:
-            t.append(f"  {n.commit[:8]} ", style="dim")
-            t.append(f"{n.kind.value} ", style="cyan")
-            t.append(f"{n.title}\n")
+        for group_kind, items in (group_notes_by_kind(notes) if group
+                                  else [("", notes)]):
+            if group_kind:
+                t.append(f"  [{group_kind}] ×{len(items)}\n",
+                         style="bold cyan")
+            for n in items:
+                t.append(f"  {n.commit[:8]} ", style="dim")
+                if not group_kind:
+                    t.append(f"{n.kind.value} ", style="cyan")
+                t.append(f"{n.title}\n")
+                if show_notes_detail:
+                    if n.detail:
+                        t.append(f"      {n.detail}\n", style="dim")
+                    if n.files:
+                        t.append(f"      files: {', '.join(n.files)}\n",
+                                 style="dim")
+                if show_verify:
+                    for v in n.verifications:
+                        cmd = v.effective_command or v.target
+                        t.append(f"      ✓ {cmd}", style="green")
+                        t.append(f"  ({v.last_status.value})\n", style="dim")
 
     t.append("\n校验\n", style="bold cyan")
     if not issues:

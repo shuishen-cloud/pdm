@@ -32,6 +32,7 @@ __all__ = [
     "IssueConfig",
     "DocConfig",
     "FeatConfig",
+    "FeatViewConfig",
     "UIConfig",
     "GitHubConfig",
     "load_config",
@@ -119,10 +120,26 @@ class DocConfig:
 
 
 @dataclass
+class FeatViewConfig:
+    """Feat 面板详情展示开关（见 .pdm/docs/feat/feat-inline-design.md）。
+
+    四个维度独立可控；TUI 里可用 d/n/v/s 临时切换，本配置是持久默认值。
+    """
+
+    doc_body: bool = False        # 内联渲染设计文档正文（Markdown）
+    notes_detail: bool = False    # 笔记展开 detail + files
+    verify: bool = True           # 显示验证方法与上次状态
+    specs: bool = True            # 展开 api / logs / fallbacks
+    notes_grouped: bool = True    # 笔记按 kind 分组
+    doc_max_lines: int = 0        # 正文截断行数，0 = 不限
+
+
+@dataclass
 class FeatConfig:
     """Feat（开发记录）相关。"""
 
     store: str = ".pdm/feats"
+    view: FeatViewConfig = field(default_factory=FeatViewConfig)
 
 
 @dataclass
@@ -212,12 +229,21 @@ def _coerce(value: Any, target: Any) -> Any:
 
 
 def _apply_segment(cfg: Any, data: Mapping[str, Any]) -> None:
-    """把一段 dict 写入 dataclass 实例，忽略未知键。"""
+    """把一段 dict 写入 dataclass 实例，忽略未知键。
+
+    嵌套的 dataclass 字段（如 ``FeatConfig.view``）递归合并，
+    而非直接塞入原始 dict。
+    """
     if not isinstance(data, Mapping):
         return
     valid = {f.name: f.type for f in fields(cfg)}
     for key, raw in data.items():
         if key not in valid:
+            continue
+        # 嵌套 dataclass：值可能是 dict，递归应用
+        current = getattr(cfg, key, None)
+        if is_dataclass(current) and isinstance(raw, Mapping):
+            _apply_segment(current, raw)
             continue
         # dataclass field.type 在 from __future__ import annotations 下是字符串
         declared = valid[key]
@@ -242,8 +268,9 @@ def _coerce_value(value: Any, declared: Any, key: str) -> Any:
 _BOOL_KEYS = {
     "color", "json_output", "auto_commit", "require_detail", "auto_push",
     "show_footer",
+    "doc_body", "notes_detail", "verify", "specs", "notes_grouped",
 }
-_INT_KEYS = {"default_limit", "commit_width"}
+_INT_KEYS = {"default_limit", "commit_width", "doc_max_lines"}
 
 
 def _merge_into(cfg: Config, data: Mapping[str, Any]) -> None:
@@ -312,6 +339,12 @@ def _env_overrides(env: Mapping[str, str]) -> Dict[str, Any]:
         "PDM_ISSUE_STORE": ["issue", "store"],
         "PDM_DOC_DIR": ["doc", "dir"],
         "PDM_FEAT_STORE": ["feat", "store"],
+        "PDM_FEAT_VIEW_DOC_BODY": ["feat", "view", "doc_body"],
+        "PDM_FEAT_VIEW_NOTES_DETAIL": ["feat", "view", "notes_detail"],
+        "PDM_FEAT_VIEW_VERIFY": ["feat", "view", "verify"],
+        "PDM_FEAT_VIEW_SPECS": ["feat", "view", "specs"],
+        "PDM_FEAT_VIEW_NOTES_GROUPED": ["feat", "view", "notes_grouped"],
+        "PDM_FEAT_VIEW_DOC_MAX_LINES": ["feat", "view", "doc_max_lines"],
         "PDM_UI_THEME": ["ui", "theme"],
         "PDM_UI_COMMIT_WIDTH": ["ui", "commit_width"],
         "PDM_GITHUB_REPO": ["github", "repo"],
