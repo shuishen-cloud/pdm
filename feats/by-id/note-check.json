@@ -2,7 +2,7 @@
   "slug": "note-check",
   "title": "笔记与验证自约束：commit-no-note / note-no-verify",
   "kind": "feat",
-  "status": "fixing",
+  "status": "closed",
   "doc": "docs/feat/note-check.md",
   "api": [
     "check_one(store, slug, git=None, note_store=None) -> List[CheckIssue]",
@@ -22,7 +22,10 @@
     "f2341a96",
     "3c4d4e3",
     "76442975",
-    "1ec71a9"
+    "1ec71a9",
+    "d64662c",
+    "f0ebba2",
+    "9b8d4d0"
   ],
   "notes": [],
   "discovered": [
@@ -30,5 +33,5 @@
     "新规则须定为 warning：历史仓库普遍缺失笔记，error 会让 check 一律失败"
   ],
   "created_at": "2026-10-13T10:30:24.234627+00:00",
-  "updated_at": "2026-10-13T10:31:56.471264+00:00"
+  "updated_at": "2026-10-13T10:32:29.690573+00:00"
 }
