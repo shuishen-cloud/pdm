@@ -13,7 +13,21 @@
       "severity": null,
       "status": "noted",
       "catches": [],
-      "verifications": [],
+      "verifications": [
+        {
+          "kind": "test",
+          "target": "tests/test_check.py",
+          "command": ".venv/bin/python -m pytest tests/test_check.py -q -k note",
+          "method": "check_one 新增 note_store 参数",
+          "script": "",
+          "expected": "passed",
+          "note": "",
+          "cwd": "",
+          "last_run_at": "2026-10-13T18:32:19.316189+08:00",
+          "last_status": "passed",
+          "last_output": "........                                                                 [100%]"
+        }
+      ],
       "issue_id": null,
       "resolves": [],
       "tags": [
