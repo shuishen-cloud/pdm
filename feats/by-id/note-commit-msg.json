@@ -1,0 +1,24 @@
+{
+  "slug": "note-commit-msg",
+  "title": "note 显示 commit message：按 commit 分组",
+  "kind": "feat",
+  "status": "draft",
+  "doc": "docs/feat/note-commit-msg.md",
+  "api": [
+    "group_by_commit(notes) -> List[Tuple[str, List[CommitNote]]]",
+    "print_notes(notes, *, as_json, color, out=None, infos=None)"
+  ],
+  "logs": [
+    "TUI 不打日志（沿用约定）"
+  ],
+  "fallbacks": [
+    "git 不可用 → 平铺（原行为）",
+    "某 commit 查不到 subject → 该组只显示 hash",
+    "--json 不变（仍是笔记数组，不含 message）"
+  ],
+  "commits": [],
+  "notes": [],
+  "discovered": [],
+  "created_at": "2026-10-13T09:45:19.749436+00:00",
+  "updated_at": "2026-10-13T09:45:19.749436+00:00"
+}
