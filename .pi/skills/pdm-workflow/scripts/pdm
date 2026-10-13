@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# pdm-workflow skill 的命令包装器。
+#
+# 从当前目录向上找到项目根（含 pyproject.toml 或 .pdm.json），
+# 优先用项目自带启动器 ./run.sh，其次 .venv/bin/pdm，最后 PATH 里的 pdm。
+#
+# 用法（与 pdm 完全一致）：
+#   scripts/pdm feat commit doc my-slug -m "设计"
+#   scripts/pdm query -k pitfall
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 从当前目录向上找项目根
+dir="$(pwd)"
+root=""
+while [[ "$dir" != "/" ]]; do
+    if [[ -f "$dir/pyproject.toml" || -f "$dir/.pdm.json" ]]; then
+        root="$dir"
+        break
+    fi
+    dir="$(dirname "$dir")"
+done
+
+if [[ -n "$root" ]]; then
+    cd "$root"        # 子命令用相对 cwd 定位 .pdm/，必须先回到项目根
+    if [[ -x "$root/run.sh" ]]; then
+        exec "$root/run.sh" "$@"
+    fi
+    if [[ -x "$root/.venv/bin/pdm" ]]; then
+        exec "$root/.venv/bin/pdm" "$@"
+    fi
+fi
+
+# 退回 PATH
+if command -v pdm >/dev/null 2>&1; then
+    exec pdm "$@"
+fi
+
+# 最后尝试本 skill 所在仓库的 .venv
+repo="$here/../../../.."
+if [[ -x "$repo/.venv/bin/pdm" ]]; then
+    exec "$repo/.venv/bin/pdm" "$@"
+fi
+
+echo "pdm-workflow: 找不到 pdm 可执行文件" >&2
+echo "请在项目里先建虚拟环境：python3 -m venv .venv && .venv/bin/pip install -e ." >&2
+exit 127
