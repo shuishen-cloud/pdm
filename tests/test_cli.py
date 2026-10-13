@@ -1059,3 +1059,96 @@ def test_note_list_finds_git_via_store_dir(capsys, tmp_path, monkeypatch):
     main(["--store", store, "note", "list"])
     out = capsys.readouterr().out
     assert "feat(z): 在仓库里" in out
+
+
+# ---------------------------------------------------------------------------
+# feat show --doc / --notes / --verify（见 .pdm/docs/feat/feat-cli-parity.md）
+# ---------------------------------------------------------------------------
+
+
+def _feat_env(tmp_path, monkeypatch):
+    """建 .pdm.json + feat + 设计文档 + 关联笔记，返回临时目录。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pdm.json").write_text(json.dumps({
+        "store": ".pdm/notes",
+        "feat": {"store": ".pdm/feats"},
+        "doc": {"dir": ".pdm/docs"},
+    }), encoding="utf-8")
+    (tmp_path / ".pdm" / "docs" / "feat").mkdir(parents=True)
+    (tmp_path / ".pdm" / "docs" / "feat" / "x.md").write_text(
+        "# 数据结构\n\n```\nfield: int\n```\n", encoding="utf-8")
+    main(["feat", "new", "x", "-t", "X", "--doc", "feat/x.md",
+          "--api", "f()"])
+    main(["note", "add", "deadbee", "-k", "bug", "-t", "一个坑",
+          "-d", "详细说明"])
+    main(["feat", "link", "x", "deadbee"])
+    return tmp_path
+
+
+def test_feat_show_doc_prints_body(tmp_path, monkeypatch, capsys):
+    _feat_env(tmp_path, monkeypatch)
+    capsys.readouterr()
+    code = main(["feat", "show", "x", "--doc"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "数据结构" in out
+    assert "field: int" in out
+
+
+def test_feat_show_notes_aggregates(tmp_path, monkeypatch, capsys):
+    _feat_env(tmp_path, monkeypatch)
+    capsys.readouterr()
+    main(["feat", "show", "x", "--notes"])
+    out = capsys.readouterr().out
+    assert "关联笔记" in out
+    assert "一个坑" in out
+
+
+def test_feat_show_notes_detail(tmp_path, monkeypatch, capsys):
+    _feat_env(tmp_path, monkeypatch)
+    capsys.readouterr()
+    main(["feat", "show", "x", "--notes", "--verify"])
+    out = capsys.readouterr().out
+    assert "详细说明" in out          # notes_detail 展开
+
+
+def test_feat_show_no_notes_marker(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": ".pdm/notes", "feat": {"store": ".pdm/feats"}}),
+        encoding="utf-8")
+    main(["feat", "new", "y", "-t", "Y"])
+    capsys.readouterr()
+    main(["feat", "show", "y", "--notes"])
+    out = capsys.readouterr().out
+    assert "暂无笔记" in out
+
+
+def test_feat_show_from_config_defaults(tmp_path, monkeypatch, capsys):
+    """未指定 flag 时，配置 feat.view.doc_body=true 应打印正文。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pdm.json").write_text(json.dumps({
+        "store": ".pdm/notes",
+        "feat": {"store": ".pdm/feats", "view": {"doc_body": True}},
+        "doc": {"dir": ".pdm/docs"},
+    }), encoding="utf-8")
+    (tmp_path / ".pdm" / "docs").mkdir(parents=True)
+    (tmp_path / ".pdm" / "docs" / "z.md").write_text("正文内容ABC",
+                                                     encoding="utf-8")
+    main(["feat", "new", "z", "-t", "Z", "--doc", "z.md"])
+    capsys.readouterr()
+    main(["feat", "show", "z"])
+    out = capsys.readouterr().out
+    assert "正文内容ABC" in out
+
+
+def test_cli_imports_without_textual():
+    """CLI 入口不应把 textual 拉进 import 链。"""
+    import subprocess
+    import sys
+
+    code = ("import sys; import pdev.cli; "
+            "print('textual' in sys.modules)")
+    r = subprocess.run([sys.executable, "-c", code],
+                       capture_output=True, text=True)
+    assert r.stdout.strip() == "False", r.stderr
