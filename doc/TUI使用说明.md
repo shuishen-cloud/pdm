@@ -137,6 +137,47 @@ ba390f8d  refactor(tui): 筛选弹窗…  bug:1 exc:1
 
 > 鼠标点击列表项也可选中；顶部另有 Textual 自带的命令面板：`Ctrl+P`。
 
+## Feat 面板（按 `f` 打开）
+
+仿 lazygit 两栏：左侧 feat 列表，右侧详情。详情可直接查看设计。
+
+| 键 | 作用 |
+|----|------|
+| `←` / `→` 或 `h` / `l` | 列表 ↔ 详情 切焦点 |
+| `↑` / `↓` 或 `j` / `k` | 列表选 feat；焦点在详情时滚动 |
+| `PgUp` / `PgDn` | 直接翻右侧详情 |
+| `c` | 对当前 feat 跑自约束校验 |
+| `r` | 重新加载 |
+| `Esc` / `q` | 关闭 |
+
+### 详情展示四开关（可配置默认）
+
+| 键 | 开关 | 内容 | 默认 |
+|----|------|------|------|
+| `d` | 文档正文 | 内联渲染设计文档（Markdown） | 关 |
+| `n` | 笔记详情 | 展开笔记的 detail / files | 关 |
+| `v` | 验证 | 显示验证方法与上次状态 | 开 |
+| `s` | 规格字段 | 展开 api / logs / fallbacks | 开 |
+
+底部状态栏实时显示 `[d:on] [n:off] …`。默认值可在 `.pdm.json` 里配置：
+
+```jsonc
+{
+  "feat": {
+    "view": {
+      "doc_body": false,
+      "notes_detail": false,
+      "verify": true,
+      "specs": true,
+      "notes_grouped": true,
+      "doc_max_lines": 0
+    }
+  }
+}
+```
+
+对应环境变量：`PDM_FEAT_VIEW_DOC_BODY` 等。
+
 ### 弹窗的关闭方式
 
 | 弹窗 | 关闭键 |
