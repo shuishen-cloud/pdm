@@ -1,15 +1,15 @@
 {
-  "count": 33,
+  "count": 34,
   "by_kind": {
     "bug": 6,
-    "controlled-exception": 2,
+    "controlled-exception": 3,
     "difficulty": 15,
     "pitfall": 8,
     "problem": 2
   },
   "by_status": {
     "resolved": 5,
-    "noted": 26,
+    "noted": 27,
     "open": 2
   },
   "by_issue": {},
@@ -35,6 +35,7 @@
     "bd5854c",
     "d042b67",
     "d521caf",
+    "d64662c",
     "dac9538",
     "dd22ca6",
     "e3657f9",
