@@ -9,7 +9,8 @@ from typing import Optional
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, Static
@@ -439,7 +440,9 @@ class ThemeScreen(ModalScreen):
 class FeatScreen(ModalScreen):
     """Feat 与自约束校验：左列 feat，右侧详情 + check 结果。
 
-    - `j` / `k` 或上下键移动
+    - `←` / `→`（或 `h` / `l`）在列表与详情之间切焦点
+    - `↑` / `↓`（或 `j` / `k`）移动列表选中；焦点在详情时滚动详情
+    - `PgUp` / `PgDn` 直接翻右侧详情
     - `c` 对当前 feat 跑校验
     - `Esc` / `q` 关闭
     """
@@ -461,8 +464,11 @@ class FeatScreen(ModalScreen):
         height: 1fr;
         border: round $primary;
         padding: 0 1;
-        overflow-y: auto;
     }
+    #feat-detail:focus {
+        border: round $accent;
+    }
+    #feat-detail-body { width: 100%; }
     FeatItem { padding: 0 1; height: 1; }
     #feat-hint { height: 1; color: $text-muted; margin-top: 1; }
     """
@@ -472,6 +478,17 @@ class FeatScreen(ModalScreen):
         ("q", "close", "关闭"),
         ("c", "check", "校验"),
         ("r", "reload", "刷新"),
+        Binding("left", "focus_list", "左移", show=False),
+        Binding("h", "focus_list", "左移", show=False),
+        Binding("right", "focus_detail", "右移", show=False),
+        Binding("l", "focus_detail", "右移", show=False),
+        Binding("tab", "focus_toggle", "切面板", show=False),
+        Binding("down", "move_down", "下移", show=False),
+        Binding("j", "move_down", "下移", show=False),
+        Binding("up", "move_up", "上移", show=False),
+        Binding("k", "move_up", "上移", show=False),
+        Binding("pagedown", "detail_page_down", "翻页", show=False),
+        Binding("pageup", "detail_page_up", "翻页", show=False),
     ]
 
     def __init__(self, store, git=None, note_store=None) -> None:
@@ -498,12 +515,19 @@ class FeatScreen(ModalScreen):
                 if feats:
                     view.index = 0
                 yield view
-                yield Static("", id="feat-detail")
-            yield Static("j/k 移动   ·   c 跑校验   ·   r 刷新   ·   Esc 关闭",
-                         id="feat-hint")
+                with VerticalScroll(id="feat-detail"):
+                    yield Static("", id="feat-detail-body")
+            yield Static(
+                "←/→ 切面板   ↑/↓ j/k 移动·滚动   PgUp/PgDn 翻详情   "
+                "c 校验   r 刷新   Esc 关闭",
+                id="feat-hint")
 
     def on_mount(self) -> None:
         self._refresh_detail()
+        # 初始焦点给左侧列表，方便马上↑↓选 feat
+        from textual.widgets import ListView
+
+        self.query_one("#feat-list", ListView).focus()
 
     def on_list_view_highlighted(self, event) -> None:
         self._refresh_detail()
@@ -511,10 +535,68 @@ class FeatScreen(ModalScreen):
     def action_close(self) -> None:
         self.dismiss(None)
 
+    # --- 焦点与滚动 ---
+
+    def _detail(self):
+        from textual.containers import VerticalScroll
+
+        return self.query_one("#feat-detail", VerticalScroll)
+
+    def _is_list_focused(self) -> bool:
+        from textual.widgets import ListView
+
+        return self.focused is self.query_one("#feat-list", ListView)
+
+    def action_focus_list(self) -> None:
+        """左移：焦点回到左侧 feat 列表。"""
+        from textual.widgets import ListView
+
+        self.query_one("#feat-list", ListView).focus()
+
+    def action_focus_detail(self) -> None:
+        """右移：焦点切到右侧详情（可滚动）。"""
+        self._detail().focus()
+
+    def action_focus_toggle(self) -> None:
+        """Tab：在列表与详情之间切换。"""
+        if self._is_list_focused():
+            self._detail().focus()
+        else:
+            self.action_focus_list()
+
+    def action_move_down(self) -> None:
+        """↓/j：焦点在列表则移动选中，否则滚动详情。"""
+        if self._is_list_focused():
+            from textual.widgets import ListView
+
+            self.query_one("#feat-list", ListView).action_cursor_down()
+        else:
+            self._detail().scroll_down()
+
+    def action_move_up(self) -> None:
+        """↑/k：焦点在列表则移动选中，否则滚动详情。"""
+        if self._is_list_focused():
+            from textual.widgets import ListView
+
+            self.query_one("#feat-list", ListView).action_cursor_up()
+        else:
+            self._detail().scroll_up()
+
+    def action_detail_page_down(self) -> None:
+        """PgDn：直接翻右侧详情。"""
+        self._detail().focus()
+        self._detail().scroll_page_down()
+
+    def action_detail_page_up(self) -> None:
+        """PgUp：直接翻右侧详情。"""
+        self._detail().focus()
+        self._detail().scroll_page_up()
+
     def action_reload(self) -> None:
         self._issues = []
         self.refresh(recompose=True)
         self.call_after_refresh(self._refresh_detail)
+        self.call_after_refresh(self.action_focus_list)
 
     def action_check(self) -> None:
         """对当前 feat 跑自约束校验。"""
@@ -553,7 +635,7 @@ class FeatScreen(ModalScreen):
         from textual.widgets import Static
 
         slug = self._current_slug()
-        body = self.query_one("#feat-detail", Static)
+        body = self.query_one("#feat-detail-body", Static)
         if slug is None:
             body.update(Text("（无 feat，用 pdm feat new 创建）", style="dim"))
             return
