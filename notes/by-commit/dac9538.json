@@ -1,0 +1,25 @@
+{
+  "commit": "dac9538",
+  "notes": [
+    {
+      "commit": "dac9538",
+      "kind": "difficulty",
+      "title": "归档提交无限套娃的边界：到此为止",
+      "detail": "每补一个 github 归档 commit 又产生新 commit 需要再补 note，形成套娃。终止条件：本条之后不再为归档 commit 追加新提交，note 覆盖度以最后一次功能/文档提交为界。",
+      "author": "ai:claude",
+      "files": [
+        "notes"
+      ],
+      "severity": null,
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "note"
+      ],
+      "created_at": "2026-10-13T10:10:31.417159+00:00"
+    }
+  ]
+}
