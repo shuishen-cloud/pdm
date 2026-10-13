@@ -154,3 +154,17 @@ cd demo-project
 ../.venv/bin/pdm ui        # 提交标题、测试脚本、验证执行 全部可用
 ../.venv/bin/pdm verify run
 ```
+
+## 故障排查
+
+### TUI 退出后终端乱码、只能关闭终端
+
+**现象**：`pdm ui` 运行中按 `Ctrl+C`（或异常退出）后，终端出现乱码、
+光标消失，只能关闭终端窗口。
+
+**预期**：TUI 无论正常结束、异常还是收到信号，都应恢复终端（退出备用屏、
+显示光标、关闭鼠标与 bracketed paste）。
+
+**临时缓解**：在乱码终端执行 `stty sane` 或 `reset` 后按回车。
+
+该问题的根因与修复见 `pdm feat show tui-signal-restore`。
