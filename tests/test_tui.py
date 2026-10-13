@@ -1613,3 +1613,128 @@ async def test_feat_screen_covers_main_footer(store, tmp_path):
         await pilot.pause()
         # FeatScreen 的 CSS 不应是半透明（否则主界面可见）
         assert "70%" not in FeatScreen.CSS
+
+
+# ---------------------------------------------------------------------------
+# Feat 详情内联设计（见 .pdm/docs/feat/feat-inline-design.md）
+# ---------------------------------------------------------------------------
+
+
+def test_read_doc_body_reads_file(tmp_path):
+    from pdev.tui.screens import read_doc_body
+
+    (tmp_path / "feat").mkdir()
+    (tmp_path / "feat" / "a.md").write_text("# 标题\n\n正文\n", encoding="utf-8")
+    body = read_doc_body(str(tmp_path), "feat/a.md")
+    assert "# 标题" in body and "正文" in body
+
+
+def test_read_doc_body_missing_returns_marker(tmp_path):
+    from pdev.tui.screens import read_doc_body
+
+    body = read_doc_body(str(tmp_path), "feat/nope.md")
+    assert "不可读" in body
+
+
+def test_read_doc_body_empty_doc():
+    from pdev.tui.screens import read_doc_body
+
+    assert read_doc_body(".pdm/docs", "") == ""
+
+
+def test_read_doc_body_truncates(tmp_path):
+    from pdev.tui.screens import read_doc_body
+
+    (tmp_path / "a.md").write_text("\n".join(f"行{i}" for i in range(100)),
+                                   encoding="utf-8")
+    body = read_doc_body(str(tmp_path), "a.md", max_lines=10)
+    assert "行9" in body
+    assert "行99" not in body
+    assert "截断" in body
+
+
+def test_group_notes_by_kind():
+    from pdev.tui.screens import group_notes_by_kind
+    from pdev.note import CommitNote, NoteKind
+
+    notes = [
+        CommitNote(commit="a", kind=NoteKind.PITFALL, title="p1"),
+        CommitNote(commit="a", kind=NoteKind.DIFFICULTY, title="d1"),
+        CommitNote(commit="b", kind=NoteKind.PITFALL, title="p2"),
+    ]
+    groups = group_notes_by_kind(notes)
+    assert [k for k, _ in groups] == ["pitfall", "difficulty"]
+    assert len(groups[0][1]) == 2      # 两个 pitfall
+
+
+async def test_feat_screen_toggle_keys(store, tmp_path):
+    """四个开关键 d/n/v/s 切换显示状态。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="feat/a.md", api=["f()"],
+                fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs, doc_dir=str(tmp_path)))
+        await pilot.pause()
+        screen = app.screen
+        # 默认：doc_body=False
+        assert screen._view["doc_body"] is False
+        await pilot.press("d")
+        await pilot.pause()
+        assert screen._view["doc_body"] is True
+        await pilot.press("n")
+        await pilot.pause()
+        assert screen._view["notes_detail"] is True
+        await pilot.press("v")
+        await pilot.pause()
+        assert screen._view["verify"] is False
+        await pilot.press("s")
+        await pilot.pause()
+        assert screen._view["specs"] is False
+
+
+async def test_feat_screen_view_from_config(store, tmp_path):
+    """构造时可注入配置默认值。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+    from pdev.config import FeatViewConfig
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="feat/a.md", api=["f()"],
+                fallbacks=["x"]))
+    view = FeatViewConfig(doc_body=True, notes_detail=True)
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs, doc_dir=str(tmp_path), view=view))
+        await pilot.pause()
+        screen = app.screen
+        assert screen._view["doc_body"] is True
+        assert screen._view["notes_detail"] is True
+
+
+async def test_feat_screen_doc_body_renders_markdown(store, tmp_path):
+    """d 键打开后，详情挂载 Markdown widget 渲染正文。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+    from textual.widgets import Markdown
+
+    (tmp_path / "feat").mkdir()
+    (tmp_path / "feat" / "a.md").write_text(
+        "# 数据结构\n\n```\nfield: int\n```\n", encoding="utf-8")
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="feat/a.md", api=["f()"],
+                fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs, doc_dir=str(tmp_path)))
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        md = app.screen.query_one("#feat-doc", Markdown)
+        assert md is not None

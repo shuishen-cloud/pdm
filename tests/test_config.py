@@ -383,3 +383,41 @@ def test_resolve_doc_path_empty_dir_falls_back():
     from pdev.config import resolve_doc_path
 
     assert resolve_doc_path("", "feat/x.md") == ".pdm/docs/feat/x.md"
+
+
+# ---------------------------------------------------------------------------
+# FeatViewConfig（见 .pdm/docs/feat/feat-inline-design.md）
+# ---------------------------------------------------------------------------
+
+
+def test_feat_view_defaults():
+    from pdev.config import FeatConfig
+
+    v = FeatConfig().view
+    assert v.doc_body is False
+    assert v.notes_detail is False
+    assert v.verify is True
+    assert v.specs is True
+    assert v.notes_grouped is True
+    assert v.doc_max_lines == 0
+
+
+def test_feat_view_from_project_config(tmp_path):
+    write(tmp_path / ".pdm.json", {
+        "feat": {"view": {"doc_body": True, "notes_detail": True,
+                          "doc_max_lines": 50}},
+    })
+    cfg = load_config(env={}, cwd=tmp_path)
+    assert cfg.feat.view.doc_body is True
+    assert cfg.feat.view.notes_detail is True
+    assert cfg.feat.view.doc_max_lines == 50
+    # 未涉及的键保留默认
+    assert cfg.feat.view.verify is True
+
+
+def test_feat_view_from_env(tmp_path):
+    cfg = load_config(env={"PDM_FEAT_VIEW_DOC_BODY": "true",
+                           "PDM_FEAT_VIEW_NOTES_GROUPED": "false"},
+                      cwd=tmp_path, find=False)
+    assert cfg.feat.view.doc_body is True
+    assert cfg.feat.view.notes_grouped is False
