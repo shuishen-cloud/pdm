@@ -34,6 +34,7 @@ __all__ = [
     "cmd_verify_run",
     "cmd_verify_show",
     "cmd_ui",
+    "cmd_theme",
     "cmd_stats",
     "print_notes",
     "format_note",
@@ -378,7 +379,67 @@ def cmd_ui(ctx: AppContext, args) -> int:
     if not sys.stdout.isatty():
         print("TUI 需要交互式终端", file=sys.stderr)
         return 2
-    return run_tui(store, cwd=str(ctx.cwd))
+    from ..config import find_project_config
+
+    return run_tui(
+        store,
+        cwd=str(ctx.cwd),
+        config=ctx.config,
+        config_path=find_project_config(ctx.cwd),
+    )
+
+
+def cmd_theme(ctx: AppContext, args) -> int:
+    """查看 / 设置 TUI 主题。
+
+    - ``pdm theme`` 列出全部可选主题，标出当前值
+    - ``pdm theme nord`` 写入配置（优先项目 .pdm.json）
+    """
+    # 内置主题列表：从 textual 导入，未安装时退回空
+    names: list = []
+    try:
+        from textual.theme import BUILTIN_THEMES
+
+        names = sorted(BUILTIN_THEMES)
+    except Exception:
+        try:
+            from textual.app import App
+
+            names = sorted(App().available_themes)
+        except Exception:
+            names = []
+
+    current = ctx.config.ui.theme
+    name = getattr(args, "name", None)
+
+    if not name:
+        if not names:
+            print("未能加载主题列表（需要安装 textual）", file=sys.stderr)
+            return 2
+        if ctx.config.json_output:
+            print(json.dumps({"current": current, "themes": names},
+                             ensure_ascii=False, indent=2))
+            return 0
+        print("可选主题")
+        for n in names:
+            mark = "●" if n == current else " "
+            print(f"  {mark} {n}")
+        print(f"\n当前：{current}；用 `pdm theme <名字>` 设置")
+        return 0
+
+    # 校验
+    if names and name not in names:
+        print(f"未知主题：{name}", file=sys.stderr)
+        near = [n for n in names if name.lower() in n.lower()]
+        if near:
+            print("是否想要：" + ", ".join(near), file=sys.stderr)
+        return 2
+
+    from ..config import save_config
+
+    path = save_config({"ui": {"theme": name}}, cwd=ctx.cwd)
+    print(f"已设置主题 {name} → {path}")
+    return 0
 
 
 def _tui_available() -> bool:

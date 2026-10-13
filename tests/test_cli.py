@@ -608,3 +608,64 @@ def test_ui_positional_takes_priority(store_dir, tmp_path):
     args = build_parser().parse_args(["ui", store_dir, "--store", other])
     assert args.store_arg == store_dir
     assert args.store == other
+
+
+# ---------------------------------------------------------------------------
+# pdm theme
+# ---------------------------------------------------------------------------
+
+
+def test_theme_lists_themes(capsys):
+    code = main(["theme"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "可选主题" in out
+    assert "textual-dark" in out
+    # 默认值应被标出
+    assert "●" in out
+
+
+def test_theme_lists_json(capsys):
+    code = main(["--json", "theme"])
+    assert code == 0
+    data = json.loads(capsys.readouterr().out)
+    assert "textual-dark" in data["themes"]
+    assert data["current"] == "textual-dark"
+
+
+def test_theme_sets_and_persists(capsys):
+    code = main(["theme", "nord"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "nord" in out
+
+    # 落盘到 .pdm.json，下次读取即生效
+    from pdev.config import load_config
+
+    cfg = load_config()
+    assert cfg.ui.theme == "nord"
+
+
+def test_theme_unknown_fails(capsys):
+    code = main(["theme", "no-such-theme"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "未知主题" in err
+
+
+def test_theme_suggests_similar(capsys):
+    code = main(["theme", "catpp"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "是否想要" in err
+    assert "catppuccin" in err
+
+
+def test_theme_shows_current_after_set(capsys):
+    main(["theme", "gruvbox"])
+    capsys.readouterr()
+    main(["theme"])
+    out = capsys.readouterr().out
+    # gruvbox 那行应有 ● 标记
+    line = next(x for x in out.splitlines() if "gruvbox" in x)
+    assert "●" in line

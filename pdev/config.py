@@ -31,8 +31,10 @@ __all__ = [
     "QueryConfig",
     "IssueConfig",
     "DocConfig",
+    "UIConfig",
     "GitHubConfig",
     "load_config",
+    "save_config",
     "find_project_config",
     "PROJECT_CONFIG_NAME",
     "ENV_PREFIX",
@@ -90,6 +92,19 @@ class DocConfig:
 
 
 @dataclass
+class UIConfig:
+    """TUI 外观与交互设置。
+
+    ``theme`` 可选 Textual 内置主题名（如 ``textual-dark``、``nord``、
+    ``gruvbox``、``dracula``、``monokai``、``catppuccin-mocha`` ……）。
+    """
+
+    theme: str = "textual-dark"
+    commit_width: int = 0          # 提交条目最大宽度，0 = 不限制
+    show_footer: bool = True
+
+
+@dataclass
 class GitHubConfig:
     """GitHub 同步相关。
 
@@ -116,6 +131,7 @@ class Config:
     query: QueryConfig = field(default_factory=QueryConfig)
     issue: IssueConfig = field(default_factory=IssueConfig)
     doc: DocConfig = field(default_factory=DocConfig)
+    ui: UIConfig = field(default_factory=UIConfig)
     github: GitHubConfig = field(default_factory=GitHubConfig)
 
     # --- 序列化 ---
@@ -141,6 +157,7 @@ _SEGMENTS = {
     "query": QueryConfig,
     "issue": IssueConfig,
     "doc": DocConfig,
+    "ui": UIConfig,
     "github": GitHubConfig,
 }
 
@@ -188,8 +205,9 @@ def _coerce_value(value: Any, declared: Any, key: str) -> Any:
 
 _BOOL_KEYS = {
     "color", "json_output", "auto_commit", "require_detail", "auto_push",
+    "show_footer",
 }
-_INT_KEYS = {"default_limit"}
+_INT_KEYS = {"default_limit", "commit_width"}
 
 
 def _merge_into(cfg: Config, data: Mapping[str, Any]) -> None:
@@ -257,6 +275,8 @@ def _env_overrides(env: Mapping[str, str]) -> Dict[str, Any]:
         "PDM_GIT_AUTO_COMMIT": ["git", "auto_commit"],
         "PDM_ISSUE_STORE": ["issue", "store"],
         "PDM_DOC_DIR": ["doc", "dir"],
+        "PDM_UI_THEME": ["ui", "theme"],
+        "PDM_UI_COMMIT_WIDTH": ["ui", "commit_width"],
         "PDM_GITHUB_REPO": ["github", "repo"],
         "PDM_GITHUB_TOKEN": ["github", "token"],
         "PDM_GITHUB_AUTO_PUSH": ["github", "auto_push"],
@@ -321,3 +341,69 @@ def load_config(
         _merge_into(cfg, cleaned)
 
     return cfg
+
+
+# ---------------------------------------------------------------------------
+# 写回（仅用于 TUI 改设置，如主题）
+# ---------------------------------------------------------------------------
+
+
+def save_config(
+    updates: Mapping[str, Any],
+    *,
+    project_config: Optional[Path] = None,
+    user_config: Optional[Path] = None,
+    cwd: Optional[Path] = None,
+) -> Path:
+    """把 ``updates``（嵌套 dict）合并写回配置文件，返回写入路径。
+
+    优先写**项目配置**（``.pdm.json``，已存在或能向上找到）；找不到就写
+    **用户配置**。这样 TUI 里切换主题后下次启动仍生效。
+
+    - 保留文件里已有的其它键（深合并，只覆盖 ``updates`` 涉及的路径）
+    - 输出始终是缩进 2 的标准 JSON（保证可读、可 diff）
+    - ``github.token`` 不会被写入（敏感信息拒绝落盘）
+    """
+    target = _pick_write_target(project_config, cwd)
+    if target is None:
+        target = (Path(user_config) if user_config
+                  else Path(USER_CONFIG_PATH).expanduser())
+
+    data = _read_json(target)
+    _deep_merge(data, _scrub(updates))
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=False)
+    target.write_text(text + "\n", encoding="utf-8")
+    return target
+
+
+def _pick_write_target(project_config: Optional[Path],
+                       cwd: Optional[Path]) -> Optional[Path]:
+    """决定写哪个文件：显式路径 > 已存在的项目配置 > 无。"""
+    if project_config is not None:
+        return Path(project_config)
+    found = find_project_config(cwd)
+    return found
+
+
+def _scrub(updates: Mapping[str, Any]) -> Dict[str, Any]:
+    """剔除不应落盘的敏感键。"""
+    out: Dict[str, Any] = {}
+    for key, value in updates.items():
+        if isinstance(value, Mapping):
+            out[key] = _scrub(value)
+        elif key == "token":
+            continue
+        else:
+            out[key] = value
+    return out
+
+
+def _deep_merge(base: Dict[str, Any], extra: Mapping[str, Any]) -> None:
+    """把 extra 深合并进 base（就地）。"""
+    for key, value in extra.items():
+        if isinstance(value, Mapping) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value

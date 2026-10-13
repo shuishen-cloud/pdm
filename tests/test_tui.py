@@ -17,6 +17,7 @@ from textual.widgets import Input  # noqa: E402
 from pdev import (  # noqa: E402
     Actor,
     CommitNote,
+    Config,
     NoteKind,
     NoteStatus,
     NoteStore,
@@ -915,3 +916,162 @@ async def test_fake_hash_without_git_still_shows(tmp_path):
         assert len(cl.children) == 1
         assert cl.children[0].commit == "c0ffee1"
         assert len(cl.children[0].notes) == 1
+
+
+# ---------------------------------------------------------------------------
+# 提交条目：单行 + 截断
+# ---------------------------------------------------------------------------
+
+
+async def test_commit_item_is_single_line(tmp_path):
+    from pdev.git import CommitInfo
+    from pdev.tui.panels import CommitItem
+
+    info = CommitInfo(hash="abcdef1234567890", subject="feat: 某功能",
+                      author="T")
+    text = CommitItem("abcdef12",
+                      [CommitNote(commit="abcdef12", kind=NoteKind.BUG,
+                                  title="x")], info).render()
+    # 只有一行（不再有换行）
+    assert "\n" not in text.plain
+    assert "abcdef12" in text.plain
+    assert "feat: 某功能" in text.plain
+
+
+async def test_commit_item_ellipsize_helper():
+    from pdev.tui.panels import _ellipsize
+
+    assert _ellipsize("hello", 10) == "hello"
+    assert _ellipsize("hello world", 6) == "hello…"
+    # CJK 按 2 宽算：width=5 → 预算 4，可放两个汉字 + …
+    assert _ellipsize("中文标题", 5) == "中文…"
+    assert _ellipsize("中文标题", 3) == "中…"
+    assert _ellipsize("x", 0) == ""
+
+
+async def test_commit_item_truncates_long_subject_in_narrow_panel(tmp_path):
+    from pdev.git import CommitInfo
+    from pdev.tui.panels import CommitItem
+
+    long_subject = "feat: " + "很长的提交说明" * 10
+    info = CommitInfo(hash="abcdef1234567890", subject=long_subject,
+                      author="T")
+    s = NoteStore(tmp_path / "notes")
+    app = make_app(s, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 30)) as pilot:
+        await pilot.pause()
+        item = CommitItem("abcdef12", [], info)
+        app.query_one(CommitList).mount(item)
+        await pilot.pause()
+        line = item.render().plain
+        assert "\n" not in line
+        assert "…" in line
+
+
+async def test_commit_width_limit_from_config(tmp_path):
+    from pdev.git import CommitInfo
+    from pdev.tui.panels import CommitItem
+
+    s = NoteStore(tmp_path / "notes")
+    cfg = Config()
+    cfg.ui.commit_width = 24
+    app = PDMApp(s, cwd=str(tmp_path), config=cfg)
+    async with app.run_test(size=(140, 30)) as pilot:
+        await pilot.pause()
+        info = CommitInfo(hash="abcdef1234567890",
+                          subject="feat: 这是一个很长的提交标题用于测试截断",
+                          author="T")
+        item = CommitItem("abcdef12", [], info)
+        app.query_one(CommitList).mount(item)
+        await pilot.pause()
+        line = item.render().plain
+        # 受 commit_width 限制，总宽不超过 24
+        from pdev.tui.panels import _display_width
+
+        assert _display_width(line) <= 24
+
+
+# ---------------------------------------------------------------------------
+# 主题
+# ---------------------------------------------------------------------------
+
+
+async def test_theme_applied_from_config(store, tmp_path):
+    cfg = Config()
+    cfg.ui.theme = "nord"
+    app = PDMApp(store, cwd=str(tmp_path), config=cfg)
+    async with app.run_test(size=(110, 30)) as pilot:
+        await pilot.pause()
+        assert app.theme == "nord"
+
+
+async def test_bad_theme_falls_back(store, tmp_path):
+    cfg = Config()
+    cfg.ui.theme = "no-such-theme"
+    app = PDMApp(store, cwd=str(tmp_path), config=cfg)
+    async with app.run_test(size=(110, 30)) as pilot:
+        await pilot.pause()
+        assert app.theme == "textual-dark"
+
+
+async def test_cycle_theme_changes_and_persists(store, tmp_path):
+    from pdev.config import load_config
+
+    target = tmp_path / ".pdm.json"
+    target.write_text("{}", encoding="utf-8")
+    cfg = Config()
+    app = PDMApp(store, cwd=str(tmp_path), config=cfg,
+                 config_path=target)
+    async with app.run_test(size=(110, 30)) as pilot:
+        await pilot.pause()
+        before = app.theme
+        await pilot.press("t")
+        await pilot.pause()
+        assert app.theme != before
+        # 写回文件并能重新加载
+        cfg2 = load_config(project_config=target)
+        assert cfg2.ui.theme == app.theme
+
+
+async def test_pick_theme_screen(store, tmp_path):
+    from pdev.tui.screens import ThemeScreen
+    from textual.widgets import ListView
+
+    target = tmp_path / ".pdm.json"
+    target.write_text("{}", encoding="utf-8")
+    app = PDMApp(store, cwd=str(tmp_path), config=Config(),
+                 config_path=target)
+    async with app.run_test(size=(110, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("T")
+        await pilot.pause()
+        assert isinstance(app.screen, ThemeScreen)
+        view = app.screen.query_one("#theme-list", ListView)
+        # 主题数与内置主题数一致
+        assert len(view.children) == len(app.available_themes)
+
+
+async def test_theme_screen_esc_cancels(store, tmp_path):
+    from pdev.tui.screens import ThemeScreen
+
+    app = PDMApp(store, cwd=str(tmp_path), config=Config())
+    async with app.run_test(size=(110, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("T")
+        await pilot.pause()
+        assert isinstance(app.screen, ThemeScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ThemeScreen)
+
+
+async def test_no_config_still_opens_theme_screen(store, tmp_path):
+    """没传 config 时（默认），主题功能不应崩。"""
+    from pdev.tui.screens import ThemeScreen
+
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("T")
+        await pilot.pause()
+        assert isinstance(app.screen, ThemeScreen)

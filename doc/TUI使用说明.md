@@ -40,31 +40,45 @@ alias pdm='/path/to/ProjectDevelopManger/run.sh'
 ## 界面布局
 
 ```
-┌ 提交 ────────────┬ 笔记 ──────────────────┬ 详情 ─────────────────────┐
-│ c0ffee6  3 notes │ ○ [bug] 计数器内存泄漏  │ [problem] 加分布式锁修复   │
-│   bug:1 exc:1    │ · [controlled-except]  │ ────────────────────       │
-│   dif:1          │   限流器故障时放行      │ commit    c0ffee3          │
-│                  │ · [difficulty] 粒度...  │ author    human:lwy        │
-│ c0ffee5  2 notes │                         │ status    resolved         │
-│ c0ffee4  4 notes │                         │ files     src/auth/token.py│
-│ c0ffee3  2 notes │                         │                            │
-│ c0ffee2  4 notes │                         │ 验证                       │
-│ c0ffee1  3 notes │                         │ ────────────────────       │
-│                  │                         │ · [test] pytest tests/...  │
-│                  │                         │     方法  200 并发断言...  │
-│                  │                         │     期望  passed           │
-├──────────────────┴─────────────────────────┴────────────────────────────┤
-│ q 退出  1 提交  2 笔记  3 详情  / 筛选  r 跑验证  R 刷新  ? 帮助           │
-└──────────────────────────────────────────────────────────────────────────┘
+┌ 提交 ────────────────────────────┬ 笔记 ────────────────┬ 详情 ──────────────────┐
+│ 4fd0fec5  feat(tui): 提交面板…   │ ○ [bug] 计数器内存泄 │ 提交  feat(tui): 提交… │
+│ ba390f8d  refactor(tui): 筛选…   │ · [controlled-exce… │ 作者  Wsl_Arch_lwy     │
+│ 81357e76  feat(tui): 验证过程…   │ · [difficulty] 粒度… │ 提交号 4fd0fec5b1b6… │
+│ a9410362  feat(tui): 便捷启动…   │                       │ ──────────────────── │
+│ a109a16d  fix(tui): 修正帮助…    │                       │ （该提交暂无笔记）   │
+│ ea47bd11  feat(tui): 完整演示…   │                       │                       │
+├──────────────────────────────────┴───────────────────────┴───────────────────────┤
+│ q 退出  1 提交  2 笔记  3 详情  / 筛选  r 跑验证  R 刷新  p 命令  ? 帮助            │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 | 面板 | 内容 |
 |------|------|
-| **提交** | git 历史里的**全部** commit（新→旧）；有笔记的叠加显示笔记数 + 类型分布缩写 |
+| **提交** | git 历史里的**全部** commit（新→旧）；**单行**显示 `hash  标题  类型分布` |
 | **笔记** | 选中提交的全部笔记，带状态标记与验证聚合符号；无笔记则为空 |
 | **详情** | 提交标题/作者/提交号 + 笔记全字段 + 验证条目（方法 / 命令 / 期望 / 脚本） |
 
 类型缩写：`pro` problem、`bug` 缺陷、`pit` 易错点、`dif` 难点、`exc` 可控异常。
+
+### 提交列表：单行 + 自动截断
+
+每条提交只占**一行**（`hash` + 标题 + 类型分布），尽量多显示条目：
+
+```
+4fd0fec5  feat(tui): 提交面板接入…              无笔记
+ba390f8d  refactor(tui): 筛选弹窗…  bug:1 exc:1
+```
+
+- 标题按**显示宽度**截断（CJK 算 2 列），超出用 `…` 结尾
+- 宽度不够时优先保留 `hash` 与类型分布，牺牲标题
+- **想看全文**：选中后按 `Enter` / `z` 放大提交面板
+- 也可在配置里限制每条最大宽度：
+
+```json
+{ "ui": { "commit_width": 60 } }
+```
+
+`commit_width` 为 `0`（默认）时跟随面板宽度。
 
 ### 类型分布染色
 
@@ -116,6 +130,8 @@ alias pdm='/path/to/ProjectDevelopManger/run.sh'
 | `r` | 弹出验证过程窗口并执行 |
 | `R` | 重新从磁盘加载数据 |
 | `p` / `Ctrl+P` | 命令面板（搜索并执行应用动作） |
+| `t` | 循环切换主题（自动保存） |
+| `T` | 弹出主题选择器 |
 | `?` | 帮助 |
 | `q` | 退出 |
 
@@ -126,7 +142,47 @@ alias pdm='/path/to/ProjectDevelopManger/run.sh'
 | 弹窗 | 关闭键 |
 |------|--------|
 | 筛选 | `Esc` 取消（保持原筛选）；`Enter` 应用；`Ctrl+L` 清除 |
+| 主题 | `Esc` / `q` 取消；`Enter` 选中 |
 | 帮助 | `Esc` / `q` / `Enter` / `?` |
+
+## 主题（可保存）
+
+内置 21 套主题（Textual 自带）。三种改法，**都会自动写回配置文件**：
+
+| 方式 | 操作 |
+|------|------|
+| 循环切换 | 按 `t`，逐个试 |
+| 选择器 | 按 `T`，列表里 `Enter` 选中 |
+| 命令行 | `pdm theme nord` |
+
+写回目标：优先项目 `.pdm.json`，没有则写 `~/.config/pdm/config.json`：
+
+```json
+{ "ui": { "theme": "nord", "commit_width": 60 } }
+```
+
+查看当前值与全部可选：
+
+```bash
+$ pdm theme
+可选主题
+    ansi-dark
+    ...
+  ● nord                 # ● 为当前值
+    textual-dark
+
+当前：nord；用 `pdm theme <名字>` 设置
+```
+
+主题名拼错会报错并给出相近建议（不会静默忽略）：
+
+```bash
+$ pdm theme catpp
+未知主题：catpp
+是否想要：catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha
+```
+
+> 改主题只改外观，不影响存储。若主题名无效（如手动编辑配置写错），启动时回退 `textual-dark`。
 
 ## 放大视图
 
@@ -219,6 +275,7 @@ Esc / q 关闭
 | 放大 / 还原 | 撑满当前面板 |
 | 筛选 | 打开筛选弹窗 |
 | 跑验证 | 弹出验证过程窗口 |
+| 切换主题 / 选择主题 | 改外观（自动保存） |
 | 刷新 / 帮助 / 退出 | — |
 
 输入关键字模糊匹配，回车执行。
@@ -235,12 +292,19 @@ Esc / q 关闭
 ```
 pdev/tui/
 ├── __init__.py     # 延迟导入，未装 textual 时可安全 import
-├── app.py          # PDMApp 主应用、绑定、筛选与验证动作
+├── app.py          # PDMApp 主应用、绑定、筛选/验证/主题动作
 ├── commands.py     # 命令面板 Provider（Ctrl+P / p）
-├── panels.py       # CommitList / NoteList / DetailPane（含语法高亮）
-├── screens.py      # FilterScreen / VerifyScreen / HelpScreen
+├── panels.py       # CommitList / NoteList / DetailPane（含语法高亮、单行截断）
+├── screens.py      # FilterScreen / VerifyScreen / ThemeScreen / HelpScreen
 └── app.tcss        # 样式
 ```
+
+设置写回由 `pdev/config.py` 的 `save_config()` 负责：
+
+- **深合并**，只覆盖传入的键，文件里其它设置不动
+- 输出始终是缩进 2 的**严格 JSON**（可读、可 diff）
+- 优先写项目 `.pdm.json`；找不到则写用户配置
+- `github.token` 拒绝落盘
 
 TUI 与 CLI 平级，都依赖内核（`pdev.*`），互不依赖。
 

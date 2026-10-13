@@ -239,6 +239,12 @@ def build_parser() -> argparse.ArgumentParser:
     vrun.add_argument("--store", default=argparse.SUPPRESS)
     vrun.set_defaults(func=commands.cmd_verify_run)
 
+    # --- theme ---
+    theme = sub.add_parser("theme", help="查看 / 设置 TUI 主题")
+    theme.add_argument("name", nargs="?", metavar="NAME",
+                       help="主题名；省略则列出可选主题")
+    theme.set_defaults(func=commands.cmd_theme)
+
     # --- ui ---
     ui = sub.add_parser("ui", help="图形界面（TUI，仿 lazygit）")
     ui.add_argument("store_arg", nargs="?", metavar="STORE",

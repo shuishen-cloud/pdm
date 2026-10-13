@@ -26,7 +26,7 @@ Header .header--subtitle {
 }
 
 CommitList {
-    width: 32;
+    width: 46;
     border: round $primary;
     border-title-color: $accent;
     background: $surface;
@@ -53,6 +53,7 @@ ListView:focus {
 
 ListItem {
     padding: 0 1;
+    height: 1;
 }
 
 ListItem.--highlight {

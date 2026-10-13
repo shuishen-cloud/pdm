@@ -55,16 +55,21 @@ class PDMApp(App):
         Binding("r", "run_verify", "跑验证"),
         Binding("R", "refresh", "刷新"),
         Binding("p", "command_palette", "命令"),
+        Binding("t", "cycle_theme", "主题", show=False),
+        Binding("T", "pick_theme", "选主题", show=False),
         Binding("question_mark", "help", "帮助"),
     ]
 
     # 命令面板：Ctrl+P 或 p 唤起，可搜索本应用的动作
     COMMANDS = App.COMMANDS | {PDMCommands}
 
-    def __init__(self, store: NoteStore, cwd: str = ".") -> None:
+    def __init__(self, store: NoteStore, cwd: str = ".",
+                 config=None, config_path=None) -> None:
         super().__init__()
         self.store = store
         self.cwd = cwd
+        self.config = config
+        self.config_path = config_path          # 写回时用；None 则自动找
         self._note_filters: dict = {}
         self._current_commit: str | None = None
         self._zoomed: str | None = None      # 被放大的面板 id
@@ -88,8 +93,76 @@ class PDMApp(App):
         self.sub_title = f"store: {self.store.root}"
         if not self.git.available:
             self.sub_title += "  (非 git 仓库)"
+        self._apply_theme(self._configured_theme())
         self._reload_commits()
         self.query_one(CommitList).focus()
+
+    # --- 设置（主题等） ---
+
+    def _configured_theme(self) -> str:
+        """配置里指定的主题名（无效则回退默认）。"""
+        name = getattr(getattr(self.config, "ui", None), "theme", None)
+        if name and name in self.available_themes:
+            return name
+        return "textual-dark"
+
+    def _apply_theme(self, name: str) -> None:
+        """切换主题（无效名静默忽略）。"""
+        if name in self.available_themes:
+            self.theme = name
+
+    def action_cycle_theme(self) -> None:
+        """循环切换内置主题并持久化。"""
+        names = sorted(self.available_themes)
+        if not names:
+            return
+        try:
+            cur = names.index(self.theme)
+        except ValueError:
+            cur = -1
+        nxt = names[(cur + 1) % len(names)]
+        self.theme = nxt
+        saved = self._persist_ui("theme", nxt)
+        msg = f"主题：{nxt}"
+        if saved:
+            msg += f"  (已保存到 {saved})"
+        self.notify(msg)
+
+    def action_pick_theme(self) -> None:
+        """弹出主题选择器（可搜索全部内置主题）。"""
+        from .screens import ThemeScreen
+
+        def apply(name: str | None) -> None:
+            if not name:
+                return
+            self.theme = name
+            saved = self._persist_ui("theme", name)
+            msg = f"主题：{name}"
+            if saved:
+                msg += f"  (已保存)"
+            self.notify(msg)
+
+        self.push_screen(ThemeScreen(self.theme), apply)
+
+    def _persist_ui(self, key: str, value) -> str | None:
+        """把 UI 设置写回配置文件，返回路径（失败返回 None）。
+
+        优先项目 ``.pdm.json``，找不到则写用户配置。
+        """
+        try:
+            from ..config import save_config
+
+            path = save_config(
+                {"ui": {key: value}},
+                project_config=self.config_path,
+                cwd=self.cwd,
+            )
+        except Exception as e:            # 写不了不能影响使用
+            self.notify(f"保存设置失败：{e}", severity="warning")
+            return None
+        if self.config is not None and hasattr(self.config, "ui"):
+            setattr(self.config.ui, key, value)
+        return str(path)
 
     # --- 数据加载 ---
 
@@ -309,7 +382,8 @@ class PDMApp(App):
         self.push_screen(HelpScreen())
 
 
-def run(store: NoteStore, cwd: str = ".") -> int:
+def run(store: NoteStore, cwd: str = ".", config=None,
+        config_path=None) -> int:
     """启动 TUI。"""
-    PDMApp(store, cwd=cwd).run()
+    PDMApp(store, cwd=cwd, config=config, config_path=config_path).run()
     return 0

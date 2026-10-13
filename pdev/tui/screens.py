@@ -10,12 +10,13 @@ from typing import Optional
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, Static
 
 from ..note import NoteKind, NoteStatus, VerificationStatus
 
-__all__ = ["FilterScreen", "VerifyScreen", "HelpScreen"]
+__all__ = ["FilterScreen", "VerifyScreen", "HelpScreen", "ThemeScreen"]
 
 
 class FilterScreen(ModalScreen):
@@ -159,12 +160,15 @@ _HELP = """\
   [cyan]/[/]                 筛选（类型/状态/文件/全文）
   [cyan]r[/]                 执行当前笔记的验证
   [cyan]R[/]                 刷新数据
+  [cyan]p[/] / [cyan]Ctrl+P[/]       命令面板（搜索并执行动作）
+  [cyan]t[/]                 循环切换主题（自动保存）
+  [cyan]T[/]                 弹出主题选择器
   [cyan]?[/]                 本帮助
   [cyan]q[/]                 退出
 
 [bold]面板[/]
 
-  [cyan]1[/] [bold]提交[/]    有笔记的 commit，显示提交标题与类型分布
+  [cyan]1[/] [bold]提交[/]    git 历史中的全部提交（单行显示，过长截断）
   [cyan]2[/] [bold]笔记[/]    选中提交的全部笔记
   [cyan]3[/] [bold]详情[/]    笔记全文、验证方法与测试脚本
 
@@ -347,3 +351,89 @@ class HelpScreen(ModalScreen):
 
     def action_dismiss_help(self) -> None:
         self.dismiss(None)
+
+
+class ThemeScreen(ModalScreen):
+    """主题选择器：列出全部内置主题，回车切换。
+
+    返回选中的主题名，取消返回 None。
+    """
+
+    CSS = """
+    ThemeScreen {
+        align: center middle;
+        background: $background 70%;
+    }
+    #theme-box {
+        width: 44;
+        height: auto;
+        max-height: 80%;
+        padding: 1 2;
+        border: thick $accent;
+        background: $surface;
+    }
+    #theme-list {
+        height: auto;
+        max-height: 24;
+    }
+    ThemeItem {
+        padding: 0 1;
+    }
+    ThemeItem.--current {
+        background: $accent 40%;
+    }
+    #theme-hint {
+        color: $text-muted;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [
+        ("escape", "cancel", "取消"),
+        ("q", "cancel", "取消"),
+    ]
+
+    class Picked(Message):
+        """选中某个主题。"""
+
+        def __init__(self, name: str) -> None:
+            self.name = name
+            super().__init__()
+
+    def __init__(self, current: str = "textual-dark") -> None:
+        super().__init__()
+        self.current = current
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import ListItem, ListView
+
+        names = sorted(self.app.available_themes)
+        with Vertical(id="theme-box"):
+            items = []
+            for name in names:
+                item = ListItem(Static(
+                    ("● " if name == self.current else "  ") + name
+                ))
+                item.theme_name = name
+                if name == self.current:
+                    item.add_class("--current")
+                items.append(item)
+            view = ListView(*items, id="theme-list")
+            if self.current in names:
+                view.index = names.index(self.current)
+            yield view
+            yield Static("Enter 选择   ·   Esc/q 取消", id="theme-hint")
+
+    def on_list_view_selected(self, event) -> None:
+        item = event.item
+        name = getattr(item, "theme_name", None)
+        if name:
+            self.dismiss(name)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def key_q(self) -> bool:
+        """q 关闭（没有输入框，直接关）。"""
+        self.dismiss(None)
+        return True

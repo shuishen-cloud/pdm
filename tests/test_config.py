@@ -218,3 +218,126 @@ def test_config_serializable(tmp_path):
 def test_token_masked_in_to_dict(tmp_path):
     cfg = load_config(env={"PDM_GITHUB_TOKEN": "s3cr3t"}, cwd=tmp_path, find=False)
     assert cfg.to_dict()["github"]["token"] == "***"
+
+
+# ---------------------------------------------------------------------------
+# UI 设置与写回
+# ---------------------------------------------------------------------------
+
+
+def test_ui_defaults():
+    cfg = Config()
+    assert cfg.ui.theme == "textual-dark"
+    assert cfg.ui.commit_width == 0
+    assert cfg.ui.show_footer is True
+
+
+def test_ui_segment_loaded(tmp_path):
+    p = tmp_path / ".pdm.json"
+    p.write_text(json.dumps({"ui": {"theme": "nord", "commit_width": 40}}),
+                 encoding="utf-8")
+    cfg = load_config(project_config=p)
+    assert cfg.ui.theme == "nord"
+    assert cfg.ui.commit_width == 40
+
+
+def test_ui_commit_width_coerced_to_int(tmp_path):
+    p = tmp_path / ".pdm.json"
+    p.write_text(json.dumps({"ui": {"commit_width": "50"}}), encoding="utf-8")
+    cfg = load_config(project_config=p)
+    assert cfg.ui.commit_width == 50
+    assert isinstance(cfg.ui.commit_width, int)
+
+
+def test_ui_show_footer_coerced_to_bool(tmp_path):
+    p = tmp_path / ".pdm.json"
+    p.write_text(json.dumps({"ui": {"show_footer": "no"}}), encoding="utf-8")
+    cfg = load_config(project_config=p)
+    assert cfg.ui.show_footer is False
+
+
+def test_to_dict_includes_ui():
+    d = Config().to_dict()
+    assert d["ui"]["theme"] == "textual-dark"
+
+
+def test_save_config_creates_file(tmp_path):
+    from pdev.config import save_config
+
+    target = tmp_path / ".pdm.json"
+    path = save_config({"ui": {"theme": "gruvbox"}}, project_config=target)
+    assert path == target
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data["ui"]["theme"] == "gruvbox"
+
+
+def test_save_config_deep_merges(tmp_path):
+    from pdev.config import save_config
+
+    target = tmp_path / ".pdm.json"
+    target.write_text(json.dumps({
+        "store": "notes",
+        "ui": {"theme": "nord", "commit_width": 30},
+    }), encoding="utf-8")
+
+    save_config({"ui": {"theme": "dracula"}}, project_config=target)
+
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data["ui"]["theme"] == "dracula"
+    assert data["ui"]["commit_width"] == 30     # 未涉及的键保留
+    assert data["store"] == "notes"
+
+
+def test_save_config_roundtrips_through_load(tmp_path):
+    from pdev.config import save_config
+
+    target = tmp_path / ".pdm.json"
+    save_config({"ui": {"theme": "monokai", "commit_width": 42}},
+                project_config=target)
+    cfg = load_config(project_config=target)
+    assert cfg.ui.theme == "monokai"
+    assert cfg.ui.commit_width == 42
+
+
+def test_save_config_never_writes_token(tmp_path):
+    from pdev.config import save_config
+
+    target = tmp_path / ".pdm.json"
+    save_config({"github": {"token": "secret", "repo": "a/b"}},
+                project_config=target)
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert "token" not in data["github"]
+    assert data["github"]["repo"] == "a/b"
+
+
+def test_save_config_output_is_valid_strict_json(tmp_path):
+    from pdev.config import save_config
+
+    target = tmp_path / ".pdm.json"
+    save_config({"ui": {"theme": "nord"}}, project_config=target)
+    # 必须能被严格 JSON 解析（无注释、无尾逗号）
+    json.loads(target.read_text(encoding="utf-8"))
+
+
+def test_save_config_falls_back_to_user_config(tmp_path, monkeypatch):
+    from pdev.config import save_config
+
+    # 没有任何项目配置、cwd 处也找不到 → 写用户配置
+    user = tmp_path / "user" / "config.json"
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    path = save_config({"ui": {"theme": "nord"}}, cwd=empty,
+                       user_config=user)
+    assert path == user
+    assert json.loads(user.read_text(encoding="utf-8"))["ui"]["theme"] == "nord"
+
+
+def test_ui_theme_from_env(tmp_path):
+    cfg = load_config(env={"PDM_UI_THEME": "dracula"})
+    assert cfg.ui.theme == "dracula"
+
+
+def test_ui_commit_width_from_env(tmp_path):
+    cfg = load_config(env={"PDM_UI_COMMIT_WIDTH": "55"})
+    assert cfg.ui.commit_width == 55
+    assert isinstance(cfg.ui.commit_width, int)

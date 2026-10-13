@@ -48,6 +48,51 @@ _VERIFY_MARK = {
 }
 
 
+def _ellipsize(text: str, width: int) -> str:
+    """按显示宽度截断，超出部分用 …… 代替。"""
+    if width <= 0:
+        return ""
+    if _display_width(text) <= width:
+        return text
+    if width == 1:
+        return "…"
+    # 逐字累加，避免在宽字符中间切断
+    out = []
+    used = 0
+    budget = width - 1          # 留一个位置给 …
+    for ch in text:
+        w = _display_width(ch)
+        if used + w > budget:
+            break
+        out.append(ch)
+        used += w
+    return "".join(out) + "…"
+
+
+def _display_width(text: str) -> int:
+    """近似显示宽度（CJK 算 2）。"""
+    import unicodedata
+
+    total = 0
+    for ch in text:
+        total += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return total
+
+
+def _commit_width_limit(item) -> int:
+    """配置的提交条目宽度上限（0 = 不限）。
+
+    脱离 app（如单元测试直接调 ``render()``）时安全返回 0。
+    """
+    try:
+        app = item.app
+    except Exception:
+        return 0
+    cfg = getattr(app, "config", None)
+    ui = getattr(cfg, "ui", None)
+    return int(getattr(ui, "commit_width", 0) or 0)
+
+
 # ---------------------------------------------------------------------------
 # 提交列表
 # ---------------------------------------------------------------------------
@@ -64,21 +109,10 @@ class CommitItem(ListItem):
         self.info = info              # CommitInfo | None
 
     def render(self) -> Text:
-        t = Text()
-        t.append(self.commit[:8], style="bold yellow")
-        if self.notes:
-            t.append(f"  {len(self.notes)} notes", style="dim")
-        else:
-            t.append("  无笔记", style="dim italic")
+        """单行渲染：``hash  标题  ·  类型分布``。
 
-        # 提交标题（来自 git log，可能拿不到）
-        if self.info and self.info.subject:
-            subject = self.info.subject
-            if len(subject) > 46:
-                subject = subject[:45] + "…"
-            t.append("\n  ")
-            t.append(subject, style="white")
-
+        超过可用宽度就截断（面板可放大看全）。
+        """
         short = {
             NoteKind.PROBLEM: "pro",
             NoteKind.BUG: "bug",
@@ -90,15 +124,41 @@ class CommitItem(ListItem):
         for n in self.notes:
             kinds[n.kind] = kinds.get(n.kind, 0) + 1
 
+        # 右缀：类型分布（有笔记才显示）
+        tail = Text()
         if kinds:
-            t.append("\n  ")
             for i, (k, c) in enumerate(
                 sorted(kinds.items(), key=lambda kv: kv[0].value)
             ):
                 if i:
-                    t.append(" ")
-                t.append(f"{short.get(k, '?')}:{c}",
-                         style=_KIND_COLOR_LIST.get(k, "white"))
+                    tail.append(" ")
+                tail.append(f"{short.get(k, '?')}:{c}",
+                            style=_KIND_COLOR_LIST.get(k, "white"))
+        else:
+            tail.append("无笔记", style="dim italic")
+
+        hash_part = Text(self.commit[:8], style="bold yellow")
+        subject = self.info.subject if (self.info and self.info.subject) else ""
+
+        # 可用宽度：优先面板宽度，其次配置的 commit_width
+        width = self.size.width
+        if not width:
+            width = 80                     # 脱离 app 渲染时的估值
+        limit = _commit_width_limit(self)
+        if limit > 0:
+            width = min(width, limit)
+
+        # hash(8) + 2 空格 + tail；剩余给标题
+        gap = 2
+        avail = width - len(hash_part.plain) - gap - tail.cell_len - gap
+
+        t = Text()
+        t.append_text(hash_part)
+        t.append("  ")
+        if subject:
+            t.append(_ellipsize(subject, max(avail, 4)), style="white")
+        t.append("  ")
+        t.append_text(tail)
         return t
 
 
