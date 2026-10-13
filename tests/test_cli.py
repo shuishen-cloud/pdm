@@ -918,3 +918,90 @@ def test_feat_check_missing_slug_fails(capsys):
     code = main(["feat", "check", "nope"])
     assert code == 2
     assert "找不到" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# note 显示 commit message（见 docs/feat/note-commit-msg.md）
+# ---------------------------------------------------------------------------
+
+
+def test_group_by_commit_preserves_order():
+    from pdev.cli.commands import group_by_commit
+    from pdev import CommitNote, NoteKind
+
+    notes = [
+        CommitNote(commit="aaa", kind=NoteKind.BUG, title="A1"),
+        CommitNote(commit="bbb", kind=NoteKind.BUG, title="B1"),
+        CommitNote(commit="aaa", kind=NoteKind.PITFALL, title="A2"),
+    ]
+    groups = group_by_commit(notes)
+    assert [c for c, _ in groups] == ["aaa", "bbb"]
+    assert [n.title for n in groups[0][1]] == ["A1", "A2"]
+    assert [n.title for n in groups[1][1]] == ["B1"]
+
+
+def test_note_list_grouped_by_commit_with_message(capsys):
+    """note list 应按 commit 分组，并显示 commit message。"""
+    import subprocess
+
+    def git(*a):
+        return subprocess.run(["git", *a], capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    (__import__("pathlib").Path("a.txt")).write_text("x", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "fix(x): 修正某问题")
+    h = git("rev-parse", "--short", "HEAD").stdout.strip()
+
+    main(["note", "add", h, "-k", "bug", "-t", "短串误匹配"])
+    capsys.readouterr()
+    main(["note", "list"])
+    out = capsys.readouterr().out
+    assert "fix(x): 修正某问题" in out      # message 出现了
+    assert "短串误匹配" in out
+    assert out.count("fix(x): 修正某问题") == 1     # 每组只出现一次
+
+
+def test_note_list_falls_back_without_git(capsys, tmp_path, monkeypatch):
+    """非 git 目录下应回退平铺，不报错。"""
+    monkeypatch.chdir(tmp_path)
+    main(["note", "add", "abc1234", "-k", "bug", "-t", "X"])
+    capsys.readouterr()
+    code = main(["note", "list"])
+    assert code == 0
+    assert "X" in capsys.readouterr().out
+
+
+def test_show_prints_commit_header(capsys):
+    import subprocess
+
+    def git(*a):
+        return subprocess.run(["git", *a], capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    (__import__("pathlib").Path("a.txt")).write_text("x", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "feat(y): 新增功能")
+    h = git("rev-parse", "--short", "HEAD").stdout.strip()
+
+    main(["note", "add", h, "-k", "problem", "-t", "某问题"])
+    capsys.readouterr()
+    main(["show", h])
+    out = capsys.readouterr().out
+    assert "feat(y): 新增功能" in out
+    assert "某问题" in out
+
+
+def test_note_list_json_unchanged(capsys):
+    """--json 仍是笔记数组，不含 message。"""
+    main(["note", "add", "abc1234", "-k", "bug", "-t", "X"])
+    capsys.readouterr()
+    main(["--json", "note", "list"])
+    data = json.loads(capsys.readouterr().out)
+    assert isinstance(data, list)
+    assert data[0]["title"] == "X"
+    assert "subject" not in data[0]
