@@ -19,11 +19,13 @@
     "有 error → 退出码 1；--strict 时 warning 也算失败",
     "无 feat → 提示（无 feat），退出码 0"
   ],
-  "commits": [],
+  "commits": [
+    "50347f9"
+  ],
   "notes": [],
   "discovered": [
     "orphan 检测只比全串和 8 位前缀，feat 里存 7 位短 hash 时误报；改为前缀互查"
   ],
   "created_at": "2026-10-13T09:14:58.672890+00:00",
-  "updated_at": "2026-10-13T09:16:19.943473+00:00"
+  "updated_at": "2026-10-13T09:17:41.687878+00:00"
 }

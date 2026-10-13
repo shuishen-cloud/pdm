@@ -1,0 +1,31 @@
+{
+  "slug": "bootstrap",
+  "title": "项目奠基：Feat 机制建立前的早期提交（事后归档）",
+  "kind": "feat",
+  "status": "closed",
+  "doc": "docs/feat/bootstrap.md",
+  "api": [
+    "（历史提交，无新增接口）"
+  ],
+  "logs": [
+    "（历史提交，无日志约定）"
+  ],
+  "fallbacks": [
+    "（历史提交）"
+  ],
+  "commits": [
+    "68fdd79",
+    "57f456f",
+    "81357e7",
+    "a941036",
+    "a109a16",
+    "ea47bd1",
+    "e7563ad",
+    "5e63f7d",
+    "d314a7f"
+  ],
+  "notes": [],
+  "discovered": [],
+  "created_at": "2026-10-13T09:17:44.885028+00:00",
+  "updated_at": "2026-10-13T09:17:45.583124+00:00"
+}
