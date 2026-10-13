@@ -505,3 +505,47 @@ def test_check_one_accepts_note_store(store, note_store, tmp_path):
                 "fallbacks": ["x"], "commits": [h]})
     issues = check_one(store, "a", git=repo, note_store=note_store)
     assert "commit-no-note" in codes(issues)
+
+
+# ---------------------------------------------------------------------------
+# 规则：stage-order（顺序式，兜底 stage-commit 门面）
+# ---------------------------------------------------------------------------
+
+
+def test_stage_order_ok_for_pipeline(store, tmp_path):
+    """doc→test→feat→fix→doc 顺序正确，不报 stage-order。"""
+    repo = _git_repo_with(tmp_path, [
+        "doc(x): 设计", "test(x): 测试", "feat(x): 实现",
+        "fix(x): 修复", "doc(x): 收尾",
+    ])
+    hashes = [i.hash for i in reversed(repo.log())]
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": hashes})
+    assert "stage-order" not in codes(check_feats(store, git=repo))
+
+
+def test_stage_order_detects_backward(store, tmp_path):
+    """test 出现在 feat 之后 → stage-order。"""
+    repo = _git_repo_with(tmp_path, ["feat(x): 实现", "test(x): 后补测试"])
+    # 同秒时间戳下用 commits 数组顺序（feat 在前）判定
+    hashes = [i.hash for i in reversed(repo.log())]
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": hashes})
+    assert "stage-order" in codes(check_feats(store, git=repo))
+
+
+def test_stage_order_skips_without_git(store):
+    add(store, GOOD_FEAT)
+    assert "stage-order" not in codes(check_feats(store))
+
+
+def test_stage_order_ignores_neutral_prefix(store, tmp_path):
+    """refactor 等中性前缀不参与顺序判定。"""
+    repo = _git_repo_with(tmp_path, [
+        "doc(x): 设计", "test(x): 测试", "feat(x): 实现",
+        "refactor(x): 重构", "fix(x): 修复",
+    ])
+    hashes = [i.hash for i in reversed(repo.log())]
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": hashes})
+    assert "stage-order" not in codes(check_feats(store, git=repo))
