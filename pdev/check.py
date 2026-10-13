@@ -47,6 +47,10 @@ CODES = (
 # 开发阶段 → commit 信息前缀（见 docs/feat/stage-prefix.md）
 STAGES = ("doc", "test", "feat", "fix")
 
+# 非流程性但仍合法的前缀：不告警（归为 other）
+NEUTRAL_PREFIXES = ("refactor", "init", "chore", "style", "perf",
+                    "build", "ci")
+
 
 def classify_stage(subject: str) -> Optional[str]:
     """从 commit 信息前缀识别开发阶段。
@@ -60,6 +64,15 @@ def classify_stage(subject: str) -> Optional[str]:
         if s.startswith(f"{stage}(") or s.startswith(f"{stage}:"):
             return stage
     return None
+
+
+def is_neutral(subject: str) -> bool:
+    """前缀合法但不属流程阶段（如 refactor/init）——不告警。"""
+    if not subject:
+        return False
+    s = subject.strip().lower()
+    return any(s.startswith(f"{p}(") or s.startswith(f"{p}:")
+               for p in NEUTRAL_PREFIXES)
 
 
 @dataclass
@@ -224,6 +237,8 @@ def check_stages(feat: Feat, git, exempt: bool = False) -> List[CheckIssue]:
             continue
         stage = classify_stage(info.subject)
         if stage is None:
+            if is_neutral(info.subject):
+                continue          # refactor/init 等合法前缀，不告警
             out.append(CheckIssue(
                 feat.slug, "stage-prefix", "warning",
                 f"commit {info.hash[:8]} 前缀不是 doc/test/feat/fix："

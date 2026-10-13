@@ -357,3 +357,26 @@ def test_stage_checks_skipped_without_git(store):
     cs = codes(check_feats(store))
     assert "stage-prefix" not in cs
     assert "missing-stage" not in cs
+
+
+def test_neutral_prefixes_do_not_warn(store, tmp_path):
+    """refactor/init 等合法前缀不应触发 stage-prefix。"""
+    from pdev.git import GitRepo
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    for i, msg in enumerate(("refactor(x): 重构", "init: 初始化")):
+        (tmp_path / f"f{i}.txt").write_text("x", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "-m", msg)
+    repo = GitRepo(str(tmp_path))
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"],
+                "commits": [i.hash for i in repo.log()]})
+    assert "stage-prefix" not in codes(check_feats(store, git=repo))
