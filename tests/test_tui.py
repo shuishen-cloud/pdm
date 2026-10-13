@@ -1202,8 +1202,9 @@ async def test_feat_screen_q_closes_not_quits_app(store, tmp_path):
         assert app.is_running          # 应用还活着
 
 
-async def test_feat_screen_arrows_switch_focus_and_scroll(store, tmp_path):
-    """←/→ 切焦点，↑/↓ 移动选中，PgUp/PgDn 滚动右侧详情。"""
+async def test_feat_screen_arrows_switch_focus_and_move_selection(
+        store, tmp_path):
+    """←/→ 切焦点，↑/↓（及 h/l/j/k 别名）在列表上移动选中。"""
     from pdev.feat import Feat, FeatStore
     from pdev.tui.screens import FeatScreen
     from textual.containers import VerticalScroll
@@ -1232,21 +1233,108 @@ async def test_feat_screen_arrows_switch_focus_and_scroll(store, tmp_path):
         await pilot.press("k")
         await pilot.pause()
         assert lv.index == 0
+        await pilot.press("j")
+        await pilot.pause()
+        assert lv.index == 1
+        await pilot.press("up")
+        await pilot.pause()
+        assert lv.index == 0
 
-        # → 切到详情
+        # → / l 切到详情
         await pilot.press("right")
         await pilot.pause()
         assert app.focused is detail
-
-        # ← 切回列表
         await pilot.press("left")
         await pilot.pause()
         assert app.focused is lv
+        await pilot.press("l")
+        await pilot.pause()
+        assert app.focused is detail
+        await pilot.press("h")
+        await pilot.pause()
+        assert app.focused is lv
 
-        # 焦点在列表时 PgDn 直接作用详情（把焦点带去详情）
+        # Tab 在两者间切换
+        await pilot.press("tab")
+        await pilot.pause()
+        assert app.focused is detail
+        await pilot.press("tab")
+        await pilot.pause()
+        assert app.focused is lv
+
+
+async def test_feat_screen_detail_scrolls_with_paging_and_arrows(
+        store, tmp_path):
+    """PgUp/PgDn 直接翻右侧详情；焦点在详情时 ↑/↓ 也滚动详情。
+
+    关键：断言的是 scroll_offset 真的变了——原始问题就是「读不完」，
+    只断言焦点切过去不算数。
+    """
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+    from textual.containers import VerticalScroll
+
+    fs = FeatStore(tmp_path / "feats")
+    # 内容堆长，保证在小窗口下溢出可滚
+    fs.add(Feat(
+        slug="long", title="很长的 feat", doc="docs/feat/long.md",
+        api=[f"func_{i}(x) -> int" for i in range(20)],
+        logs=[f"日志行 {i}" for i in range(20)],
+        fallbacks=[f"兜底 {i}" for i in range(20)],
+    ))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(100, 24)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        detail = app.screen.query_one("#feat-detail", VerticalScroll)
+        # 内容确实溢出，否则测试无意义
+        assert detail.max_scroll_y > 0
+
+        # 焦点在列表时 PgDn：聚焦详情并往下翻
+        top = detail.scroll_offset.y
         await pilot.press("pagedown")
         await pilot.pause()
         assert app.focused is detail
+        down = detail.scroll_offset.y
+        assert down > top
+
+        # PgUp：往回翻
+        await pilot.press("pageup")
+        await pilot.pause()
+        assert detail.scroll_offset.y < down
+
+        # 焦点在详情时 ↓/↑ 逐行滚动
+        await pilot.press("home")
+        await pilot.pause()
+        base = detail.scroll_offset.y
+        await pilot.press("down")
+        await pilot.pause()
+        assert detail.scroll_offset.y > base
+        await pilot.press("up")
+        await pilot.pause()
+        assert detail.scroll_offset.y == base
+
+
+async def test_feat_screen_reload_keeps_focus_on_list(store, tmp_path):
+    """r 刷新会 recompose，之后焦点应重新落到列表，方向键仍可用。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+    from textual.widgets import ListView
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d", api=["f()"],
+                fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        await pilot.press("r")
+        await pilot.pause()
+        lv = app.screen.query_one("#feat-list", ListView)
+        assert app.focused is lv
+        assert lv.index == 0
 
 
 # ---------------------------------------------------------------------------
