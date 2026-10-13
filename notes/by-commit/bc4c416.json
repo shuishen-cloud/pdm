@@ -13,7 +13,21 @@
       "severity": "high",
       "status": "noted",
       "catches": [],
-      "verifications": [],
+      "verifications": [
+        {
+          "kind": "test",
+          "target": "tests/test_tui.py::test_feat_screen_arrows_switch_focus_and_move_selection",
+          "command": ".venv/bin/python -m pytest tests/test_tui.py::test_feat_screen_arrows_switch_focus_and_move_selection -q",
+          "method": "断言 app.focused 身份在列表/详情间切换",
+          "script": "",
+          "expected": "passed",
+          "note": "",
+          "cwd": "",
+          "last_run_at": "2026-10-13T18:23:28.683924+08:00",
+          "last_status": "passed",
+          "last_output": ".                                                                        [100%]"
+        }
+      ],
       "issue_id": null,
       "resolves": [],
       "tags": [
@@ -35,7 +49,21 @@
       "severity": null,
       "status": "noted",
       "catches": [],
-      "verifications": [],
+      "verifications": [
+        {
+          "kind": "test",
+          "target": "tests/test_tui.py::test_feat_screen_arrows_switch_focus_and_move_selection",
+          "command": ".venv/bin/python -m pytest tests/test_tui.py::test_feat_screen_arrows_switch_focus_and_move_selection -q",
+          "method": "j/k/↑/↓ 在列表上移动选中",
+          "script": "",
+          "expected": "passed",
+          "note": "",
+          "cwd": "",
+          "last_run_at": "2026-10-13T18:23:30.230788+08:00",
+          "last_status": "passed",
+          "last_output": ".                                                                        [100%]"
+        }
+      ],
       "issue_id": null,
       "resolves": [],
       "tags": [

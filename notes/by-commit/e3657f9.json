@@ -13,7 +13,21 @@
       "severity": "high",
       "status": "noted",
       "catches": [],
-      "verifications": [],
+      "verifications": [
+        {
+          "kind": "test",
+          "target": "tests/test_tui.py::test_feat_screen_detail_scrolls_with_paging_and_arrows",
+          "command": ".venv/bin/python -m pytest tests/test_tui.py::test_feat_screen_detail_scrolls_with_paging_and_arrows -q",
+          "method": "PgUp/PgDn 与 ↑/↓ 改变 scroll_offset.y（非假通过）",
+          "script": "",
+          "expected": "passed",
+          "note": "",
+          "cwd": "",
+          "last_run_at": "2026-10-13T18:23:32.634042+08:00",
+          "last_status": "passed",
+          "last_output": ".                                                                        [100%]"
+        }
+      ],
       "issue_id": null,
       "resolves": [],
       "tags": [
@@ -34,7 +48,21 @@
       "severity": null,
       "status": "noted",
       "catches": [],
-      "verifications": [],
+      "verifications": [
+        {
+          "kind": "test",
+          "target": "tests/test_tui.py::test_feat_screen_detail_scrolls_with_paging_and_arrows",
+          "command": ".venv/bin/python -m pytest tests/test_tui.py::test_feat_screen_detail_scrolls_with_paging_and_arrows -q",
+          "method": "max_scroll_y>0 内容溢出下滚动生效",
+          "script": "",
+          "expected": "passed",
+          "note": "",
+          "cwd": "",
+          "last_run_at": "2026-10-13T18:23:34.318166+08:00",
+          "last_status": "passed",
+          "last_output": ".                                                                        [100%]"
+        }
+      ],
       "issue_id": null,
       "resolves": [],
       "tags": [

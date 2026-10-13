@@ -34,7 +34,21 @@
       "severity": "medium",
       "status": "noted",
       "catches": [],
-      "verifications": [],
+      "verifications": [
+        {
+          "kind": "test",
+          "target": "tests/test_tui.py::test_feat_screen_reload_keeps_focus_on_list",
+          "command": ".venv/bin/python -m pytest tests/test_tui.py::test_feat_screen_reload_keeps_focus_on_list -q",
+          "method": "r 刷新后焦点仍回列表",
+          "script": "",
+          "expected": "passed",
+          "note": "",
+          "cwd": "",
+          "last_run_at": "2026-10-13T18:23:31.774797+08:00",
+          "last_status": "passed",
+          "last_output": ".                                                                        [100%]"
+        }
+      ],
       "issue_id": null,
       "resolves": [],
       "tags": [
