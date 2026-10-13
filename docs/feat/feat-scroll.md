@@ -54,11 +54,20 @@ def action_detail_page_up(self) -> None
 
 ## 实现与校验结果（收尾）
 
-实现于 commit dd22ca6，测试于 bc4c416。
+实现于 commit dd22ca6，测试于 bc4c416，测试补强于 e3657f9。
 
-新增测试 `test_feat_screen_arrows_switch_focus_and_scroll`：
-验证初焦点在列表、`↓`/`k` 改变 `ListView.index`、`→`/`←` 切焦点、
-`PgDn` 聚焦详情。全部 TUI 测试通过。
+### 测试覆盖
+
+- `test_feat_screen_arrows_switch_focus_and_move_selection`：
+  `←/→`（含 `h`/`l` 别名）切焦点，`↑/↓`（含 `j`/`k`）移动选中，`Tab` 切换
+- `test_feat_screen_detail_scrolls_with_paging_and_arrows`：
+  `PgUp`/`PgDn` 与详情焦点下的 `↑/↓` **实际改变 `scroll_offset.y`**
+- `test_feat_screen_reload_keeps_focus_on_list`：
+  `r` 刷新 recompose 后焦点仍回列表，方向键不失效
+
+滚动测试须满足两个前提：内容溢出（`max_scroll_y > 0`）且窗口足够小；
+否则任何滚动断言都是假通过。实测长内容下 `max_scroll_y=67`，
+`PgDn` 使 `offset.y` 0→13→26、`↓` 26→27、`PgUp` 27→14。
 
 ### 本次发现的异常
 
@@ -66,3 +75,6 @@ def action_detail_page_up(self) -> None
    （元组形式不支持关键字参数），需改用 `textual.binding.Binding`。
 2. 原详情是 `Static`，即便加了 `overflow-y: auto` 也**无法聚焦**，
    故不能滚动——必须换成 `VerticalScroll` 才能承接焦点与翻页。
+3. 初版测试只断言 ``PgDn`` 后焦点切到详情，**未验证滚动量**，
+   功能坏掉也会通过（`assert app.focused is detail` 与滚动无关）；
+   补强后才真正断言 ``scroll_offset.y`` 变化。
