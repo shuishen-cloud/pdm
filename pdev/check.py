@@ -20,6 +20,7 @@ __all__ = [
     "check_one",
     "classify_stage",
     "check_stages",
+    "check_notes",
     "format_issue",
     "summarize",
     "LEVEL_MARK",
@@ -42,6 +43,8 @@ CODES = (
     "orphan-commit",
     "stage-prefix",
     "missing-stage",
+    "commit-no-note",
+    "note-no-verify",
 )
 
 # 开发阶段 → commit 信息前缀（见 docs/feat/stage-prefix.md）
@@ -106,31 +109,36 @@ def format_issue(issue: CheckIssue, color: bool = False) -> str:
     return f"\033[{code}m{body}\033[0m"
 
 
-def check_one(store: FeatStore, slug: str, git=None) -> List[CheckIssue]:
+def check_one(store: FeatStore, slug: str, git=None,
+              note_store=None) -> List[CheckIssue]:
     """检查单个 feat。
 
     :param git: 可选的 :class:`pdev.git.GitRepo`；为 ``None`` 时跳过
         依赖 git 的规则（``commit-missing`` / ``orphan-commit``）。
+    :param note_store: 可选的 :class:`pdev.store.NoteStore`；为 ``None``
+        时跳过依赖笔记的规则（``commit-no-note`` / ``note-no-verify``）。
     """
     feat = store.get(slug)
     if feat is None:
         raise KeyError(f"找不到 feat：{slug}")
-    return _check_feat(feat, git)
+    return _check_feat(feat, git, note_store)
 
 
 def check_feats(store: FeatStore, git=None, *,
-                include_orphans: bool = True) -> List[CheckIssue]:
+                include_orphans: bool = True,
+                note_store=None) -> List[CheckIssue]:
     """检查全部 feat（含跨 feat 的冲突与孤儿 commit）。
 
     :param git: 可选的 :class:`pdev.git.GitRepo`。
     :param include_orphans: 是否检查未被认领的 commit。
+    :param note_store: 可选的 :class:`pdev.store.NoteStore`。
     """
     issues: List[CheckIssue] = []
     feats = list(store.all())
 
     # 逐个 feat 的局部规则
     for feat in feats:
-        issues.extend(_check_feat(feat, git))
+        issues.extend(_check_feat(feat, git, note_store))
 
     # 跨 feat：commit 冲突
     owners: dict[str, List[str]] = {}
@@ -175,7 +183,7 @@ def check_feats(store: FeatStore, git=None, *,
 # ---------------------------------------------------------------------------
 
 
-def _check_feat(feat: Feat, git) -> List[CheckIssue]:
+def _check_feat(feat: Feat, git, note_store=None) -> List[CheckIssue]:
     out: List[CheckIssue] = []
 
     def add(code: str, level: str, message: str) -> None:
@@ -212,6 +220,11 @@ def _check_feat(feat: Feat, git) -> List[CheckIssue]:
     # 阶段前缀与流程完整性
     if git is not None and getattr(git, "available", False):
         out.extend(check_stages(feat, git))
+
+    # 笔记与验证覆盖（见 docs/feat/note-check.md）
+    if (note_store is not None and git is not None
+            and getattr(git, "available", False)):
+        out.extend(check_notes(feat, git, note_store))
 
     return out
 
@@ -257,6 +270,62 @@ def check_stages(feat: Feat, git, exempt: bool = False) -> List[CheckIssue]:
             out.append(CheckIssue(
                 feat.slug, "missing-stage", "warning",
                 f"closed 的 feat 缺少阶段：{'、'.join(missing)}",
+            ))
+
+    return out
+
+
+def _note_for(note_store, commit) -> list:
+    """取某 commit 的笔记（前缀互匹配，≥６位，避免短串误配）。"""
+    if not commit:
+        return []
+    out = []
+    for n in note_store.all():
+        nc = n.commit or ""
+        if nc == commit:
+            out.append(n)
+            continue
+        if len(commit) >= 6 and nc.startswith(commit):
+            out.append(n)
+            continue
+        if len(nc) >= 6 and commit.startswith(nc):
+            out.append(n)
+    return out
+
+
+def check_notes(feat: Feat, git, note_store) -> List[CheckIssue]:
+    """检查 commit 是否有笔记、笔记是否绑定验证。
+
+    规则（见 docs/feat/note-check.md）：
+
+    - ``commit-no-note``：``feat(`` / ``fix(`` 前缀的 commit 无笔记
+    - ``note-no-verify``：该 commit 的笔记全部未绑定验证
+
+    均为 warning：历史仓库普遍存在，不宜让 check 一律失败。
+    """
+    out: List[CheckIssue] = []
+    if note_store is None or git is None \
+            or not getattr(git, "available", False):
+        return out
+
+    for c in feat.commits:
+        info = git.commit_info(c)
+        if info is None:
+            continue          # commit-missing 已另行告警
+        notes = _note_for(note_store, c)
+        if not notes:
+            if classify_stage(info.subject) in ("feat", "fix"):
+                out.append(CheckIssue(
+                    feat.slug, "commit-no-note", "warning",
+                    f"commit {info.hash[:8]}（{info.subject[:24]}）没有笔记",
+                ))
+            continue
+        # 至少一条笔记绑定验证才算覆盖
+        if not any(n.verifications for n in notes):
+            out.append(CheckIssue(
+                feat.slug, "note-no-verify", "warning",
+                f"commit {info.hash[:8]} 的笔记均未绑定验证"
+                f"（用 --verify 登记复现/验证方法）",
             ))
 
     return out

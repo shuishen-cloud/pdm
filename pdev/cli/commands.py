@@ -620,9 +620,9 @@ def cmd_feat_check(ctx: AppContext, args) -> int:
 
     try:
         if args.slug:
-            issues = check_one(store, args.slug, git)
+            issues = check_one(store, args.slug, git, note_store=ctx.store)
         else:
-            issues = check_feats(store, git)
+            issues = check_feats(store, git, note_store=ctx.store)
     except KeyError as e:
         print(f"错误：{e}", file=sys.stderr)
         return 2
