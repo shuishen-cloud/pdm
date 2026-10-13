@@ -2,7 +2,7 @@
   "slug": "stage-prefix",
   "title": "提交阶段前缀校验：强制 doc→test→feat→fix→doc 纪律",
   "kind": "feat",
-  "status": "fixing",
+  "status": "closed",
   "doc": "docs/feat/stage-prefix.md",
   "api": [
     "classify_stage(subject: str) -> Optional[str]",
@@ -18,7 +18,10 @@
   ],
   "commits": [],
   "notes": [],
-  "discovered": [],
+  "discovered": [
+    "refactor/init 被误判为无阶段前缀 → 加 NEUTRAL_PREFIXES 白名单",
+    "bootstrap 未标记 kind=doc，missing-stage 误报 → 修正归档豁免"
+  ],
   "created_at": "2026-10-13T09:26:48.680152+00:00",
-  "updated_at": "2026-10-13T09:27:47.916298+00:00"
+  "updated_at": "2026-10-13T09:28:05.173591+00:00"
 }

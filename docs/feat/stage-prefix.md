@@ -49,3 +49,20 @@ def check_stages(feat: Feat, git, exempt: bool = False) -> List[CheckIssue]
 - git 不可用 → 跳过（复用现有 `git.available` 判断）
 - commit 查不到 subject → 记 `stage-prefix` warning，不崩
 - kind == `doc`（历史归档）→ 跳过 `missing-stage`
+
+## 实现与校验结果（收尾）
+
+实现于 commit 6e3f892，修复于 12cee01。
+
+`pdm feat check` 上线后立即抓出本仓库的真实欠账：
+
+- `modal-keys` / `feat-check` / `tui-polish` / `feat-storage`
+  四条 feat 均为 closed 但缺少独立的 test、fix 阶段提交
+  ——正是"把 test/fix 塞进 feat 提交"的证据。
+
+这印证了规则的必要性：纪律需要工具强制，而非自觉。
+
+### 本次发现的异常
+
+1. `refactor` / `init` 等合法前缀被误判 → 增加中性前缀白名单
+2. `bootstrap` 未标 `kind=doc`，历史归档被误报 `missing-stage`
