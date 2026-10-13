@@ -1409,3 +1409,16 @@ async def test_feat_screen_shows_stages(store, tmp_path):
         app.push_screen(FeatScreen(fs, repo, store))
         await pilot.pause()
         assert isinstance(app.screen, FeatScreen)
+
+
+def test_notes_for_feat_short_commit_no_false_match(store):
+    """短 commit 串不应误匹配（Review 发现）。"""
+    from pdev.feat import Feat
+    from pdev.tui.screens import notes_for_feat
+
+    store.add(CommitNote(commit="abcdef123456", kind=NoteKind.BUG, title="X"))
+    feat = Feat(slug="a", title="A", commits=["ab"])   # 太短
+    assert notes_for_feat(feat, store) == []
+    # 够长的前缀可以匹配
+    feat2 = Feat(slug="b", title="B", commits=["abcdef"])
+    assert len(notes_for_feat(feat2, store)) == 1

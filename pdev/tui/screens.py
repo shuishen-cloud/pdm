@@ -688,14 +688,27 @@ def stage_progress(feat, git) -> list:
 
 
 def notes_for_feat(feat, note_store) -> list:
-    """该 feat 关联 commit 上的全部笔记。"""
+    """该 feat 关联 commit 上的全部笔记。
+
+    匹配规则：完全相等，或一方是另一方的 hash 前缀（至少 6 位），
+    避免短串误匹配。
+    """
     if note_store is None:
         return []
-    wanted = {c for c in feat.commits}
+    wanted = [c for c in feat.commits if c]
     out = []
     for n in note_store.all():
+        nc = n.commit or ""
+        if not nc:
+            continue
         for c in wanted:
-            if n.commit == c or n.commit.startswith(c) or c.startswith(n.commit):
+            if nc == c:
+                out.append(n)
+                break
+            if len(c) >= 6 and nc.startswith(c):
+                out.append(n)
+                break
+            if len(nc) >= 6 and c.startswith(nc):
                 out.append(n)
                 break
     return out
