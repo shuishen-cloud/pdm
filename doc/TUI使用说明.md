@@ -150,16 +150,23 @@ ba390f8d  refactor(tui): 筛选弹窗…  bug:1 exc:1
 | `r` | 重新加载 |
 | `Esc` / `q` | 关闭 |
 
-### 详情展示四开关（可配置默认）
+### 详情视图切换（互斥）
 
-| 键 | 开关 | 内容 | 默认 |
-|----|------|------|------|
-| `d` | 文档正文 | 内联渲染设计文档（Markdown） | 关 |
-| `n` | 笔记详情 | 展开笔记的 detail / files | 关 |
-| `v` | 验证 | 显示验证方法与上次状态 | 开 |
-| `s` | 规格字段 | 展开 api / logs / fallbacks | 开 |
+右侧内容区按 `d` / `n` / `v` **互斥切换**，一次只显示一块，
+**再按同一个键回默认（规格）视图**：
 
-底部状态栏实时显示 `[d:on] [n:off] …`。默认值可在 `.pdm.json` 里配置：
+| 键 | 视图 | 内容 |
+|----|------|------|
+| `s` | 规格（默认） | api / logs / fallbacks / commit / 异常 / 校验 |
+| `d` | 设计文档 | 内联渲染 Markdown 正文 |
+| `n` | 关联笔记 | 按 kind 分组，含 detail / files |
+| `v` | 验证 | 全部验证命令与上次状态 |
+
+顶部（slug / 标题 / 阶段 / 状态）**固定不动**，切换视图不丢失上下文；
+切换时滚动位置重置到顶部。底部状态栏显示当前视图名。
+
+初始视图可用 `.pdm.json` 配置（`doc_body=true` → 初始 `d` 视图，
+`notes_detail=true` → 初始 `n` 视图）：
 
 ```jsonc
 {
@@ -167,8 +174,6 @@ ba390f8d  refactor(tui): 筛选弹窗…  bug:1 exc:1
     "view": {
       "doc_body": false,
       "notes_detail": false,
-      "verify": true,
-      "specs": true,
       "notes_grouped": true,
       "doc_max_lines": 0
     }
