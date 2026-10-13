@@ -2,7 +2,7 @@
   "slug": "feat-ui",
   "title": "Feat 界面重构：显示阶段闭环 + 关联笔记",
   "kind": "feat",
-  "status": "draft",
+  "status": "testing",
   "doc": "docs/feat/feat-ui.md",
   "api": [
     "stage_progress(feat: Feat, git) -> List[Tuple[str, bool]]",
@@ -21,5 +21,5 @@
   "notes": [],
   "discovered": [],
   "created_at": "2026-10-13T09:32:31.154420+00:00",
-  "updated_at": "2026-10-13T09:32:31.154420+00:00"
+  "updated_at": "2026-10-13T09:32:36.547416+00:00"
 }

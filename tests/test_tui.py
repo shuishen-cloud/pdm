@@ -1290,3 +1290,122 @@ def test_no_modal_uses_key_q_without_binding():
                 f"{node.name} 使用了 key_q()，应改为声明式 BINDINGS"
                 f"（见 docs/feat/modal-keys.md）"
             )
+
+
+# ---------------------------------------------------------------------------
+# Feat 界面：阶段闭环 + 关联笔记（见 docs/feat/feat-ui.md）
+# ---------------------------------------------------------------------------
+
+
+def test_stage_progress_all_done(tmp_path):
+    """五个阶段齐全时全部为 True。"""
+    from pdev.feat import Feat
+    from pdev.tui.screens import stage_progress
+    from pdev.git import GitRepo
+    import subprocess
+
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    for i, msg in enumerate(("doc(x): 规范", "test(x): 测试",
+                             "feat(x): 实现", "fix(x): 修", "doc(x): 收尾")):
+        (tmp_path / f"f{i}.txt").write_text("x", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "-m", msg)
+
+    repo = GitRepo(str(tmp_path))
+    feat = Feat(slug="a", title="A",
+                commits=[i.hash for i in repo.log()])
+    prog = stage_progress(feat, repo)
+    assert dict(prog) == {"doc": True, "test": True, "feat": True,
+                          "fix": True, "closing": True}
+
+
+def test_stage_progress_partial(tmp_path):
+    """只做了 doc + feat 时，test/fix 未完成。"""
+    from pdev.feat import Feat
+    from pdev.tui.screens import stage_progress
+    from pdev.git import GitRepo
+    import subprocess
+
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    for i, msg in enumerate(("doc(x): 规范", "feat(x): 实现")):
+        (tmp_path / f"f{i}.txt").write_text("x", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "-m", msg)
+
+    repo = GitRepo(str(tmp_path))
+    feat = Feat(slug="a", title="A", commits=[i.hash for i in repo.log()])
+    d = dict(stage_progress(feat, repo))
+    assert d["doc"] is True
+    assert d["feat"] is True
+    assert d["test"] is False
+    assert d["fix"] is False
+
+
+def test_stage_progress_no_git(tmp_path):
+    from pdev.feat import Feat
+    from pdev.tui.screens import stage_progress
+
+    feat = Feat(slug="a", title="A")
+    prog = stage_progress(feat, None)
+    assert all(not done for _, done in prog)
+
+
+def test_notes_for_feat(store, tmp_path):
+    from pdev.feat import Feat
+    from pdev.tui.screens import notes_for_feat
+
+    store.add(CommitNote(commit="abc123", kind=NoteKind.BUG, title="缺陷"))
+    feat = Feat(slug="a", title="A", commits=["abc123"])
+    notes = notes_for_feat(feat, store)
+    assert len(notes) == 1
+    assert notes[0].title == "缺陷"
+
+
+def test_notes_for_feat_empty(store, tmp_path):
+    from pdev.feat import Feat
+    from pdev.tui.screens import notes_for_feat
+
+    feat = Feat(slug="a", title="A", commits=["nomatch"])
+    assert notes_for_feat(feat, store) == []
+
+
+async def test_feat_screen_shows_stages(store, tmp_path):
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+    from pdev.git import GitRepo
+    import subprocess
+
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "feat(x): 实现")
+
+    repo = GitRepo(str(tmp_path))
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d", api=["f()"],
+                fallbacks=["x"], commits=[repo.log()[0].hash]))
+
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs, repo, store))
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)
