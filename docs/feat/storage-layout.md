@@ -50,14 +50,13 @@
 # pdev/config.py
 DocConfig.dir: str = ".pdm/docs"        # 默认值变更
 
-# pdev/cli/context.py 或新 helper
-def resolve_doc_path(ctx, feat_doc: str) -> Path
-    """把 feat.doc 解析成项目内实际路径（兼容旧格式）"""
+def resolve_doc_path(doc_dir: str, feat_doc: str) -> str
+    """把 feat.doc（相对 doc.dir）解析成项目内实际路径。
 
-# pdev/cli/commands.py
-def cmd_feat_new(...):
-    # --doc 传了 → 相对项目根原样存
-    # 未传 → 空（不变）
+    - feat_doc 为空 → 返回 ""
+    - feat_doc 已是旧格式（以 docs/ 或 .pdm/docs/ 开头）→ 原样返回
+    - 否则 → 拼成 <doc_dir>/<feat_doc>
+    """
 ```
 
 ## 兜底

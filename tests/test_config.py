@@ -44,7 +44,7 @@ def test_defaults(tmp_path):
     assert cfg.git.auto_commit is False
     assert cfg.note.default_status is NoteStatus.NOTED
     assert cfg.issue.store == "issues"
-    assert cfg.doc.dir == "docs"
+    assert cfg.doc.dir == ".pdm/docs"
     assert cfg.query.default_limit is None
 
 
@@ -341,3 +341,45 @@ def test_ui_commit_width_from_env(tmp_path):
     cfg = load_config(env={"PDM_UI_COMMIT_WIDTH": "55"})
     assert cfg.ui.commit_width == 55
     assert isinstance(cfg.ui.commit_width, int)
+
+
+# ---------------------------------------------------------------------------
+# resolve_doc_path（见 docs/feat/storage-layout.md）
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_doc_path_default_dir():
+    from pdev.config import resolve_doc_path
+
+    assert resolve_doc_path(".pdm/docs", "feat/x.md") == ".pdm/docs/feat/x.md"
+
+
+def test_resolve_doc_path_custom_dir():
+    """用户把 doc.dir 指到可跟踪目录 → 路径随配置走。"""
+    from pdev.config import resolve_doc_path
+
+    assert resolve_doc_path("docs", "feat/x.md") == "docs/feat/x.md"
+
+
+def test_resolve_doc_path_empty_feat_doc():
+    from pdev.config import resolve_doc_path
+
+    assert resolve_doc_path(".pdm/docs", "") == ""
+
+
+@pytest.mark.parametrize("legacy", [
+    "docs/feat/x.md",
+    ".pdm/docs/feat/x.md",
+])
+def test_resolve_doc_path_legacy_passthrough(legacy):
+    """旧格式（已含根前缀）原样返回，不重复拼接。"""
+    from pdev.config import resolve_doc_path
+
+    assert resolve_doc_path(".pdm/docs", legacy) == legacy
+
+
+def test_resolve_doc_path_empty_dir_falls_back():
+    """doc.dir 为空 → 视作 .pdm/docs。"""
+    from pdev.config import resolve_doc_path
+
+    assert resolve_doc_path("", "feat/x.md") == ".pdm/docs/feat/x.md"

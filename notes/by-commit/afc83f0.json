@@ -1,0 +1,26 @@
+{
+  "commit": "afc83f0",
+  "notes": [
+    {
+      "commit": "afc83f0",
+      "kind": "difficulty",
+      "title": "兼容旧格式的解析要防重复拼接，测试须覆盖已含前缀的输入",
+      "detail": "resolve_doc_path 既要拼新相对路径，又要兼容旧的全路径（docs/feat/x.md）。若不做前缀判断，旧值会被拼成 .pdm/docs/docs/feat/x.md。测试用 parametrize 同时覆盖 docs/ 与 .pdm/docs/ 两种旧前缀，确保原样返回。",
+      "author": "ai:claude",
+      "files": [
+        "tests/test_config.py"
+      ],
+      "severity": "medium",
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "test",
+        "storage"
+      ],
+      "created_at": "2026-10-13T11:44:59.451207+00:00"
+    }
+  ]
+}

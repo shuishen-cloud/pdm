@@ -701,6 +701,29 @@ def test_feat_new_bad_slug_fails(capsys):
     assert "错误" in capsys.readouterr().err
 
 
+def test_feat_show_resolves_doc_against_dir(tmp_path, monkeypatch, capsys):
+    """feat.doc 存相对路径，show 时按 doc.dir 解析后显示。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": ".pdm/notes", "feat": {"store": ".pdm/feats"},
+                    "doc": {"dir": ".pdm/docs"}}),
+        encoding="utf-8")
+    main(["feat", "new", "a", "-t", "A", "--doc", "feat/a.md"])
+    capsys.readouterr()
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    assert ".pdm/docs/feat/a.md" in out
+
+
+def test_feat_new_doc_stored_raw(capsys):
+    """--doc 原样存储（相对 doc.dir），非全路径。"""
+    main(["feat", "new", "rawdoc", "-t", "A", "--doc", "feat/rawdoc.md"])
+    capsys.readouterr()
+    main(["--json", "feat", "show", "rawdoc"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["doc"] == "feat/rawdoc.md"
+
+
 def test_feat_new_duplicate_fails(capsys):
     main(["feat", "new", "dup", "-t", "A"])
     capsys.readouterr()
