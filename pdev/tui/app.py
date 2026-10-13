@@ -146,18 +146,15 @@ class PDMApp(App):
         self.push_screen(ThemeScreen(self.theme), apply)
 
     def _persist_ui(self, key: str, value) -> str | None:
-        """把 UI 设置写回配置文件，返回路径（失败返回 None）。
+        """把 UI 偏好写回**用户配置**（~/.config/pdm/config.json）。
 
-        优先项目 ``.pdm.json``，找不到则写用户配置。
+    主题/列宽等是个人口味，不能写项目 ``.pdm.json``（会被 git 冲掉）。
+    返回路径（失败返回 None）。
         """
         try:
-            from ..config import save_config
+            from ..config import save_user_config
 
-            path = save_config(
-                {"ui": {key: value}},
-                project_config=self.config_path,
-                cwd=self.cwd,
-            )
+            path = save_user_config({"ui": {key: value}})
         except Exception as e:            # 写不了不能影响使用
             self.notify(f"保存设置失败：{e}", severity="warning")
             return None

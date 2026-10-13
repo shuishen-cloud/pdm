@@ -37,6 +37,7 @@ __all__ = [
     "GitHubConfig",
     "load_config",
     "save_config",
+    "save_user_config",
     "find_project_config",
     "resolve_doc_path",
     "PROJECT_CONFIG_NAME",
@@ -442,6 +443,27 @@ def save_config(
     data = _read_json(target)
     _deep_merge(data, _scrub(updates))
 
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=False)
+    target.write_text(text + "\n", encoding="utf-8")
+    return target
+
+
+def save_user_config(
+    updates: Mapping[str, Any],
+    *,
+    user_config: Optional[Path] = None,
+) -> Path:
+    """把 ``updates`` 合并写入**用户配置**，返回路径。
+
+    固定写 ``~/.config/pdm/config.json``（可用 ``user_config`` 覆盖路径），
+    **不碰项目配置**。用于 UI 个人偏好（主题、列宽等）——这些不该进 git，
+    否则 ``git checkout`` 会冲掉用户的选择。
+    """
+    target = (Path(user_config) if user_config
+              else Path(USER_CONFIG_PATH).expanduser())
+    data = _read_json(target)
+    _deep_merge(data, _scrub(updates))
     target.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=False)
     target.write_text(text + "\n", encoding="utf-8")

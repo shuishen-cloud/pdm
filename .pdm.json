@@ -27,8 +27,5 @@
     "repo": "",
     "token": "",
     "auto_push": false
-  },
-  "ui": {
-    "theme": "textual-light"
   }
 }
