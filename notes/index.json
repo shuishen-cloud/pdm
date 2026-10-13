@@ -1,0 +1,23 @@
+{
+  "count": 8,
+  "by_kind": {
+    "difficulty": 2,
+    "pitfall": 2,
+    "problem": 1,
+    "bug": 2,
+    "controlled-exception": 1
+  },
+  "by_status": {
+    "noted": 4,
+    "open": 2,
+    "resolved": 2
+  },
+  "by_issue": {},
+  "commits": [
+    "525c1ee",
+    "6a68599",
+    "760c012",
+    "8d84a9b",
+    "ec51f12"
+  ]
+}

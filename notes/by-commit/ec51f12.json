@@ -1,0 +1,49 @@
+{
+  "commit": "ec51f12",
+  "notes": [
+    {
+      "commit": "ec51f12",
+      "kind": "difficulty",
+      "title": "Feat 界面要同时表达阶段闭环与笔记，字段来源分散",
+      "detail": "阶段来自 commit 前缀（git）、笔记来自 NoteStore，两者都要在详情里呈现，需在 FeatScreen 聚合",
+      "author": "human:lwy",
+      "files": [
+        "pdev/tui/screens.py"
+      ],
+      "severity": null,
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "ui",
+        "feats"
+      ],
+      "created_at": "2026-10-13T09:34:59.335801+00:00"
+    },
+    {
+      "commit": "ec51f12",
+      "kind": "controlled-exception",
+      "title": "阶段闭环用 commit 前缀推导，代码变更无法识别",
+      "detail": "只认 doc/test/feat/fix 前缀，refactor/init 等归为中性前缀不告警，避免误报",
+      "author": "human:lwy",
+      "files": [
+        "pdev/check.py"
+      ],
+      "severity": null,
+      "status": "noted",
+      "catches": [
+        "ValueError"
+      ],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "feats",
+        "design"
+      ],
+      "created_at": "2026-10-13T09:36:07.817684+00:00"
+    }
+  ]
+}

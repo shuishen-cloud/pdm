@@ -1,0 +1,25 @@
+{
+  "commit": "8d84a9b",
+  "notes": [
+    {
+      "commit": "8d84a9b",
+      "kind": "bug",
+      "title": "notes_for_feat 短 commit 串误匹配笔记",
+      "detail": "双向 startswith 让 ab 匹配到 abcdef；改为 >=6 位前缀",
+      "author": "human:lwy",
+      "files": [
+        "pdev/tui/screens.py"
+      ],
+      "severity": null,
+      "status": "resolved",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "feats"
+      ],
+      "created_at": "2026-10-13T09:34:59.429680+00:00"
+    }
+  ]
+}
