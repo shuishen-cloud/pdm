@@ -16,12 +16,18 @@
     "commit 查不到 subject → stage-prefix warning，不崩",
     "exempt_stages 为真（历史归档）→ 跳过 missing-stage"
   ],
-  "commits": [],
+  "commits": [
+    "c90016b",
+    "5920f20",
+    "6e3f892",
+    "12cee01",
+    "ab156e4"
+  ],
   "notes": [],
   "discovered": [
     "refactor/init 被误判为无阶段前缀 → 加 NEUTRAL_PREFIXES 白名单",
     "bootstrap 未标记 kind=doc，missing-stage 误报 → 修正归档豁免"
   ],
   "created_at": "2026-10-13T09:26:48.680152+00:00",
-  "updated_at": "2026-10-13T09:28:05.173591+00:00"
+  "updated_at": "2026-10-13T09:28:07.084814+00:00"
 }
