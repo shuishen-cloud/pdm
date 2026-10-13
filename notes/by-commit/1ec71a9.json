@@ -1,0 +1,26 @@
+{
+  "commit": "1ec71a9",
+  "notes": [
+    {
+      "commit": "1ec71a9",
+      "kind": "difficulty",
+      "title": "新增 check 规则以 warning 落地，避免历史欠账一律失败",
+      "detail": "commit-no-note / note-no-verify 定为 warning 而非 error：历史仓库有十几个 feat( 提交无笔记，若定为 error，feat check 对既有仓库永远退出码 1，规则会被绕过。沿用 missing-stage 策略：warning 暴露欠账，--strict 才导致失败。实测上线即抓出 15+ 条 commit-no-note 真实欠账。",
+      "author": "ai:claude",
+      "files": [
+        "pdev/check.py"
+      ],
+      "severity": "medium",
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "check",
+        "design"
+      ],
+      "created_at": "2026-10-13T10:31:48.027122+00:00"
+    }
+  ]
+}

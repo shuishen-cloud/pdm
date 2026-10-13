@@ -1,15 +1,15 @@
 {
-  "count": 32,
+  "count": 33,
   "by_kind": {
     "bug": 6,
     "controlled-exception": 2,
-    "difficulty": 14,
+    "difficulty": 15,
     "pitfall": 8,
     "problem": 2
   },
   "by_status": {
     "resolved": 5,
-    "noted": 25,
+    "noted": 26,
     "open": 2
   },
   "by_issue": {},
@@ -17,6 +17,7 @@
     "02a82bb",
     "03c4582",
     "15d3efc",
+    "1ec71a9",
     "268bf8d",
     "32fb786",
     "3c4d4e3",
