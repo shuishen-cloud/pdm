@@ -18,9 +18,12 @@ __all__ = [
     "CheckIssue",
     "check_feats",
     "check_one",
+    "classify_stage",
+    "check_stages",
     "format_issue",
     "summarize",
     "LEVEL_MARK",
+    "STAGES",
 ]
 
 LEVEL_MARK = {"error": "✗", "warning": "!"}
@@ -37,7 +40,26 @@ CODES = (
     "commit-missing",
     "status-skipped",
     "orphan-commit",
+    "stage-prefix",
+    "missing-stage",
 )
+
+# 开发阶段 → commit 信息前缀（见 docs/feat/stage-prefix.md）
+STAGES = ("doc", "test", "feat", "fix")
+
+
+def classify_stage(subject: str) -> Optional[str]:
+    """从 commit 信息前缀识别开发阶段。
+
+    识别不出返回 ``None``。``doc`` 可同时是①设计与⑤收尾，均归为 doc。
+    """
+    if not subject:
+        return None
+    s = subject.strip().lower()
+    for stage in STAGES:
+        if s.startswith(f"{stage}(") or s.startswith(f"{stage}:"):
+            return stage
+    return None
 
 
 @dataclass
@@ -173,6 +195,54 @@ def _check_feat(feat: Feat, git) -> List[CheckIssue]:
             if git.commit_info(c) is None:
                 add("commit-missing", "error",
                     f"commit {c[:8]} 在 git 中不存在")
+
+    # 阶段前缀与流程完整性
+    if git is not None and getattr(git, "available", False):
+        out.extend(check_stages(feat, git))
+
+    return out
+
+
+def check_stages(feat: Feat, git, exempt: bool = False) -> List[CheckIssue]:
+    """检查 commit 是否体现 doc→test→feat→fix 阶段。
+
+    :param exempt: 为真时跳过 ``missing-stage``（历史归档豁免）。
+    """
+    out: List[CheckIssue] = []
+    if git is None or not getattr(git, "available", False):
+        return out
+
+    seen: set = set()
+    for c in feat.commits:
+        info = git.commit_info(c)
+        if info is None:
+            # 查不到 subject：记一条 stage-prefix warning，不崩
+            out.append(CheckIssue(
+                feat.slug, "stage-prefix", "warning",
+                f"commit {c[:8]} 无法读取提交信息，无法识别阶段",
+            ))
+            continue
+        stage = classify_stage(info.subject)
+        if stage is None:
+            out.append(CheckIssue(
+                feat.slug, "stage-prefix", "warning",
+                f"commit {info.hash[:8]} 前缀不是 doc/test/feat/fix："
+                f"{info.subject[:30]!r}",
+            ))
+        else:
+            seen.add(stage)
+
+    # 归档豁免：kind == doc 不强制 test/fix
+    from .feat import FeatKind
+
+    if (feat.status is FeatStatus.CLOSED and not exempt
+            and feat.kind is not FeatKind.DOC and feat.commits):
+        missing = [s for s in ("test", "fix") if s not in seen]
+        if missing and seen:
+            out.append(CheckIssue(
+                feat.slug, "missing-stage", "warning",
+                f"closed 的 feat 缺少阶段：{'、'.join(missing)}",
+            ))
 
     return out
 

@@ -46,6 +46,8 @@ from .check import (
     CheckIssue,
     check_feats,
     check_one,
+    check_stages,
+    classify_stage,
     format_issue,
     summarize,
 )
@@ -109,6 +111,8 @@ __all__ = [
     "CheckIssue",
     "check_feats",
     "check_one",
+    "check_stages",
+    "classify_stage",
     "format_issue",
     "summarize",
     # feat
