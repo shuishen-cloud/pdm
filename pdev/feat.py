@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Feat —— 一次功能开发的设计与交付记录。
+"""Feat —— 一次功能开发的索引卡。
 
-一个 ``Feat`` 对应"一次开发"（通常是一个 feature，也可能是 fix/refactor），
-写在整个流程的**最前面**（先有设计，再写测试、再实现）。
+Feat 是**抽象的开发单元**：一次 feat（或 fix/refactor），横跨多个 commit。
+它不存长文档，只做两件事：
 
-它承载的信息：
+1. **约束**：这个功能的设计规格（接口签名、日志、兜底）
+2. **检索**：slug / 状态 / 关联的 commit 与 note
 
-- 实现方式、交付 API、数据结构
-- 预先准备的 Mock 数据（指向可执行的 fixture 文件）
-- 异常兜底、外化日志、Debug 方式
-- 对既有代码的边界（``touches``）与约定跟随（``follows``）
-- 落地后回填的 commit 与 fix 阶段发现的异常
+设计正文（简短）外置为 Markdown，Feat 里只存路径 ``doc``。
+与 commit 的关联为**手动** ``link_commit``，可用 ``pdev/git.py`` 补齐标题。
 
 存储：``<root>/by-id/<slug>.json``，一条一个文件，可进 git、可 review。
 """
@@ -30,6 +28,7 @@ __all__ = [
     "Feat",
     "FeatError",
     "FeatStore",
+    "valid_slug",
     "VALID_SLUG_CHARS",
 ]
 
@@ -54,8 +53,8 @@ class FeatKind(str, Enum):
 class FeatStatus(str, Enum):
     """开发流程的阶段（对应 doc→test→feat→fix→doc）。"""
 
-    DRAFT = "draft"              # 设计文档完成
-    TESTING = "testing"          # 正在用它写测试
+    DRAFT = "draft"              # doc 阶段：设计规格已定
+    TESTING = "testing"          # 按 doc 写测试
     INTEGRATED = "integrated"    # 已模块化接入系统
     FIXING = "fixing"            # Code Review / 修 Bug 中
     CLOSED = "closed"            # 完成，异常已回填
@@ -73,6 +72,17 @@ _STATUS_ORDER = {
     FeatStatus.CLOSED: 4,
 }
 
+_NEXT = {
+    FeatStatus.DRAFT: "按本 doc 编写测试（pdm feat set <slug> testing）",
+    FeatStatus.TESTING: "写 MVP 脚本验证，通过后模块化接入"
+                         "（pdm feat set <slug> integrated）",
+    FeatStatus.INTEGRATED: "Code Review 并修复接入 Bug"
+                           "（pdm feat set <slug> fixing）",
+    FeatStatus.FIXING: "回填发现的异常，关闭"
+                       "（pdm feat set <slug> closed）",
+    FeatStatus.CLOSED: None,
+}
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -87,30 +97,31 @@ def valid_slug(slug: str) -> bool:
 
 @dataclass
 class Feat:
-    """一次功能开发的完整设计记录。"""
+    """一次功能开发的索引卡。
 
-    slug: str                              # 唯一键，如 "feat-doc-storage"
+    :param slug: 唯一标识。
+    :param api: 交付的**代码接口**（真实签名，可直接照着实现）。
+    :param logs: 该功能**会产生什么日志**（内容/时机，不是格式串）。
+    """
+
+    slug: str
     title: str = ""
     kind: FeatKind = FeatKind.FEAT
     status: FeatStatus = FeatStatus.DRAFT
 
-    # --- 设计内容（你方法论要求的字段）---
-    design: str = ""                       # 实现方式
-    api: List[str] = field(default_factory=list)          # 交付的 API
-    data_model: str = ""                   # 数据结构
-    fixtures: List[str] = field(default_factory=list)     # Mock 数据（可执行文件路径）
-    fallbacks: List[str] = field(default_factory=list)    # 异常兜底
-    touches: List[str] = field(default_factory=list)      # 既有代码边界（影响面）
-    follows: List[str] = field(default_factory=list)      # 既有约定跟随
-    logs: List[str] = field(default_factory=list)         # 外化日志
-    debug: str = ""                        # Debug 方式
+    # 简短设计文档的路径（正文外置，AI 生成/维护）
+    doc: str = ""
 
-    # --- 关联 ---
-    commits: List[str] = field(default_factory=list)      # 落地后回填
-    notes: List[str] = field(default_factory=list)        # 关联的 note 标题
-    discovered: List[str] = field(default_factory=list)   # fix 阶段发现的异常
+    # 设计规格：这三栏要能直接写进实现代码
+    api: List[str] = field(default_factory=list)        # 真实接口签名
+    logs: List[str] = field(default_factory=list)       # 会打什么日志
+    fallbacks: List[str] = field(default_factory=list)  # 异常兜底策略
 
-    # --- 时间 ---
+    # 关联（手动串联）
+    commits: List[str] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
+    discovered: List[str] = field(default_factory=list)
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -156,18 +167,6 @@ class Feat:
     def next_step(self) -> Optional[str]:
         """当前流程的下一步（供 Agent 提示）。"""
         return _NEXT.get(self.status)
-
-
-_NEXT = {
-    FeatStatus.DRAFT: "按本 doc 编写测试（pdm feat set <slug> testing）",
-    FeatStatus.TESTING: "写 MVP 脚本验证，通过后模块化接入"
-                         "（pdm feat set <slug> integrated）",
-    FeatStatus.INTEGRATED: "Code Review 并修复接入 Bug"
-                           "（pdm feat set <slug> fixing）",
-    FeatStatus.FIXING: "回填发现的异常，关闭"
-                       "（pdm feat set <slug> closed）",
-    FeatStatus.CLOSED: None,
-}
 
 
 class FeatStore:
@@ -222,6 +221,14 @@ class FeatStore:
     def by_kind(self, kind: FeatKind) -> List[Feat]:
         return [f for f in self.all() if f.kind is kind]
 
+    def by_commit(self, commit: str) -> Optional[Feat]:
+        """哪个 feat 关联了这个 commit（支持短 hash 前缀）。"""
+        for f in self.all():
+            for c in f.commits:
+                if c == commit or c.startswith(commit) or commit.startswith(c):
+                    return f
+        return None
+
     def open(self) -> List[Feat]:
         """未关闭的 feat（status != closed）。"""
         return [f for f in self.all() if f.status is not FeatStatus.CLOSED]
@@ -246,10 +253,18 @@ class FeatStore:
         self._flush(feat)
 
     def link_commit(self, slug: str, commit: str) -> Feat:
-        """把实现 commit 回填到 feat 上（已存在则忽略）。"""
+        """把实现 commit 手动串联到 feat 上（已存在则忽略）。"""
         feat = self._require(slug)
         if commit not in feat.commits:
             feat.commits.append(commit)
+            self.update(feat)
+        return feat
+
+    def unlink_commit(self, slug: str, commit: str) -> Feat:
+        """解除某个 commit 的关联。"""
+        feat = self._require(slug)
+        if commit in feat.commits:
+            feat.commits.remove(commit)
             self.update(feat)
         return feat
 
@@ -291,21 +306,21 @@ def _to_dict(f: Feat) -> dict:
         "title": f.title,
         "kind": f.kind.value,
         "status": f.status.value,
-        "design": f.design,
+        "doc": f.doc,
         "api": list(f.api),
-        "data_model": f.data_model,
-        "fixtures": list(f.fixtures),
-        "fallbacks": list(f.fallbacks),
-        "touches": list(f.touches),
-        "follows": list(f.follows),
         "logs": list(f.logs),
-        "debug": f.debug,
+        "fallbacks": list(f.fallbacks),
         "commits": list(f.commits),
         "notes": list(f.notes),
         "discovered": list(f.discovered),
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
     }
+
+
+# 旧版字段：读取时忽略即可（不做兼容迁移）
+_LEGACY_IGNORED = {"design", "data_model", "fixtures", "touches",
+                   "follows", "debug"}
 
 
 def _from_dict(d: dict) -> Feat:
@@ -323,15 +338,10 @@ def _from_dict(d: dict) -> Feat:
         title=d.get("title", ""),
         kind=FeatKind(d.get("kind", "feat")),
         status=FeatStatus(d.get("status", "draft")),
-        design=d.get("design", ""),
+        doc=d.get("doc", ""),
         api=list(d.get("api") or []),
-        data_model=d.get("data_model", ""),
-        fixtures=list(d.get("fixtures") or []),
-        fallbacks=list(d.get("fallbacks") or []),
-        touches=list(d.get("touches") or []),
-        follows=list(d.get("follows") or []),
         logs=list(d.get("logs") or []),
-        debug=d.get("debug", ""),
+        fallbacks=list(d.get("fallbacks") or []),
         commits=list(d.get("commits") or []),
         notes=list(d.get("notes") or []),
         discovered=list(d.get("discovered") or []),

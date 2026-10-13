@@ -678,8 +678,9 @@ def test_theme_shows_current_after_set(capsys):
 
 def test_feat_new_and_show(capsys):
     code = main(["feat", "new", "my-feat", "-t", "我的功能",
-                 "--design", "先这样再那样",
-                 "--api", "pdm foo",
+                 "--doc", "docs/feat/my-feat.md",
+                 "--api", "FeatStore.add(feat: Feat) -> None",
+                 "--log", "创建时记录 slug",
                  "--fallback", "坏输入报错"])
     assert code == 0
     out = capsys.readouterr().out
@@ -688,8 +689,9 @@ def test_feat_new_and_show(capsys):
     main(["feat", "show", "my-feat"])
     out = capsys.readouterr().out
     assert "我的功能" in out
-    assert "先这样再那样" in out
-    assert "pdm foo" in out
+    assert "docs/feat/my-feat.md" in out
+    assert "FeatStore.add(feat: Feat) -> None" in out
+    assert "创建时记录 slug" in out
     assert "坏输入报错" in out
 
 
@@ -728,13 +730,13 @@ def test_feat_list_and_filters(capsys):
 
 
 def test_feat_list_json(capsys):
-    main(["feat", "new", "a", "-t", "A", "--api", "x"])
+    main(["feat", "new", "a", "-t", "A", "--api", "f()"])
     capsys.readouterr()
     code = main(["--json", "feat", "list"])
     assert code == 0
     data = json.loads(capsys.readouterr().out)
     assert data[0]["slug"] == "a"
-    assert data[0]["api"] == ["x"]
+    assert data[0]["api"] == ["f()"]
 
 
 def test_feat_show_json(capsys):

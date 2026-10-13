@@ -40,6 +40,7 @@ __all__ = [
     "cmd_feat_show",
     "cmd_feat_set",
     "cmd_feat_link",
+    "cmd_feat_unlink",
     "cmd_feat_found",
     "cmd_stats",
     "print_notes",
@@ -416,15 +417,10 @@ def cmd_feat_new(ctx: AppContext, args) -> int:
             slug=args.slug,
             title=args.title,
             kind=FeatKind(args.kind),
-            design=args.design or "",
-            data_model=args.data_model or "",
-            debug=args.debug or "",
+            doc=args.doc or "",
             api=list(args.api),
-            fixtures=list(args.fixture),
-            fallbacks=list(args.fallback),
-            touches=list(args.touch),
-            follows=list(args.follow),
             logs=list(args.log),
+            fallbacks=list(args.fallback),
         )
         _feat_store(ctx).add(feat)
     except FeatError as e:
@@ -483,16 +479,12 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
     print("═" * 50)
 
     sections = [
-        ("实现方式", [feat.design] if feat.design else []),
-        ("交付 API", feat.api),
-        ("数据结构", [feat.data_model] if feat.data_model else []),
-        ("Mock 数据", feat.fixtures),
+        ("设计文档", [feat.doc] if feat.doc else []),
+        ("交付接口", feat.api),
+        ("会打的日志", feat.logs),
         ("异常兜底", feat.fallbacks),
-        ("既有代码边界", feat.touches),
-        ("约定跟随", feat.follows),
-        ("外化日志", feat.logs),
-        ("Debug 方式", [feat.debug] if feat.debug else []),
-        ("实现 commit", feat.commits),
+        ("关联 commit", feat.commits),
+        ("关联 note", feat.notes),
         ("发现的异常", feat.discovered),
     ]
     for name, items in sections:
@@ -531,7 +523,7 @@ def cmd_feat_set(ctx: AppContext, args) -> int:
 
 
 def cmd_feat_link(ctx: AppContext, args) -> int:
-    """回填实现 commit。"""
+    """串联实现 commit。"""
     from ..feat import FeatError
 
     try:
@@ -540,6 +532,19 @@ def cmd_feat_link(ctx: AppContext, args) -> int:
         print(f"错误：{e}", file=sys.stderr)
         return 2
     print(f"{feat.slug} ← {args.commit}（现有 {len(feat.commits)} 个）")
+    return 0
+
+
+def cmd_feat_unlink(ctx: AppContext, args) -> int:
+    """解除 commit 关联。"""
+    from ..feat import FeatError
+
+    try:
+        feat = _feat_store(ctx).unlink_commit(args.slug, args.commit)
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+    print(f"{feat.slug} ✗ {args.commit}（现有 {len(feat.commits)} 个）")
     return 0
 
 

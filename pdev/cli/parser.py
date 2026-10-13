@@ -251,20 +251,14 @@ def build_parser() -> argparse.ArgumentParser:
     fnew.add_argument("-t", "--title", required=True, help="一句话标题")
     fnew.add_argument("-k", "--kind", default="feat",
                       choices=[k.value for k in FeatKind])
-    fnew.add_argument("--design", default="", help="实现方式")
-    fnew.add_argument("--data-model", default="", help="数据结构")
-    fnew.add_argument("--debug", default="", help="Debug 方式")
-    fnew.add_argument("--api", action="append", default=[], metavar="API")
-    fnew.add_argument("--fixture", action="append", default=[],
-                      metavar="PATH", help="Mock 数据文件（可多次）")
+    fnew.add_argument("--doc", default="",
+                      help="简短设计文档的路径（正文外置）")
+    fnew.add_argument("--api", action="append", default=[],
+                      metavar="SIG", help="代码接口签名（可多次）")
+    fnew.add_argument("--log", action="append", default=[],
+                      metavar="TEXT", help="会打什么日志（可多次）")
     fnew.add_argument("--fallback", action="append", default=[],
                       metavar="TEXT", help="异常兜底（可多次）")
-    fnew.add_argument("--touch", action="append", default=[],
-                      metavar="PATH", help="影响的既有代码（可多次）")
-    fnew.add_argument("--follow", action="append", default=[],
-                      metavar="TEXT", help="跟随的约定（可多次）")
-    fnew.add_argument("--log", action="append", default=[],
-                      metavar="EVENT", help="外化日志事件（可多次）")
     fnew.set_defaults(func=commands.cmd_feat_new)
 
     flist = feat_sub.add_parser("list", help="列出 feat")
@@ -287,10 +281,15 @@ def build_parser() -> argparse.ArgumentParser:
     fset.add_argument("status", choices=[s.value for s in FeatStatus])
     fset.set_defaults(func=commands.cmd_feat_set)
 
-    flink = feat_sub.add_parser("link", help="回填实现 commit")
+    flink = feat_sub.add_parser("link", help="串联实现 commit")
     flink.add_argument("slug")
     flink.add_argument("commit")
     flink.set_defaults(func=commands.cmd_feat_link)
+
+    funlink = feat_sub.add_parser("unlink", help="解除 commit 关联")
+    funlink.add_argument("slug")
+    funlink.add_argument("commit")
+    funlink.set_defaults(func=commands.cmd_feat_unlink)
 
     fbug = feat_sub.add_parser("found", help="记录 fix 阶段发现的异常")
     fbug.add_argument("slug")

@@ -18,6 +18,7 @@ from pdev.feat import (
 from tests.fixtures.feat_storage import (
     BAD_SLUGS,
     FULL_FEAT,
+    LEGACY_FIELDS,
     MINIMAL_FEAT,
 )
 
@@ -69,12 +70,14 @@ def test_full_feat_fields_roundtrip_via_store(store):
     got = store.get("demo-feat")
     assert got is not None
     assert got.title == "演示功能"
-    assert got.api == ["pdm demo run"]
-    assert got.fixtures == ["tests/fixtures/feat_storage.py"]
-    assert got.touches == ["pdev/demo.py"]
-    assert got.follows == ["JSON 分片存储"]
-    assert got.logs == ["demo.created"]
-    assert got.debug == "pdm demo --debug"
+    assert got.doc == "docs/feat/demo.md"
+    assert got.api == [
+        "FeatStore.add(feat: Feat) -> None",
+        "FeatStore.get(slug: str) -> Optional[Feat]",
+    ]
+    assert got.logs == ["创建时记录 slug 与标题", "状态推进时记录 from → to"]
+    assert got.fallbacks == ["非法输入抛 FeatError"]
+    assert got.commits == []
 
 
 def test_validate_requires_title():
@@ -246,3 +249,88 @@ def test_all_sorted_newest_first(store):
     time.sleep(0.01)
     store.add(Feat(slug="b", title="B"))
     assert [f.slug for f in store.all()] == ["b", "a"]
+
+
+# ---------------------------------------------------------------------------
+# 重构后：精简字段 + commit 串联
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_doc_fields_are_ignored(tmp_path):
+    """旧版塞进 Feat 的文档正文字段，读取时应被忽略而非报错。"""
+    root = tmp_path / "feats"
+    d = root / "by-id"
+    d.mkdir(parents=True)
+    data = {
+        "slug": "old", "title": "旧记录", "status": "draft",
+        "design": "旧的设计正文",           # 应被忽略
+        "data_model": "旧的",               # 应被忽略
+        "fixtures": ["x"],                  # 应被忽略
+        "touches": ["y"],                   # 应被忽略
+        "follows": ["z"],                   # 应被忽略
+        "debug": "w",                       # 应被忽略
+        "api": ["FeatStore.add(feat: Feat) -> None"],
+    }
+    (d / "old.json").write_text(json.dumps(data), encoding="utf-8")
+
+    store = FeatStore(root)
+    feat = store.get("old")
+    assert feat is not None
+    assert feat.title == "旧记录"
+    assert feat.api == ["FeatStore.add(feat: Feat) -> None"]
+    for field in LEGACY_FIELDS:
+        assert not hasattr(feat, field)
+
+
+def test_api_and_logs_are_real_code_content():
+    """api 是真实接口签名，logs 是日志内容（不是 usage / 格式串）。"""
+    f = Feat(**FULL_FEAT)
+    # api 里应是函数签名，含括号与箭头
+    assert all("(" in a and ")" in a for a in f.api)
+    # 不应是命令行 usage
+    assert not any(a.strip().startswith("pdm ") for a in f.api)
+    # logs 不应是 "event key=val" 这种格式串
+    assert not any("=" in x for x in f.logs)
+
+
+def test_by_commit_lookup(store):
+    store.add(Feat(slug="a", title="A"))
+    store.add(Feat(slug="b", title="B"))
+    store.link_commit("a", "10a888c")
+    assert store.by_commit("10a888c").slug == "a"
+    # 支持短 hash 互查
+    assert store.by_commit("10a888").slug == "a"
+    assert store.by_commit("nonexist") is None
+
+
+def test_unlink_commit(store):
+    store.add(Feat(slug="a", title="A"))
+    store.link_commit("a", "abc")
+    store.link_commit("a", "def")
+    feat = store.unlink_commit("a", "abc")
+    assert feat.commits == ["def"]
+    # 解除不存在的关联不报错
+    store.unlink_commit("a", "zzz")
+    assert store.get("a").commits == ["def"]
+
+
+def test_link_multiple_commits_for_one_feat(store):
+    """一个 feat 串联多个 commit。"""
+    store.add(Feat(slug="feat-x", title="跨多个 commit 的功能"))
+    for c in ("aaa111", "bbb222", "ccc333"):
+        store.link_commit("feat-x", c)
+    assert store.get("feat-x").commits == ["aaa111", "bbb222", "ccc333"]
+    # 重载后仍在
+    assert FeatStore(store.root).get("feat-x").commits == [
+        "aaa111", "bbb222", "ccc333"]
+
+
+def test_path_points_to_doc_not_content(store):
+    """Feat 只存 doc 路径，不存正文。"""
+    f = Feat(slug="a", title="A", doc="docs/feat/a.md")
+    store.add(f)
+    data = json.loads((store.root / "by-id" / "a.json").read_text("utf-8"))
+    assert data["doc"] == "docs/feat/a.md"
+    # 没有正文类字段
+    for field in LEGACY_FIELDS:
+        assert field not in data
