@@ -474,10 +474,11 @@ class FeatScreen(ModalScreen):
         ("r", "reload", "刷新"),
     ]
 
-    def __init__(self, store, git=None) -> None:
+    def __init__(self, store, git=None, note_store=None) -> None:
         super().__init__()
         self.feat_store = store
         self.git = git
+        self.note_store = note_store
         self._issues: list = []
 
     def compose(self) -> ComposeResult:
@@ -557,7 +558,8 @@ class FeatScreen(ModalScreen):
             body.update(Text("（无 feat，用 pdm feat new 创建）", style="dim"))
             return
         feat = self.feat_store.get(slug)
-        body.update(_feat_detail(feat, self._issues))
+        body.update(_feat_detail(feat, self._issues,
+                                 git=self.git, note_store=self.note_store))
 
 
 def _feat_line(feat) -> Text:
@@ -575,11 +577,21 @@ def _feat_line(feat) -> Text:
     return t
 
 
-def _feat_detail(feat, issues) -> Text:
-    """右侧详情：字段 + 校验结果。"""
+def _feat_detail(feat, issues, git=None, note_store=None) -> Text:
+    """右侧详情：阶段闭环 + 字段 + 笔记 + 校验。"""
     t = Text()
     t.append(f"{feat.slug}\n", style="bold yellow")
     t.append(f"{feat.title}\n", style="bold")
+    t.append("─" * 36 + "\n", style="dim")
+
+    # 阶段闭环
+    t.append("阶段  ", style="dim")
+    for key, done in stage_progress(feat, git):
+        label = dict(_FEAT_STAGES).get(key, key)
+        mark = "●" if done else "○"
+        style = "green" if done else "dim"
+        t.append(f"{mark}{label} ", style=style)
+    t.append("\n")
     t.append("─" * 36 + "\n", style="dim")
 
     if feat.doc:
@@ -609,6 +621,16 @@ def _feat_detail(feat, issues) -> Text:
         for x in feat.discovered:
             t.append(f"  · {x}\n")
 
+    # 关联笔记
+    notes = notes_for_feat(feat, note_store)
+    t.append("\n关联笔记\n", style="bold cyan")
+    if not notes:
+        t.append("  （该 feat 暂无笔记）\n", style="dim")
+    else:
+        for n in notes:
+            t.append(f"  {n.kind.value} ", style="cyan")
+            t.append(f"{n.title}\n")
+
     t.append("\n校验\n", style="bold cyan")
     if not issues:
         t.append("  （按 c 运行校验）\n", style="dim")
@@ -620,3 +642,60 @@ def _feat_detail(feat, issues) -> Text:
             t.append(f"  {i.mark} {i.code}\n", style=style)
             t.append(f"      {i.message}\n", style="dim")
     return t
+
+
+# ---------------------------------------------------------------------------
+# Feat 界面辅助（见 docs/feat/feat-ui.md）
+# ---------------------------------------------------------------------------
+
+# 五阶段：显示名 → classify_stage 能识别的键
+_FEAT_STAGES = [
+    ("doc", "① 设计"), ("test", "② 测试"), ("feat", "③ 实现"),
+    ("fix", "④ 修复"), ("closing", "⑤ 收尾"),
+]
+
+
+def stage_progress(feat, git) -> list:
+    """推导 doc→test→feat→fix→doc 五阶段的完成情况。
+
+    返回 ``[(键, 是否完成), ...]``；git 不可用时全部为 False。
+
+    阶段由 ``feat.commits`` 的提交信息前缀判定（复用 classify_stage）。
+    ``doc`` 前缀可同时算①设计与⑤收尾。
+    """
+    done = {"doc": False, "test": False, "feat": False,
+            "fix": False, "closing": False}
+    if git is None or not getattr(git, "available", False):
+        return [(k, False) for k, _ in _FEAT_STAGES]
+
+    from ..check import classify_stage
+
+    doc_seen = 0
+    for c in feat.commits:
+        info = git.commit_info(c)
+        if info is None:
+            continue
+        stage = classify_stage(info.subject)
+        if stage == "doc":
+            doc_seen += 1
+            done["doc"] = True
+            if doc_seen >= 2:
+                done["closing"] = True
+        elif stage in done:
+            done[stage] = True
+
+    return [(k, done[k]) for k, _ in _FEAT_STAGES]
+
+
+def notes_for_feat(feat, note_store) -> list:
+    """该 feat 关联 commit 上的全部笔记。"""
+    if note_store is None:
+        return []
+    wanted = {c for c in feat.commits}
+    out = []
+    for n in note_store.all():
+        for c in wanted:
+            if n.commit == c or n.commit.startswith(c) or c.startswith(n.commit):
+                out.append(n)
+                break
+    return out

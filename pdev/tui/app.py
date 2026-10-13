@@ -396,7 +396,7 @@ class PDMApp(App):
         path = Path(root)
         if not path.is_absolute():
             path = Path(self.cwd) / path
-        self.push_screen(FeatScreen(FeatStore(path), self.git))
+        self.push_screen(FeatScreen(FeatStore(path), self.git, self.store))
 
 
 def run(store: NoteStore, cwd: str = ".", config=None,
