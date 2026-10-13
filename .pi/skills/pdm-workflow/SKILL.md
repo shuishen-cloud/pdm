@@ -138,3 +138,13 @@ printf '...' > .pdm/docs/feat/<SLUG>.md   # 实际用编辑工具写
 优先用项目自带启动器 `./run.sh <cmd>`（自动定位 `.venv`）；其次
 `.venv/bin/pdm <cmd>`。若在子目录，用 `git rev-parse --show-toplevel`
 定位项目根后再执行。
+
+本技能自带包装器 `scripts/pdm`：从任意子目录向上找到项目根（含
+`pyproject.toml` 或 `.pdm.json`）后执行，并优先用项目自带的 pdm：
+
+```bash
+.pi/skills/pdm-workflow/scripts/pdm feat commit doc <SLUG> -m "设计"
+```
+
+若当前项目没有自带 pdm，它会回退到技能所在仓库的 `.venv` 并在 stderr
+提示来源，但仍以**当前项目**为操作对象。
