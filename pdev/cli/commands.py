@@ -522,6 +522,22 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
     print("═" * 50)
 
     from ..config import resolve_doc_path
+    from ..featview import (group_notes_by_kind, notes_for_feat,
+                            read_doc_body)
+
+    # 开关：显式 flag > 配置 feat.view > 内置默认
+    view = getattr(ctx.config.feat, "view", None)
+    def _flag(cli_flag: bool, name: str, default: bool) -> bool:
+        if cli_flag:
+            return True
+        v = getattr(view, name, default) if view is not None else default
+        return bool(v)
+
+    show_doc = _flag(getattr(args, "doc", False), "doc_body", False)
+    show_notes = _flag(getattr(args, "notes", False), "notes_detail", False)
+    show_verify = _flag(getattr(args, "verify", False), "verify", True)
+    max_lines = getattr(view, "doc_max_lines", 0) if view is not None else 0
+    grouped = getattr(view, "notes_grouped", True) if view is not None else True
 
     doc_path = resolve_doc_path(ctx.config.doc.dir, feat.doc)
     sections = [
@@ -539,6 +555,34 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
         print(f"\n{name}")
         for x in items:
             print(f"  · {x}")
+
+    # 内联设计正文
+    if show_doc and feat.doc:
+        print("\n── 设计正文 ──")
+        print(read_doc_body(ctx.config.doc.dir, feat.doc, max_lines))
+
+    # 关联笔记（复用内核聚合）
+    if show_notes or show_verify:
+        notes = notes_for_feat(feat, ctx.store)
+        print("\n── 关联笔记 ──")
+        if not notes:
+            print("  （该 feat 暂无笔记）")
+        else:
+            groups = group_notes_by_kind(notes) if grouped else [("", notes)]
+            for kind, items in groups:
+                if kind:
+                    print(f"  [{kind}] ×{len(items)}")
+                for n in items:
+                    pre = "    " if kind else "  "
+                    print(f"{pre}{n.commit[:8]} {n.title}")
+                    if show_notes and n.detail:
+                        print(f"{pre}    {n.detail}")
+                    if show_notes and n.files:
+                        print(f"{pre}    files: {', '.join(n.files)}")
+                    if show_verify:
+                        for v in n.verifications:
+                            cmd = v.effective_command or v.target
+                            print(f"{pre}    ✓ {cmd}  ({v.last_status.value})")
 
     if feat.next_step:
         print(f"\n下一步：{feat.next_step}")

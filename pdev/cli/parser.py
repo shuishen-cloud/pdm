@@ -272,6 +272,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     fshow = feat_sub.add_parser("show", help="查看一条 feat")
     fshow.add_argument("slug")
+    fshow.add_argument("--doc", action="store_true",
+                       help="打印设计文档正文")
+    fshow.add_argument("--notes", action="store_true",
+                       help="附关联笔记（按 kind 分组）")
+    fshow.add_argument("--verify", action="store_true",
+                       help="附笔记的验证命令与上次状态")
     fshow.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     fshow.add_argument("--debug", action="store_true",
                        help="额外打印原始 JSON 与存储路径")

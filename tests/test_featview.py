@@ -74,13 +74,14 @@ def test_notes_for_feat_empty(store):
 
 
 def test_notes_for_feat_short_commit_no_false_match(store):
+    """短 commit 串不应误匹配（Review 发现）。"""
     from pdev.featview import notes_for_feat
 
-    store.add(CommitNote(commit="ab", kind=NoteKind.BUG, title="太短"))
-    feat = Feat(slug="a", title="A", commits=["ab"])
+    store.add(CommitNote(commit="abcdef123456", kind=NoteKind.BUG, title="X"))
+    feat = Feat(slug="a", title="A", commits=["ab"])   # 太短
     assert notes_for_feat(feat, store) == []
-    store.add(CommitNote(commit="abcdef1", kind=NoteKind.BUG, title="正常"))
-    feat2 = Feat(slug="b", title="B", commits=["abcdef1"])
+    # 够长的前缀可以匹配
+    feat2 = Feat(slug="b", title="B", commits=["abcdef"])
     assert len(notes_for_feat(feat2, store)) == 1
 
 
@@ -114,13 +115,11 @@ def test_group_notes_by_kind_empty():
 
 
 def test_featview_no_textual_dependency():
-    import sys
-
-    import pdev.featview  # noqa: F401
-
-    assert "textual" not in sys.modules or True  # 允许已被 tui 测试加载
-    # 关键：featview 自身的模块源不引用 textual
     import inspect
 
+    import pdev.featview
+
     src = inspect.getsource(pdev.featview)
-    assert "textual" not in src
+    # 不应 import textual（docstring 里提到词不算）
+    assert "import textual" not in src
+    assert "from textual" not in src

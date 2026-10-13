@@ -740,45 +740,17 @@ def _feat_line(feat) -> Text:
 
 
 def read_doc_body(doc_dir: str, feat_doc: str, max_lines: int = 0) -> str:
-    """读设计文档正文（相对 doc.dir 解析）。
+    """读设计文档正文（内核实现见 pdev.featview）。"""
+    from ..featview import read_doc_body as _impl
 
-    - feat_doc 为空 → ""
-    - 文件不存在 / 读取失败 → "（设计文档不可读）"
-    - max_lines>0 → 截断并提示
-    """
-    if not feat_doc:
-        return ""
-    from pathlib import Path
-
-    from ..config import resolve_doc_path
-
-    path = Path(resolve_doc_path(doc_dir, feat_doc))
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return "（设计文档不可读）"
-    lines = text.splitlines()
-    if max_lines and len(lines) > max_lines:
-        kept = lines[:max_lines]
-        kept.append(f"…（已截断，共 {len(lines)} 行）")
-        return "\n".join(kept)
-    return text
+    return _impl(doc_dir, feat_doc, max_lines)
 
 
 def group_notes_by_kind(notes) -> list:
-    """把笔记按 kind 分组，保持 kind 首次出现顺序。
+    """笔记按 kind 分组（内核实现见 pdev.featview）。"""
+    from ..featview import group_notes_by_kind as _impl
 
-    返回 ``[(kind_value, [note, ...]), ...]``。
-    """
-    order = []
-    buckets = {}
-    for n in notes:
-        k = n.kind.value
-        if k not in buckets:
-            buckets[k] = []
-            order.append(k)
-        buckets[k].append(n)
-    return [(k, buckets[k]) for k in order]
+    return _impl(notes)
 
 
 def _feat_detail(feat, issues, git=None, note_store=None,
@@ -923,27 +895,7 @@ def stage_progress(feat, git) -> list:
 
 
 def notes_for_feat(feat, note_store) -> list:
-    """该 feat 关联 commit 上的全部笔记。
+    """该 feat 关联 commit 上的全部笔记（内核实现见 pdev.featview）。"""
+    from ..featview import notes_for_feat as _impl
 
-    匹配规则：完全相等，或一方是另一方的 hash 前缀（至少 6 位），
-    避免短串误匹配。
-    """
-    if note_store is None:
-        return []
-    wanted = [c for c in feat.commits if c]
-    out = []
-    for n in note_store.all():
-        nc = n.commit or ""
-        if not nc:
-            continue
-        for c in wanted:
-            if nc == c:
-                out.append(n)
-                break
-            if len(c) >= 6 and nc.startswith(c):
-                out.append(n)
-                break
-            if len(nc) >= 6 and c.startswith(nc):
-                out.append(n)
-                break
-    return out
+    return _impl(feat, note_store)
