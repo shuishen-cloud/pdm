@@ -1771,3 +1771,45 @@ async def test_feat_screen_header_always_visible(store, tmp_path):
                            doc_dir=str(tmp_path), view=view)
         plain = txt.plain
         assert "zzz" in plain
+
+
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# NoteItem 按宽度截断（见 .pdm/docs/feat/note-item-width.md）
+# ---------------------------------------------------------------------------
+
+
+async def test_note_item_truncates_to_list_width(store, tmp_path):
+    """超长笔记标题在 40 宽的列表里应截断，[kind] 完整可见。"""
+    from pdev.note import CommitNote, NoteKind
+
+    store.add(CommitNote(
+        commit="abc1234", kind=NoteKind.DIFFICULTY,
+        title="数据迁移三坑：git mv 嵌套、doc 基准错位、rm --cached 拒绝"))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        app.query_one(NoteList).load(store.by_commit("abc1234"))
+        await pilot.pause()
+        item = app.query_one(NoteList).children[0]
+        text = item.render()
+        plain = text.plain
+        assert "[difficulty]" in plain          # kind 完整
+        # 渲染宽度不应超过列表可用宽度（40 - 边框/内边距 ≈ 36）
+        assert text.cell_len <= 38
+
+
+async def test_note_item_short_title_intact(store, tmp_path):
+    from pdev.note import CommitNote, NoteKind
+
+    store.add(CommitNote(commit="abc1234", kind=NoteKind.BUG, title="短标题"))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        app.query_one(NoteList).load(store.by_commit("abc1234"))
+        await pilot.pause()
+        item = app.query_one(NoteList).children[0]
+        plain = item.render().plain
+        assert "短标题" in plain and "[bug]" in plain
