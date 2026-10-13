@@ -633,13 +633,18 @@ def test_theme_lists_json(capsys):
     assert data["current"] == "textual-dark"
 
 
-def test_theme_sets_and_persists(capsys):
+def test_theme_sets_and_persists(capsys, tmp_path, monkeypatch):
+    user = tmp_path / "user" / "config.json"
+    monkeypatch.setattr("pdev.config.USER_CONFIG_PATH", str(user))
     code = main(["theme", "nord"])
     assert code == 0
     out = capsys.readouterr().out
     assert "nord" in out
 
-    # 落盘到 .pdm.json，下次读取即生效
+    # 落盘到用户配置（不进 git），下次读取即生效
+    import json as _json
+
+    assert _json.loads(user.read_text(encoding="utf-8"))["ui"]["theme"] == "nord"
     from pdev.config import load_config
 
     cfg = load_config()

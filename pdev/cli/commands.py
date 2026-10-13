@@ -705,7 +705,7 @@ def cmd_theme(ctx: AppContext, args) -> int:
     """查看 / 设置 TUI 主题。
 
     - ``pdm theme`` 列出全部可选主题，标出当前值
-    - ``pdm theme nord`` 写入配置（优先项目 .pdm.json）
+    - ``pdm theme nord`` 写入**用户配置**（个人偏好，不进 git）
     """
     # 内置主题列表：从 textual 导入，未安装时退回空
     names: list = []
@@ -747,9 +747,9 @@ def cmd_theme(ctx: AppContext, args) -> int:
             print("是否想要：" + ", ".join(near), file=sys.stderr)
         return 2
 
-    from ..config import save_config
+    from ..config import save_user_config
 
-    path = save_config({"ui": {"theme": name}}, cwd=ctx.cwd)
+    path = save_user_config({"ui": {"theme": name}})
     print(f"已设置主题 {name} → {path}")
     return 0
 
