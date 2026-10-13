@@ -27,6 +27,13 @@ def store(tmp_path) -> FeatStore:
     return FeatStore(tmp_path / "feats")
 
 
+@pytest.fixture
+def note_store(tmp_path):
+    from pdev.store import NoteStore
+
+    return NoteStore(tmp_path / "notes")
+
+
 def codes(issues) -> set:
     return {i.code for i in issues}
 
@@ -380,3 +387,121 @@ def test_neutral_prefixes_do_not_warn(store, tmp_path):
                 "fallbacks": ["x"],
                 "commits": [i.hash for i in repo.log()]})
     assert "stage-prefix" not in codes(check_feats(store, git=repo))
+
+
+# ---------------------------------------------------------------------------
+# 规则：commit-no-note / note-no-verify（见 docs/feat/note-check.md）
+# ---------------------------------------------------------------------------
+
+
+def _git_repo_with(tmp_path, subjects):
+    """建一个 git 仓库，按顺序提交给定的提交信息；返回 GitRepo。"""
+    from pdev.git import GitRepo
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    for i, msg in enumerate(subjects):
+        (tmp_path / f"f{i}.txt").write_text("x", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "-m", msg)
+    return GitRepo(str(tmp_path))
+
+
+def _note(commit, **kw):
+    from pdev.note import CommitNote, NoteKind
+
+    base = dict(commit=commit, kind=NoteKind.PITFALL, title="坑")
+    base.update(kw)
+    return CommitNote(**base)
+
+
+def test_commit_no_note_warns_on_feat_commit(store, note_store, tmp_path):
+    """feat( 提交没有笔记 → commit-no-note。"""
+    repo = _git_repo_with(tmp_path, ["feat(x): 实现"])
+    h = repo.log()[0].hash
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": [h]})
+    issues = check_feats(store, git=repo, note_store=note_store)
+    assert "commit-no-note" in codes(issues)
+    assert all(i.level == "warning"
+               for i in issues if i.code == "commit-no-note")
+
+
+def test_commit_no_note_ok_when_note_exists(store, note_store, tmp_path):
+    repo = _git_repo_with(tmp_path, ["feat(x): 实现"])
+    h = repo.log()[0].hash
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": [h]})
+    note_store.add(_note(h[:7]))          # 短 hash 也应匹配
+    assert "commit-no-note" not in codes(
+        check_feats(store, git=repo, note_store=note_store))
+
+
+def test_commit_no_note_skips_doc_and_test_stages(store, note_store, tmp_path):
+    """doc( / test( 提交豁免：文档无需笔记，测试本身即验证。"""
+    repo = _git_repo_with(tmp_path, ["doc(x): 设计", "test(x): 用例"])
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"],
+                "commits": [i.hash for i in repo.log()]})
+    assert "commit-no-note" not in codes(
+        check_feats(store, git=repo, note_store=note_store))
+
+
+def test_note_no_verify_warns_when_all_empty(store, note_store, tmp_path):
+    """有笔记但全部未绑验证 → note-no-verify。"""
+    repo = _git_repo_with(tmp_path, ["feat(x): 实现"])
+    h = repo.log()[0].hash
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": [h]})
+    note_store.add(_note(h[:7]))
+    assert "note-no-verify" in codes(
+        check_feats(store, git=repo, note_store=note_store))
+
+
+def test_note_no_verify_ok_when_one_bound(store, note_store, tmp_path):
+    """只要有一条笔记绑定验证，即视为通过。"""
+    from pdev.note import Verification, VerificationKind
+
+    repo = _git_repo_with(tmp_path, ["feat(x): 实现"])
+    h = repo.log()[0].hash
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": [h]})
+    note_store.add(_note(h[:7], title="有验证的坑", verifications=[
+        Verification(kind=VerificationKind.TEST,
+                     target="tests/x.py::test_y")]))
+    note_store.add(_note(h[:7], title="没验证的坑"))
+    assert "note-no-verify" not in codes(
+        check_feats(store, git=repo, note_store=note_store))
+
+
+def test_note_rules_skipped_without_note_store(store, tmp_path):
+    """未传 note_store → 两条规则整体跳过（向后兼容）。"""
+    repo = _git_repo_with(tmp_path, ["feat(x): 实现"])
+    h = repo.log()[0].hash
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": [h]})
+    cs = codes(check_feats(store, git=repo))
+    assert "commit-no-note" not in cs
+    assert "note-no-verify" not in cs
+
+
+def test_note_rules_skipped_without_git(store, note_store):
+    add(store, GOOD_FEAT)
+    cs = codes(check_feats(store, note_store=note_store))
+    assert "commit-no-note" not in cs
+    assert "note-no-verify" not in cs
+
+
+def test_check_one_accepts_note_store(store, note_store, tmp_path):
+    """check_one 也应支持 note_store 参数。"""
+    repo = _git_repo_with(tmp_path, ["feat(x): 实现"])
+    h = repo.log()[0].hash
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": [h]})
+    issues = check_one(store, "a", git=repo, note_store=note_store)
+    assert "commit-no-note" in codes(issues)
