@@ -115,7 +115,20 @@ pdev/
 tests/               289 个测试
 scripts/seed_demo.py 模拟数据生成
 doc/                 文档
+.pi/skills/           AI 代理技能（pdm-workflow）
 ```
+
+## 给 AI 代理用（Skill）
+
+本仓库内置技能 `.pi/skills/pdm-workflow/`，让 AI 编码代理自动遵循
+**doc → test → feat → fix → close** 的开发纪律，并通过 `pdm` 门面提交：
+
+- 只经 `pdm feat commit` 创建提交，不手敲 `git commit`
+- 每阶段完成后用 `pdm note add --verify` 沉淀笔记与可执行验证
+- 收尾跑 `pdm feat check` 自校验
+
+在 pi 中 `/skill:pdm-workflow` 强制加载，或直接让代理“实现某功能”时
+按描述自动触发。脚本 `scripts/pdm` 可从任意子目录定位并执行 pdm。
 
 ## 开发
 
