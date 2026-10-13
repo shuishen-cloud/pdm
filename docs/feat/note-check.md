@@ -79,4 +79,27 @@ def check_notes(feat, git, note_store) -> List[CheckIssue]
 
 ## 实现与校验结果（收尾）
 
-（待实现后回填）
+实现于 commit 1ec71a9，测试于 3c4d4e3。
+
+### 实现
+
+- `check_one` / `check_feats` / `_check_feat` 新增 `note_store` 参数
+- 新增 `check_notes(feat, git, note_store)` 与辅助 `_note_for()`
+- `cmd_feat_check` 传入 `ctx.store`（NoteStore）
+
+### 实测效果
+
+上线后 `pdm feat check` 立即抓出历史真实欠账：
+
+- **15+ 条 `commit-no-note`**：bootstrap / feat-check / tui-polish /
+  feat-storage 等多个 `feat(` / `fix(` 提交确实没有笔记
+- `feat-scroll` 的提交**未**告警 —— 因为它已被补过笔记，
+  证明短 hash 前缀匹配与阶段豁免均工作正常
+
+### 本次发现的异常
+
+1. 两条新规则必须定为 **warning**：历史仓库普遍缺失笔记，
+   定为 error 会让 `feat check` 对既有仓库一律退出码 1，
+   规则反而被绕过（沿用 `missing-stage` 策略）。
+2. `check.py` 原先完全不引用 note/verify，加规则必须先注入
+   `NoteStore`，这是本次唯一的结构性改动点。
