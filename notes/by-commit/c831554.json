@@ -1,0 +1,27 @@
+{
+  "commit": "c831554",
+  "notes": [
+    {
+      "commit": "c831554",
+      "kind": "difficulty",
+      "title": "feat.doc 存字面路径，改布局须把 doc.dir 真正实现",
+      "detail": "feat.doc 存的是完整字面路径（docs/feat/x.md），pdev 从不解析；doc.dir 配置项存在但完全是死代码。要让'默认落 .pdm/、用户可配可跟踪目录'成立，必须把 doc.dir 实现为 feat doc 的根，feat.doc 改存相对路径。这是本次的核心代码改动。",
+      "author": "ai:claude",
+      "files": [
+        "pdev/config.py",
+        "pdev/feat.py"
+      ],
+      "severity": "medium",
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "storage",
+        "design"
+      ],
+      "created_at": "2026-10-13T11:43:05.076416+00:00"
+    }
+  ]
+}
