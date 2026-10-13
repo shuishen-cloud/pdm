@@ -71,6 +71,25 @@ CommitNote(
 | `pdm verify list` / `show` / `run` | 验证的查看与执行 |
 | `pdm feat new/list/show/set/link/check` | 开发记录（设计→测试→实现） |
 | `pdm feat commit <stage> <slug>` | 阶段提交：由 pdm 创建 commit，强制 doc→test→feat→fix→close 顺序 |
+
+### 阶段提交（推荐用法）
+
+不用手敲 `git commit`，改用 pdm 门面：顺序不对会被**提交前拒绝**，
+而不是事后由 `pdm feat check` 发现。
+
+```bash
+pdm feat new demo --title "演示" --doc feat/demo.md
+pdm feat commit doc   demo -m "写设计"      # 自动生成 doc(demo): 写设计
+pdm feat commit test  demo -m "写测试"
+pdm feat commit feat  demo -m "实现" --files pdev/x.py
+pdm feat commit fix   demo -m "修 bug"
+pdm feat commit close demo -m "收尾文档" --close   # 收尾并置 closed
+```
+
+- 阶段流水线：`doc → test → feat → fix → close`（`close` 前缀仍是 `doc(`）
+- 允许停留在当前阶段重复提交，禁止回退（feat 之后不能再 test）
+- `--dry-run` 预演，`--no-verify` 跳过 pre-commit 钩子
+- 旧数据无游标时，从已有 commit 前缀自动推断
 | `pdm feat show <slug> --doc/--notes/--verify` | 查看设计正文与关联笔记 |
 | `pdm ui` | TUI（仿 lazygit） |
 | `pdm stats` | 总览（含负债 / 资产 / 验证覆盖） |
