@@ -70,6 +70,7 @@ CommitNote(
 | `pdm show <commit>` | 某次提交的全部笔记 |
 | `pdm verify list` / `show` / `run` | 验证的查看与执行 |
 | `pdm feat new/list/show/set/link/check` | 开发记录（设计→测试→实现） |
+| `pdm feat commit <stage> <slug>` | 阶段提交：由 pdm 创建 commit，强制 doc→test→feat→fix→close 顺序 |
 | `pdm feat show <slug> --doc/--notes/--verify` | 查看设计正文与关联笔记 |
 | `pdm ui` | TUI（仿 lazygit） |
 | `pdm stats` | 总览（含负债 / 资产 / 验证覆盖） |
