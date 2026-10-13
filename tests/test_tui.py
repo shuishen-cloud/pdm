@@ -1667,8 +1667,8 @@ def test_group_notes_by_kind():
     assert len(groups[0][1]) == 2      # 两个 pitfall
 
 
-async def test_feat_screen_toggle_keys(store, tmp_path):
-    """四个开关键 d/n/v/s 切换显示状态。"""
+async def test_feat_screen_view_switch_exclusive(store, tmp_path):
+    """d/n/v/s 互斥切换视图；再按同键回默认 spec。"""
     from pdev.feat import Feat, FeatStore
     from pdev.tui.screens import FeatScreen
 
@@ -1681,24 +1681,29 @@ async def test_feat_screen_toggle_keys(store, tmp_path):
         app.push_screen(FeatScreen(fs, doc_dir=str(tmp_path)))
         await pilot.pause()
         screen = app.screen
-        # 默认：doc_body=False
-        assert screen._view["doc_body"] is False
+        assert screen._view == "spec"          # 默认
         await pilot.press("d")
         await pilot.pause()
-        assert screen._view["doc_body"] is True
+        assert screen._view == "doc"
         await pilot.press("n")
         await pilot.pause()
-        assert screen._view["notes_detail"] is True
+        assert screen._view == "notes"          # 互斥：不再是 doc
         await pilot.press("v")
         await pilot.pause()
-        assert screen._view["verify"] is False
+        assert screen._view == "verify"
+        await pilot.press("v")
+        await pilot.pause()
+        assert screen._view == "spec"           # 再按回默认
+        await pilot.press("d")
+        await pilot.pause()
+        assert screen._view == "doc"
         await pilot.press("s")
         await pilot.pause()
-        assert screen._view["specs"] is False
+        assert screen._view == "spec"
 
 
 async def test_feat_screen_view_from_config(store, tmp_path):
-    """构造时可注入配置默认值。"""
+    """配置 doc_body=true → 初始视图为 doc。"""
     from pdev.feat import Feat, FeatStore
     from pdev.tui.screens import FeatScreen
     from pdev.config import FeatViewConfig
@@ -1712,13 +1717,12 @@ async def test_feat_screen_view_from_config(store, tmp_path):
         await pilot.pause()
         app.push_screen(FeatScreen(fs, doc_dir=str(tmp_path), view=view))
         await pilot.pause()
-        screen = app.screen
-        assert screen._view["doc_body"] is True
-        assert screen._view["notes_detail"] is True
+        # doc_body 优先于 notes_detail
+        assert app.screen._view == "doc"
 
 
 async def test_feat_screen_doc_body_renders_markdown(store, tmp_path):
-    """d 键打开后，详情挂载 Markdown widget 渲染正文。"""
+    """d 视图挂载 Markdown widget 渲染正文。"""
     from pdev.feat import Feat, FeatStore
     from pdev.tui.screens import FeatScreen
     from textual.widgets import Markdown
@@ -1738,3 +1742,23 @@ async def test_feat_screen_doc_body_renders_markdown(store, tmp_path):
         await pilot.pause()
         md = app.screen.query_one("#feat-doc", Markdown)
         assert md is not None
+        # 切回 spec 后 Markdown 应被卸载
+        await pilot.press("s")
+        await pilot.pause()
+        assert not app.screen.query("#feat-doc")
+
+
+async def test_feat_screen_header_always_visible(store, tmp_path):
+    """切换视图时头部（slug/阶段）始终在详情里。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen, _feat_detail
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="zzz", title="T", doc="feat/a.md", api=["f()"],
+                fallbacks=["x"]))
+    feat = fs.get("zzz")
+    for view in ("spec", "doc", "notes", "verify"):
+        txt = _feat_detail(feat, [], git=None, note_store=None,
+                           doc_dir=str(tmp_path), view=view)
+        plain = txt.plain
+        assert "zzz" in plain
