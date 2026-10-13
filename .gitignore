@@ -32,3 +32,7 @@ issues/
 demo-notes/
 demo-project/
 .pdm.local.json
+
+# 开发过程数据（笔记/feat/设计文档）：默认不跟踪、不随代码分发。
+# 注意：.pdm.json（配置）仍跟踪，与本目录不同名不同层级。
+.pdm/

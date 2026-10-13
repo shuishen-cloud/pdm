@@ -1,5 +1,5 @@
 {
-  "store": "notes",
+  "store": ".pdm/notes",
   "default_author": "human:lwy",
   "color": true,
   "editor": "",
@@ -18,7 +18,10 @@
     "store": "issues"
   },
   "doc": {
-    "dir": "doc"
+    "dir": ".pdm/docs"
+  },
+  "feat": {
+    "store": ".pdm/feats"
   },
   "github": {
     "repo": "",
