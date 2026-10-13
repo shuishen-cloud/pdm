@@ -180,28 +180,41 @@ class PDMApp(App):
         notes = list(self.store.all())
         notes = self._apply_filters(notes)
 
-        grouped: dict[str, list] = {}
-        for n in notes:
-            grouped.setdefault(n.commit, []).append(n)
-
         # git 历史：新→旧，包含无笔记的提交
         git_infos = self.git.log() if self.git.available else []
         order = [info.hash for info in git_infos]
-        order_set = set(order)
+        info_by_hash = {info.hash: info for info in git_infos}
 
-        # 笔记里出现但不在 git 历史中的（如演示用的伪造 hash）
-        extra = sorted(
-            (c for c in grouped if c not in order_set), reverse=True
-        )
+        # 笔记按 commit 归入对应的 git 提交（前缀互匹配：
+        # 笔记常存 7 位短 hash，git 给 40 位）
+        def _pick(commit: str) -> list:
+            return [n for n in notes
+                    if n.commit == commit
+                    or (len(commit) >= 6 and n.commit.startswith(commit))
+                    or (len(n.commit) >= 6 and commit.startswith(n.commit))]
+
+        claimed: set = set()
+        entries: list = []
+        for h in order:
+            ns = _pick(h)
+            claimed.update(id(n) for n in ns)
+            entries.append((h, ns, info_by_hash[h]))
+
+        # 不在 git 历史里的（伪造 hash 或非 git 仓库）
+        extra: dict = {}
+        for n in notes:
+            if id(n) not in claimed:
+                extra.setdefault(n.commit, []).append(n)
+        for c in sorted(extra, reverse=True):
+            entries.append((c, extra[c], None))
+
         # 已筛选时只保留命中的提交；未筛选时展示全部 git 历史
         if self._note_filters:
-            commits = [c for c in order if c in grouped] + extra
-        else:
-            commits = order + extra
+            entries = [(c, ns, info) for c, ns, info in entries if ns]
 
         cl = self.query_one(CommitList)
-        infos = {info.hash: info for info in git_infos}
-        cl.load([(c, grouped.get(c, []), infos.get(c)) for c in commits])
+        cl.load(entries)
+        commits = [c for c, _, _ in entries]
         if commits:
             self._select_commit(commits[0])
         else:

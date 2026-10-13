@@ -230,3 +230,18 @@ def test_empty_store(tmp_path):
     assert len(s) == 0
     assert list(s.all()) == []
     s.rebuild_index()  # 空存储也能重建索引
+
+
+def test_by_commit_prefix_match(store):
+    """笔记存短 hash，调用方可能给 8/40 位——应前缀互匹配。"""
+    store.add(CommitNote(commit="8d84a9b", kind=NoteKind.BUG, title="X"))
+    assert len(store.by_commit("8d84a9b")) == 1
+    assert len(store.by_commit("8d84a9ba")) == 1
+    assert len(store.by_commit("8d84a9ba1234")) == 1
+    assert len(store.by_commit("8d84a9c")) == 0     # 不匹配
+
+
+def test_by_commit_short_string_no_false_match(store):
+    """太短的前缀（<6 位）不应误匹配。"""
+    store.add(CommitNote(commit="abcdef123456", kind=NoteKind.BUG, title="X"))
+    assert store.by_commit("ab") == []

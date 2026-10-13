@@ -445,10 +445,10 @@ class FeatScreen(ModalScreen):
     """
 
     CSS = """
-    FeatScreen { align: center middle; background: $background 70%; }
+    FeatScreen { align: center middle; background: $surface; }
     #feat-box {
-        width: 96;
-        height: 80%;
+        width: 96%;
+        height: 90%;
         padding: 0 1;
         border: thick $accent;
         background: $surface;

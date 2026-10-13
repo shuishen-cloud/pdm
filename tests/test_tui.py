@@ -1462,3 +1462,19 @@ async def test_feat_screen_notes_show_commit_hash(store, tmp_path):
     assert "关联笔记" in text.plain
     assert "缺陷" in text.plain
     assert "abc1234d" in text.plain
+
+
+async def test_feat_screen_covers_main_footer(store, tmp_path):
+    """FeatScreen 应遮住主界面的 footer，避免误以为 q 会退出应用。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import FeatScreen
+
+    fs = FeatStore(tmp_path / "feats")
+    fs.add(Feat(slug="a", title="A", doc="d", api=["f()"], fallbacks=["x"]))
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 30)) as pilot:
+        await pilot.pause()
+        app.push_screen(FeatScreen(fs))
+        await pilot.pause()
+        # FeatScreen 的 CSS 不应是半透明（否则主界面可见）
+        assert "70%" not in FeatScreen.CSS

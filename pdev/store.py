@@ -203,8 +203,26 @@ class NoteStore:
     # --- 单条件查询 ---
 
     def by_commit(self, commit: str) -> List[CommitNote]:
-        """某次提交的全部笔记。"""
-        return [n for n in self._notes if n.commit == commit]
+        """某次提交的全部笔记。
+
+        支持 hash 前缀互匹配：笔记里常存短 hash（如 7 位），
+        而调用方（TUI 从 git）给的是 8/40 位。要求前缀至少 6 位，
+        避免短串误匹配。
+        """
+        if not commit:
+            return []
+        out = []
+        for n in self._notes:
+            nc = n.commit or ""
+            if nc == commit:
+                out.append(n)
+                continue
+            if len(commit) >= 6 and nc.startswith(commit):
+                out.append(n)
+                continue
+            if len(nc) >= 6 and commit.startswith(nc):
+                out.append(n)
+        return out
 
     def by_kind(self, kind: NoteKind) -> List[CommitNote]:
         """按类型筛选。"""
