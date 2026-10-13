@@ -42,6 +42,7 @@ CODES = (
     "status-skipped",
     "orphan-commit",
     "stage-prefix",
+    "stage-order",
     "missing-stage",
     "commit-no-note",
     "note-no-verify",
@@ -272,6 +273,53 @@ def check_stages(feat: Feat, git, exempt: bool = False) -> List[CheckIssue]:
                 f"closed 的 feat 缺少阶段：{'、'.join(missing)}",
             ))
 
+    out.extend(check_stage_order(feat, git))
+
+    return out
+
+
+# 阶段在流水线中的序号；doc 既可首也可尾，按出现位置判定
+_PIPELINE = ("doc", "test", "feat", "fix")
+
+
+def check_stage_order(feat: Feat, git) -> List[CheckIssue]:
+    """按提交先后顺序校验阶段不倒退（兜底 ``stage-commit`` 门面）。
+
+    允许停留在同一阶段或前进一阶；后退（如 feat 后又 test）报
+    ``stage-order`` warning。识别不出的前缀跳过。
+
+    首阶段 ``doc`` 与收尾 ``doc`` 前缀相同，靠**位置**区分：出现于
+    test/feat/fix 之后的 ``doc`` 视为收尾，不判倒退。
+    """
+    out: List[CheckIssue] = []
+    if git is None or not getattr(git, "available", False):
+        return out
+
+    # 按 git 提交时间排序；时间相同或缺失时，退回 feat.commits 的录入顺序
+    dated = []
+    for i, c in enumerate(feat.commits):
+        info = git.commit_info(c)
+        if info is None:
+            continue
+        stage = classify_stage(info.subject)
+        if stage is None:
+            continue
+        dated.append((info.date, i, info.hash, stage))
+    dated.sort(key=lambda t: (t[0] is None, t[0], t[1]))
+
+    best = -1
+    for _, _, h, stage in dated:
+        if stage == "doc":
+            # 首阶段与收尾 doc 前缀相同，不参与单调性判定
+            continue
+        idx = _PIPELINE.index(stage)
+        if idx < best:
+            out.append(CheckIssue(
+                feat.slug, "stage-order", "warning",
+                f"阶段倒退：commit {h[:8]} 是 {stage}，出现在更晚阶段之后"
+                f"（应为 doc→test→feat→fix→doc）",
+            ))
+        best = max(best, idx)
     return out
 
 
