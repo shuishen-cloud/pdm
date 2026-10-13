@@ -421,3 +421,43 @@ def test_feat_view_from_env(tmp_path):
                       cwd=tmp_path, find=False)
     assert cfg.feat.view.doc_body is True
     assert cfg.feat.view.notes_grouped is False
+
+
+# ---------------------------------------------------------------------------
+# save_user_config（见 .pdm/docs/feat/ui-prefs-user-config.md）
+# ---------------------------------------------------------------------------
+
+
+def test_save_user_config_writes_user_path(tmp_path):
+    from pdev.config import save_user_config
+
+    user = tmp_path / "user" / "config.json"
+    path = save_user_config({"ui": {"theme": "nord"}}, user_config=user)
+    assert path == user
+    assert json.loads(user.read_text(encoding="utf-8"))["ui"]["theme"] == "nord"
+
+
+def test_save_user_config_ignores_project(tmp_path, monkeypatch):
+    """即便 cwd 有项目 .pdm.json，也不写它。"""
+    from pdev.config import save_user_config
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pdm.json").write_text(
+        json.dumps({"store": ".pdm/notes"}), encoding="utf-8")
+    user = tmp_path / "user.json"
+    save_user_config({"ui": {"theme": "dracula"}}, user_config=user)
+    # 项目配置未被改动
+    proj = json.loads((tmp_path / ".pdm.json").read_text(encoding="utf-8"))
+    assert "ui" not in proj
+    assert json.loads(user.read_text(encoding="utf-8"))["ui"]["theme"] == "dracula"
+
+
+def test_save_user_config_merges(tmp_path):
+    from pdev.config import save_user_config
+
+    user = tmp_path / "config.json"
+    save_user_config({"ui": {"theme": "nord"}}, user_config=user)
+    save_user_config({"ui": {"commit_width": 50}}, user_config=user)
+    data = json.loads(user.read_text(encoding="utf-8"))
+    assert data["ui"]["theme"] == "nord"          # 保留
+    assert data["ui"]["commit_width"] == 50      # 新增

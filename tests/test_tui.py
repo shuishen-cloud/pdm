@@ -1014,9 +1014,12 @@ async def test_bad_theme_falls_back(store, tmp_path):
         assert app.theme == "textual-dark"
 
 
-async def test_cycle_theme_changes_and_persists(store, tmp_path):
+async def test_cycle_theme_changes_and_persists(store, tmp_path, monkeypatch):
     from pdev.config import load_config
 
+    # 主题是个人偏好，写用户配置（不进 git）
+    user = tmp_path / "user" / "config.json"
+    monkeypatch.setattr("pdev.config.USER_CONFIG_PATH", str(user))
     target = tmp_path / ".pdm.json"
     target.write_text("{}", encoding="utf-8")
     cfg = Config()
@@ -1028,9 +1031,13 @@ async def test_cycle_theme_changes_and_persists(store, tmp_path):
         await pilot.press("t")
         await pilot.pause()
         assert app.theme != before
-        # 写回文件并能重新加载
-        cfg2 = load_config(project_config=target)
+        # 写回用户配置（而非项目）
+        assert user.exists()
+        cfg2 = load_config(env={}, cwd=tmp_path)
         assert cfg2.ui.theme == app.theme
+        # 项目配置未被写入 ui
+        proj = json.loads(target.read_text(encoding="utf-8"))
+        assert "ui" not in proj
 
 
 async def test_pick_theme_screen(store, tmp_path):
@@ -1593,7 +1600,7 @@ async def test_feat_screen_notes_show_commit_hash(store, tmp_path):
     feat = Feat(slug="a", title="A", doc="d", api=["f()"],
                 fallbacks=["x"], commits=["abc1234def"])
     fs.add(feat)
-    text = _feat_detail(feat, [], git=None, note_store=store)
+    text = _feat_detail(feat, [], git=None, note_store=store, view="notes")
     assert "关联笔记" in text.plain
     assert "缺陷" in text.plain
     assert "abc1234d" in text.plain
