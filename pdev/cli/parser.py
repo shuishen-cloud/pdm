@@ -132,7 +132,8 @@ def _add_common_filters(p: argparse.ArgumentParser) -> None:
     p.add_argument("-i", "--issue", help="按关联 Issue 筛选")
     p.add_argument("-a", "--author", help="按作者种类筛选，如 human / ai")
     p.add_argument("-n", "--limit", type=int, default=None, help="最多返回条数")
-    p.add_argument("--json", action="store_true", help="以 JSON 输出")
+    p.add_argument("--json", action="store_true",
+                   default=argparse.SUPPRESS, help="以 JSON 输出")
     p.add_argument("--store", default=argparse.SUPPRESS, help="笔记存储目录")
 
 

@@ -1422,3 +1422,43 @@ def test_notes_for_feat_short_commit_no_false_match(store):
     # 够长的前缀可以匹配
     feat2 = Feat(slug="b", title="B", commits=["abcdef"])
     assert len(notes_for_feat(feat2, store)) == 1
+
+
+# ---------------------------------------------------------------------------
+# TUI 显示 commit message（见 docs/feat/note-commit-msg.md）
+# ---------------------------------------------------------------------------
+
+
+async def test_detail_shows_commit_message(store, tmp_path):
+    """详情面板顶部应显示 commit message。"""
+    from pdev.git import CommitInfo
+    from pdev.tui.panels import DetailPane
+
+    app = make_app(store, cwd=str(tmp_path))
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        note = next(iter(store.all()))
+        info = CommitInfo(hash="aaa111", subject="feat(x): 某功能",
+                          author="T")
+        pane = app.query_one(DetailPane)
+        pane.show_note(note, str(tmp_path), commit_info=info)
+        await pilot.pause()
+        rendered = pane._build(note, str(tmp_path), info)
+        assert "feat(x): 某功能" in rendered.plain
+
+
+async def test_feat_screen_notes_show_commit_hash(store, tmp_path):
+    """FeatScreen 的关联笔记应带 commit 短 hash。"""
+    from pdev.feat import Feat, FeatStore
+    from pdev.tui.screens import _feat_detail
+
+    store.add(CommitNote(commit="abc1234def", kind=NoteKind.BUG,
+                         title="缺陷"))
+    fs = FeatStore(tmp_path / "feats")
+    feat = Feat(slug="a", title="A", doc="d", api=["f()"],
+                fallbacks=["x"], commits=["abc1234def"])
+    fs.add(feat)
+    text = _feat_detail(feat, [], git=None, note_store=store)
+    assert "关联笔记" in text.plain
+    assert "缺陷" in text.plain
+    assert "abc1234d" in text.plain

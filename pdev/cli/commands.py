@@ -46,6 +46,7 @@ __all__ = [
     "cmd_stats",
     "print_notes",
     "format_note",
+    "group_by_commit",
 ]
 
 _MARK = {
@@ -80,11 +81,15 @@ def note_to_dict(n: CommitNote) -> dict:
     return d
 
 
-def format_note(n: CommitNote, color: bool = False) -> str:
-    """把一条笔记渲染成多行文本。"""
+def format_note(n: CommitNote, color: bool = False,
+                indent: str = "") -> str:
+    """把一条笔记渲染成多行文本。
+
+    :param indent: 分组显示时的缩进前缀（如 ``"    "``）。
+    """
     kind = n.kind.value.upper()
     mark = _MARK[n.status]
-    lines = [f"{mark} [{kind:<10}] {n.title}"]
+    lines = [f"{indent}{mark} [{kind:<10}] {n.title}"]
 
     meta = [f"commit={n.commit[:12]}"]
     if n.files:
@@ -99,7 +104,7 @@ def format_note(n: CommitNote, color: bool = False) -> str:
         meta.append("resolves=" + ",".join(n.resolves))
     if n.severity:
         meta.append(f"sev={n.severity.value}")
-    lines.append("    " + "  ".join(meta))
+    lines.append(indent + "    " + "  ".join(meta))
 
     text = "\n".join(lines)
     if color:
@@ -108,14 +113,36 @@ def format_note(n: CommitNote, color: bool = False) -> str:
     return text
 
 
+def group_by_commit(
+    notes: List[CommitNote],
+) -> List[tuple]:
+    """按 commit 分组，保持首次出现顺序。
+
+    返回 ``[(commit, [note, ...]), ...]``。
+    """
+    order: List[str] = []
+    buckets: dict = {}
+    for n in notes:
+        if n.commit not in buckets:
+            buckets[n.commit] = []
+            order.append(n.commit)
+        buckets[n.commit].append(n)
+    return [(c, buckets[c]) for c in order]
+
+
 def print_notes(
     notes: List[CommitNote],
     *,
     as_json: bool,
     color: bool,
     out=None,
+    infos: dict = None,
 ) -> None:
-    """打印笔记列表。"""
+    """打印笔记列表。
+
+    :param infos: ``{commit: CommitInfo}``。给定时按 commit 分组，
+        每组头部显示 commit message；否则平铺（原行为）。
+    """
     out = out or sys.stdout
     if as_json:
         payload = [note_to_dict(n) for n in notes]
@@ -124,8 +151,23 @@ def print_notes(
     if not notes:
         print("（无匹配的笔记）", file=out)
         return
-    for n in notes:
-        print(format_note(n, color=color), file=out)
+
+    if not infos:
+        # 无 git：回退平铺
+        for n in notes:
+            print(format_note(n, color=color), file=out)
+            print(file=out)
+        return
+
+    for commit, group in group_by_commit(notes):
+        info = infos.get(commit)
+        subject = getattr(info, "subject", "") if info else ""
+        header = f"★ {commit[:8]}"
+        if subject:
+            header += f"  {subject}"
+        print(header, file=out)
+        for n in group:
+            print(format_note(n, color=color, indent="    "), file=out)
         print(file=out)
 
 
@@ -728,9 +770,24 @@ def _build_query(ctx: AppContext, args) -> Query:
     )
 
 
+def _commit_infos(ctx: AppContext, notes) -> dict:
+    """从 git 查笔记涉及的 commit 信息（非 git 仓库返回空）。"""
+    from ..git import GitRepo
+
+    try:
+        git = GitRepo(str(ctx.cwd))
+    except Exception:
+        return {}
+    if not git.available:
+        return {}
+    commits = list({n.commit for n in notes})
+    return git.commit_infos(commits)
+
+
 def _run_query(ctx: AppContext, args) -> int:
     hits = search(ctx.store, _build_query(ctx, args))
-    print_notes(hits, as_json=args.json, color=ctx.color)
+    infos = None if args.json else _commit_infos(ctx, hits)
+    print_notes(hits, as_json=args.json, color=ctx.color, infos=infos)
     if not args.json:
         print(f"共 {len(hits)} 条")
     return 0
@@ -752,7 +809,8 @@ def cmd_show(ctx: AppContext, args) -> int:
     if not notes:
         print(f"commit {args.commit} 没有笔记", file=sys.stderr)
         return 1
-    print_notes(notes, as_json=args.json, color=ctx.color)
+    infos = None if args.json else _commit_infos(ctx, notes)
+    print_notes(notes, as_json=args.json, color=ctx.color, infos=infos)
     return 0
 
 

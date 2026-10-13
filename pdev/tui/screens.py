@@ -628,7 +628,8 @@ def _feat_detail(feat, issues, git=None, note_store=None) -> Text:
         t.append("  （该 feat 暂无笔记）\n", style="dim")
     else:
         for n in notes:
-            t.append(f"  {n.kind.value} ", style="cyan")
+            t.append(f"  {n.commit[:8]} ", style="dim")
+            t.append(f"{n.kind.value} ", style="cyan")
             t.append(f"{n.title}\n")
 
     t.append("\n校验\n", style="bold cyan")
