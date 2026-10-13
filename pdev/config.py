@@ -37,6 +37,7 @@ __all__ = [
     "load_config",
     "save_config",
     "find_project_config",
+    "resolve_doc_path",
     "PROJECT_CONFIG_NAME",
     "ENV_PREFIX",
 ]
@@ -48,6 +49,27 @@ USER_CONFIG_PATH = "~/.config/pdm/config.json"
 
 class ConfigError(ValueError):
     """配置文件无法解析或内容非法。"""
+
+
+# 旧格式 feat.doc 可能已含的根前缀：兼容读取时不再拼接
+_DOC_ROOT_PREFIXES = ("docs/", ".pdm/docs/")
+
+
+def resolve_doc_path(doc_dir: str, feat_doc: str) -> str:
+    """把 ``feat.doc``（相对 ``doc.dir``）解析成项目内实际路径。
+
+    - ``feat_doc`` 为空 → 返回 ``""``
+    - ``doc_dir`` 为空 → 回退到 ``.pdm/docs``
+    - ``feat_doc`` 已是旧格式（以 ``docs/`` 或 ``.pdm/docs/`` 开头）
+      → 原样返回，不再拼接（避免 ``.pdm/docs/docs/...``）
+    - 否则 → 拼成 ``<doc_dir>/<feat_doc>``
+    """
+    if not feat_doc:
+        return ""
+    if feat_doc.startswith(_DOC_ROOT_PREFIXES):
+        return feat_doc
+    root = doc_dir or ".pdm/docs"
+    return f"{root.rstrip('/')}/{feat_doc}"
 
 
 # ---------------------------------------------------------------------------
@@ -87,16 +109,20 @@ class IssueConfig:
 
 @dataclass
 class DocConfig:
-    """文档相关。"""
+    """文档相关。
 
-    dir: str = "docs"
+    ``dir`` 是 feat 设计文档的根目录。默认为 ``.pdm/docs``（不跟踪）；
+    用户可改到可跟踪目录（如 ``docs``）使文档随代码分发。
+    """
+
+    dir: str = ".pdm/docs"
 
 
 @dataclass
 class FeatConfig:
     """Feat（开发记录）相关。"""
 
-    store: str = "feats"
+    store: str = ".pdm/feats"
 
 
 @dataclass
@@ -128,7 +154,7 @@ class GitHubConfig:
 class Config:
     """合并后的运行时配置快照。"""
 
-    store: str = "notes"
+    store: str = ".pdm/notes"
     default_author: str = "human:unknown"
     color: bool = True
     json_output: bool = False

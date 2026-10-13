@@ -36,7 +36,7 @@ def write(path, data):
 def test_defaults(tmp_path):
     cfg = load_config(env={}, cwd=tmp_path, find=False)
     assert isinstance(cfg, Config)
-    assert cfg.store == "notes"
+    assert cfg.store == ".pdm/notes"
     assert cfg.default_author == "human:unknown"
     assert cfg.color is True
     assert cfg.json_output is False
@@ -139,7 +139,7 @@ def test_env_token(tmp_path):
 
 def test_empty_env_value_ignored(tmp_path):
     cfg = load_config(env={"PDM_STORE": ""}, cwd=tmp_path, find=False)
-    assert cfg.store == "notes"  # 空值不覆盖默认
+    assert cfg.store == ".pdm/notes"  # 空值不覆盖默认
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ def test_non_object_config_raises(tmp_path):
 
 def test_missing_config_is_fine(tmp_path):
     cfg = load_config(env={}, cwd=tmp_path)
-    assert cfg.store == "notes"
+    assert cfg.store == ".pdm/notes"
 
 
 def test_jsonc_comment_rejected(tmp_path):

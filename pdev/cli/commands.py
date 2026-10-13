@@ -521,8 +521,11 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
     print(f"{feat.title}")
     print("═" * 50)
 
+    from ..config import resolve_doc_path
+
+    doc_path = resolve_doc_path(ctx.config.doc.dir, feat.doc)
     sections = [
-        ("设计文档", [feat.doc] if feat.doc else []),
+        ("设计文档", [doc_path] if doc_path else []),
         ("交付接口", feat.api),
         ("会打的日志", feat.logs),
         ("异常兜底", feat.fallbacks),

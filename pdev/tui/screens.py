@@ -491,11 +491,13 @@ class FeatScreen(ModalScreen):
         Binding("pageup", "detail_page_up", "翻页", show=False),
     ]
 
-    def __init__(self, store, git=None, note_store=None) -> None:
+    def __init__(self, store, git=None, note_store=None,
+                 doc_dir: str = ".pdm/docs") -> None:
         super().__init__()
         self.feat_store = store
         self.git = git
         self.note_store = note_store
+        self.doc_dir = doc_dir
         self._issues: list = []
 
     def compose(self) -> ComposeResult:
@@ -641,7 +643,8 @@ class FeatScreen(ModalScreen):
             return
         feat = self.feat_store.get(slug)
         body.update(_feat_detail(feat, self._issues,
-                                 git=self.git, note_store=self.note_store))
+                                 git=self.git, note_store=self.note_store,
+                                 doc_dir=self.doc_dir))
 
 
 def _feat_line(feat) -> Text:
@@ -659,7 +662,8 @@ def _feat_line(feat) -> Text:
     return t
 
 
-def _feat_detail(feat, issues, git=None, note_store=None) -> Text:
+def _feat_detail(feat, issues, git=None, note_store=None,
+                 doc_dir: str = ".pdm/docs") -> Text:
     """右侧详情：阶段闭环 + 字段 + 笔记 + 校验。"""
     t = Text()
     t.append(f"{feat.slug}\n", style="bold yellow")
@@ -677,8 +681,10 @@ def _feat_detail(feat, issues, git=None, note_store=None) -> Text:
     t.append("─" * 36 + "\n", style="dim")
 
     if feat.doc:
+        from ..config import resolve_doc_path
+
         t.append("设计文档  ", style="dim")
-        t.append(f"{feat.doc}\n", style="white")
+        t.append(f"{resolve_doc_path(doc_dir, feat.doc)}\n", style="white")
     t.append("状态      ", style="dim")
     t.append(f"{feat.kind.value} / {feat.status.value}\n", style="white")
 

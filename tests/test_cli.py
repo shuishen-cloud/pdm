@@ -310,7 +310,7 @@ def test_store_flag_after_subcommand(store_dir, capsys):
 
 def test_default_store_in_cwd(tmp_path, capsys):
     assert main(["note", "add", "c1", "-k", "pitfall", "-t", "t"]) == 0
-    assert (tmp_path / "notes" / "by-commit" / "c1.json").exists()
+    assert (tmp_path / ".pdm" / "notes" / "by-commit" / "c1.json").exists()
 
 
 def test_store_from_project_config(tmp_path, capsys):

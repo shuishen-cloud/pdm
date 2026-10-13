@@ -402,14 +402,19 @@ class PDMApp(App):
         from ..feat import FeatStore
         from .screens import FeatScreen
 
-        root = "feats"
+        root = ".pdm/feats"
         cfg = getattr(self.config, "feat", None)
         if cfg is not None:
-            root = getattr(cfg, "store", "feats") or "feats"
+            root = getattr(cfg, "store", ".pdm/feats") or ".pdm/feats"
+        doc_dir = ".pdm/docs"
+        dcfg = getattr(self.config, "doc", None)
+        if dcfg is not None:
+            doc_dir = getattr(dcfg, "dir", ".pdm/docs") or ".pdm/docs"
         path = Path(root)
         if not path.is_absolute():
             path = Path(self.cwd) / path
-        self.push_screen(FeatScreen(FeatStore(path), self.git, self.store))
+        self.push_screen(FeatScreen(FeatStore(path), self.git, self.store,
+                                    doc_dir=doc_dir))
 
 
 def run(store: NoteStore, cwd: str = ".", config=None,
