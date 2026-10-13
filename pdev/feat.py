@@ -122,6 +122,9 @@ class Feat:
     notes: List[str] = field(default_factory=list)
     discovered: List[str] = field(default_factory=list)
 
+    # 阶段提交游标（doc→test→feat→fix→close）；None 表示尚未开始
+    stage: Optional[str] = None
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -260,6 +263,52 @@ class FeatStore:
             self.update(feat)
         return feat
 
+    def set_stage(self, slug: str, stage: Optional[str]) -> Feat:
+        """设置阶段提交游标。"""
+        feat = self._require(slug)
+        feat.stage = stage
+        self.update(feat)
+        return feat
+
+    def commit_stage(self, slug: str, stage: str, message: str,
+                     *, cwd: str, files=None, body: str = "",
+                     no_verify: bool = False, dry_run: bool = False,
+                     git=None, close: bool = False) -> tuple:
+        """阶段提交：校验顺序 → git commit → link → 推进游标。
+
+        :param git: 用于推断当前游标的 :class:`pdev.git.GitRepo`。
+        :param close: 为真且阶段为 ``close`` 时，同时把状态置为 closed。
+        :returns: ``(feat, hash, old_stage, new_stage)``。
+        :raises StageError: 顺序非法、提交失败。
+        """
+        from .stage import assert_allowed, format_subject, infer_stage, \
+            run_commit
+
+        feat = self._require(slug)
+
+        # 游标缺失时，从已有 commit 前缀推断（兼容旧数据）
+        current = feat.stage
+        if current is None and feat.commits and git is not None:
+            current = infer_stage(feat.commits, git)
+
+        assert_allowed(current, stage)
+        subject = format_subject(stage, slug, message)
+
+        commit_hash = run_commit(
+            cwd, subject, body=body, files=files,
+            no_verify=no_verify, dry_run=dry_run,
+        )
+
+        old_stage = current
+        # 收尾 close 归一为 doc 记录，但游标记为 close
+        if not dry_run and commit_hash and commit_hash not in feat.commits:
+            feat.commits.append(commit_hash)
+        feat.stage = stage
+        if close and stage == "close":
+            feat.status = FeatStatus.CLOSED
+        self.update(feat)
+        return feat, commit_hash, old_stage, stage
+
     def unlink_commit(self, slug: str, commit: str) -> Feat:
         """解除某个 commit 的关联。"""
         feat = self._require(slug)
@@ -313,6 +362,7 @@ def _to_dict(f: Feat) -> dict:
         "commits": list(f.commits),
         "notes": list(f.notes),
         "discovered": list(f.discovered),
+        "stage": f.stage,
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
     }
@@ -345,6 +395,7 @@ def _from_dict(d: dict) -> Feat:
         commits=list(d.get("commits") or []),
         notes=list(d.get("notes") or []),
         discovered=list(d.get("discovered") or []),
+        stage=d.get("stage") or None,
         created_at=dt("created_at"),
         updated_at=dt("updated_at"),
     )

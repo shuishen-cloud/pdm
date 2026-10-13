@@ -43,6 +43,7 @@ __all__ = [
     "cmd_feat_unlink",
     "cmd_feat_found",
     "cmd_feat_check",
+    "cmd_feat_commit",
     "cmd_stats",
     "print_notes",
     "format_note",
@@ -648,6 +649,49 @@ def cmd_feat_found(ctx: AppContext, args) -> int:
         print(f"错误：{e}", file=sys.stderr)
         return 2
     print(f"{feat.slug} 发现 {len(feat.discovered)} 条异常")
+    return 0
+
+
+def cmd_feat_commit(ctx: AppContext, args) -> int:
+    """阶段提交门面：由 pdm 创建 commit，强制 doc→test→feat→fix→close 顺序。
+
+    - ``pdm feat commit <stage> <slug> -m <msg>``
+    - 顺序非法直接拒绝（退出码 2），不产生 commit
+    """
+    from ..feat import FeatError
+    from ..git import GitRepo
+    from ..stage import StageError
+
+    store = _feat_store(ctx)
+    git = GitRepo(str(ctx.cwd))
+
+    try:
+        feat, commit_hash, old_stage, new_stage = store.commit_stage(
+            args.slug, args.stage, args.message,
+            cwd=str(ctx.cwd),
+            files=args.files or None,
+            body=args.body or "",
+            no_verify=args.no_verify,
+            dry_run=args.dry_run,
+            git=git,
+            close=args.close,
+        )
+    except (StageError, FeatError) as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+
+    cur = old_stage or "（未开始）"
+    arrow = f"{cur} → {new_stage}"
+    if args.dry_run:
+        print(f"[dry-run] 将提交 {cur} → {new_stage}")
+        print(f"  {feat.slug}: <{new_stage}>({feat.slug}): {args.message.strip()}")
+        return 0
+
+    print(f"✓ {feat.slug} {arrow}  {commit_hash[:8]}")
+    if args.close and new_stage == "close":
+        print(f"  {feat.slug} → [closed]")
+    elif feat.next_step:
+        print(f"下一步：{feat.next_step}")
     return 0
 
 

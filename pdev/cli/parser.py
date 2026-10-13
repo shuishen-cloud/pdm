@@ -293,6 +293,25 @@ def build_parser() -> argparse.ArgumentParser:
     flink.add_argument("commit")
     flink.set_defaults(func=commands.cmd_feat_link)
 
+    fcommit = feat_sub.add_parser(
+        "commit", help="阶段提交（由 pdm 创建 commit，强制阶段顺序）")
+    fcommit.add_argument("stage",
+                        choices=["doc", "test", "feat", "fix", "close"],
+                        help="阶段；close 为收尾 doc")
+    fcommit.add_argument("slug")
+    fcommit.add_argument("-m", "--message", required=True,
+                         help="提交信息（自动加 <stage>(<slug>): 前缀）")
+    fcommit.add_argument("--body", default="", help="提交正文（可选）")
+    fcommit.add_argument("--files", action="append", default=[],
+                         metavar="PATH", help="只提交这些路径（可多次）")
+    fcommit.add_argument("--close", action="store_true",
+                         help="close 阶段同时将 feat 置为 closed")
+    fcommit.add_argument("--no-verify", action="store_true",
+                         help="跳过 pre-commit 钩子")
+    fcommit.add_argument("--dry-run", action="store_true",
+                         help="只打印将提交的内容，不真正提交")
+    fcommit.set_defaults(func=commands.cmd_feat_commit)
+
     funlink = feat_sub.add_parser("unlink", help="解除 commit 关联")
     funlink.add_argument("slug")
     funlink.add_argument("commit")
