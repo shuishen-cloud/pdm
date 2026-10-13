@@ -1,0 +1,25 @@
+{
+  "slug": "note-check",
+  "title": "笔记与验证自约束：commit-no-note / note-no-verify",
+  "kind": "feat",
+  "status": "draft",
+  "doc": "docs/feat/note-check.md",
+  "api": [
+    "check_one(store, slug, git=None, note_store=None) -> List[CheckIssue]",
+    "check_feats(store, git=None, *, include_orphans=True, note_store=None) -> List[CheckIssue]",
+    "check_notes(feat, git, note_store) -> List[CheckIssue]",
+    "_note_for(note_store, commit) -> List[CommitNote]"
+  ],
+  "logs": [],
+  "fallbacks": [
+    "note_store is None → commit-no-note / note-no-verify 整体跳过，向后兼容",
+    "git 不可用 → 跳过（读不到 commit 前缀）",
+    "commit 查不到 → 跳过（commit-missing 已另行告警）",
+    "短 hash 用 ≥6 位前缀互匹配，避免误配"
+  ],
+  "commits": [],
+  "notes": [],
+  "discovered": [],
+  "created_at": "2026-10-13T10:30:24.234627+00:00",
+  "updated_at": "2026-10-13T10:30:24.234627+00:00"
+}
