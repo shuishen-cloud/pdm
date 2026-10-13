@@ -2,7 +2,7 @@
   "slug": "stage-prefix",
   "title": "提交阶段前缀校验：强制 doc→test→feat→fix→doc 纪律",
   "kind": "feat",
-  "status": "draft",
+  "status": "testing",
   "doc": "docs/feat/stage-prefix.md",
   "api": [
     "classify_stage(subject: str) -> Optional[str]",
@@ -20,5 +20,5 @@
   "notes": [],
   "discovered": [],
   "created_at": "2026-10-13T09:26:48.680152+00:00",
-  "updated_at": "2026-10-13T09:26:48.680152+00:00"
+  "updated_at": "2026-10-13T09:26:58.459914+00:00"
 }

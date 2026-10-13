@@ -257,3 +257,103 @@ def test_short_hash_prefix_not_orphan(store, git_repo):
                 "fallbacks": ["x"], "commits": [short7]})
     issues = check_feats(store, git=repo)
     assert "orphan-commit" not in codes(issues)
+
+
+# ---------------------------------------------------------------------------
+# 规则：stage-prefix / missing-stage（见 docs/feat/stage-prefix.md）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("subject,expected", [
+    ("doc(feat): 先写文档", "doc"),
+    ("test(feat): 写测试", "test"),
+    ("feat(tui): 实现", "feat"),
+    ("fix(tui): 修 bug", "fix"),
+    ("refactor(x): 重构", None),
+    ("随便写点东西", None),
+    ("", None),
+])
+def test_classify_stage(subject, expected):
+    from pdev.check import classify_stage
+
+    assert classify_stage(subject) == expected
+
+
+def test_stage_prefix_warns_on_unknown_prefix(store, git_repo):
+    from pdev.git import GitRepo
+
+    repo = GitRepo(str(git_repo))
+    # git_repo 里的提交信息是 "first"，无阶段前缀
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": [repo.log()[0].hash]})
+    issues = check_feats(store, git=repo)
+    assert "stage-prefix" in codes(issues)
+
+
+def test_stage_prefix_ok_when_prefixed(store, tmp_path):
+    """提交信息带 doc/test/feat/fix 前缀时不告警。"""
+    from pdev.git import GitRepo
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=str(tmp_path),
+                              capture_output=True, text=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "feat(x): 实现")
+
+    repo = GitRepo(str(tmp_path))
+    add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
+                "fallbacks": ["x"], "commits": [repo.log()[0].hash]})
+    assert "stage-prefix" not in codes(check_feats(store, git=repo))
+
+
+def test_missing_stage_on_closed_feat(store, git_repo):
+    """closed 但只有 feat 阶段、缺 test/fix → missing-stage。"""
+    from pdev.git import GitRepo
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=str(git_repo),
+                              capture_output=True, text=True)
+
+    (git_repo / "b.txt").write_text("y", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "feat(x): 只实现了没写测试")
+    repo = GitRepo(str(git_repo))
+    latest = repo.log()[0].hash
+
+    f = Feat(slug="a", title="A", doc="d", api=["f()"],
+             fallbacks=["x"], commits=[latest])
+    store.add(f)
+    for st in (FeatStatus.TESTING, FeatStatus.INTEGRATED,
+               FeatStatus.FIXING, FeatStatus.CLOSED):
+        store.set_status("a", st)
+    assert "missing-stage" in codes(check_feats(store, git=repo))
+
+
+def test_missing_stage_skipped_for_doc_kind(store, git_repo):
+    """kind=doc 的历史归档豁免 missing-stage。"""
+    from pdev.feat import FeatKind
+    from pdev.git import GitRepo
+
+    repo = GitRepo(str(git_repo))
+    f = Feat(slug="hist", title="历史", kind=FeatKind.DOC,
+             doc="d", api=["x"], fallbacks=["y"],
+             commits=[repo.log()[0].hash])
+    store.add(f)
+    for st in (FeatStatus.TESTING, FeatStatus.INTEGRATED,
+               FeatStatus.FIXING, FeatStatus.CLOSED):
+        store.set_status("hist", st)
+    assert "missing-stage" not in codes(check_feats(store, git=repo))
+
+
+def test_stage_checks_skipped_without_git(store):
+    add(store, GOOD_FEAT)
+    cs = codes(check_feats(store))
+    assert "stage-prefix" not in cs
+    assert "missing-stage" not in cs
