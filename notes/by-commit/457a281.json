@@ -1,0 +1,26 @@
+{
+  "commit": "457a281",
+  "notes": [
+    {
+      "commit": "457a281",
+      "kind": "difficulty",
+      "title": "check 规则层不持有 NoteStore，加 note 规则须先注入",
+      "detail": "pdev/check.py 对 note/verify 引用数为 0，_check_feat 只拿 feat+git。要加 commit-no-note/note-no-verify，必须改 check_one/check_feats/_check_feat 签名把 NoteStore 传进来，并由 cmd_feat_check 传 ctx.store。这是本次唯一的结构性改动点。",
+      "author": "ai:claude",
+      "files": [
+        "pdev/check.py"
+      ],
+      "severity": null,
+      "status": "noted",
+      "catches": [],
+      "verifications": [],
+      "issue_id": null,
+      "resolves": [],
+      "tags": [
+        "check",
+        "design"
+      ],
+      "created_at": "2026-10-13T10:30:28.701380+00:00"
+    }
+  ]
+}
