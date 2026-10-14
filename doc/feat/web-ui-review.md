@@ -148,3 +148,59 @@ cmd=.venv/bin/pdm ui --web 然后点勾选框
 manual=勾一个 [审]，刷新页面确认持久；用 CLI pdm feat review <slug> 验证一致
 expected=网页与 CLI 看到同一状态
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 `4912e174`，补 node 运行时测试于 `df56554d`。
+
+### 交付物
+
+| 文件 | 内容 |
+|------|------|
+| `pdev/webui.py` | `+build_review_items` / `+apply_review`；`POST /api/review`；PAGE 加勾选框 |
+| `pdev/cli/commands.py` | `--web` 传 `by=config.default_author` |
+| `tests/test_webui_review.py` | 24 例（纯函数 + 校验拒绝 + HTTP + node 运行时） |
+
+**零新增依赖**：`pyproject.toml` 仍未改。
+
+### 写面（最终形态）
+
+| 方法 | 路径 | 结果 |
+|------|------|------|
+| `POST` | `/api/review` | 200/400/403/404/500 |
+| `POST` | 其他任意路径 | **405**（写面未扩大） |
+| `GET` | 全部 | 只读不变 |
+
+只允许改 `reviewed` / `tested` 两个布尔位；`field` 白名单；`slug` 只查表
+（`../../etc/passwd` → 404）；`by` 由服务端决定。
+
+### 验证（端到端实测）
+
+启动 `pdm ui --web`，用 `curl` 走真实 HTTP：
+
+| 步骤 | 结果 |
+|------|------|
+| POST 勾 `data_model:0` 的 `[审]` | ✅ 200，`reviewed: 1/3` |
+| POST 勾 `samples:0` 的 `[测]` | ✅ 200，`tested: 1/3` |
+| POST 非法 `field: "title"` | ✅ 400 `field 只能是 review/test` |
+| POST `/api/data` | ✅ **405** |
+| **CLI 复核** | ✅ `[x][ ] data_model:0` / `[ ][x] samples:0` —— **与网页一致** |
+| 错误响应体 | ✅ 无 `Traceback`、无 `/tmp` 路径 |
+
+CLI 与网页看到**同一状态**，证明写路径确实是同一条（`set_reviews`）。
+
+### 本次发现的异常
+
+- 无新增 bug（本轮实现一次通过）。首轮即验证了 5 类非法输入均被正确拒绝。
+
+### 新增的测试手法
+
+`test_js_review_checkboxes_and_post`：node + DOM 替身**真跑 JS**，
+模拟点击并断言 POST 的 URL / method / body 载荷，以及成功后 UI 变为 `■`。
+能抓到"点击没反应"或"载荷字段写错"这类纯前端 bug。
+
+### 已知限制（有意不做）
+
+- **无认证**：与 TUI 同级，任何能在本机操作的人都能改 `.pdm/`。
+- 不做阶段级审核勾选、不做评论编辑、不做跑验证。
+- 并发点击为"最后写胜"，单机单用户可接受。
