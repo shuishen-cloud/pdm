@@ -302,3 +302,78 @@ def test_page_still_no_external_resources():
 
     urls = re.findall(r'(?:src|href)\s*=\s*["\']([^"\']+)["\']', PAGE)
     assert not [u for u in urls if u.startswith(("http", "//"))]
+
+
+def test_js_review_checkboxes_and_post(tmp_path):
+    """node + DOM 替身真跑 JS：勾选框渲染、点击 POST、失败不误改 UI。"""
+    import re
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("未安装 node")
+
+    from pdev.webui import PAGE
+
+    js = re.search(r"<script>(.*?)</script>", PAGE, re.S).group(1)
+    harness = r"""
+const fs = require("fs"), vm = require("vm");
+let src = fs.readFileSync(process.argv[2], "utf8");
+src = src.replace(/^render\(\);\s*$/m, "").replace(/^load\(\);\s*$/m, "");
+const els = {};
+function mk(id){ return {id, innerHTML:"", textContent:"", style:{}, dataset:{},
+  className:"", value:"", addEventListener(){}, focus(){}, blur(){},
+  closest(){return null;}, tagName:"DIV"}; }
+global.document = { getElementById:id=>els[id]||(els[id]=mk(id)),
+                    addEventListener(){} };
+global.alert = msg => { throw new Error("unexpected alert: " + msg); };
+let POSTED = null;
+global.fetch = async (url, opts) => {
+  POSTED = {url, opts};
+  return { ok:true, json: async () => ({ ok:true, slug:"alpha", key:"api:0",
+    reviewed:1, tested:0, total:2,
+    items:[{key:"api:0",label:"A.x()",reviewed:true,tested:false,comment:""},
+           {key:"api:1",label:"A.y()",reviewed:false,tested:false,comment:""}] }) };
+};
+vm.runInThisContext(src);
+
+VIEW = "feats";
+DATA = { commits:[], notes:{}, store_root:"/tmp",
+  feats:[{slug:"alpha",title:"甲",kind:"feat",status:"draft",stage:"doc",
+          commit_count:0,review:[0,2],missing_fields:[]}] };
+FEAT = {slug:"alpha", title:"甲", status:"draft", stage:"doc", review:[0,2],
+  commit_count:0, missing_fields:[], design_note:"", impl_note:"",
+  api:["A.x()","A.y()"], logs:[], fallbacks:[], data_model:[], samples:[],
+  changes:[], commits:[], discovered:[], doc:"", doc_body:"",
+  doc_missing:true, stage_reviews:{}, notes:[], notes_by_kind:[],
+  review_items:[{key:"api:0",label:"A.x()",reviewed:false,tested:false,comment:""},
+                {key:"api:1",label:"A.y()",reviewed:false,tested:false,comment:""}]};
+
+renderFeatDetail(FEAT);
+const spec = els["col-feat-spec"].innerHTML;
+if (!spec.includes("data-key=\"api:0\"")) throw new Error("缺 data-key");
+if (!spec.includes("data-field=\"review\"")) throw new Error("缺 review 框");
+if (!spec.includes("data-field=\"test\"")) throw new Error("缺 test 框");
+if (!spec.includes("□")) throw new Error("未渲染未勾选方框");
+
+// 点击 → POST → 局部刷新
+toggleReview("api:0", "review", {}).then(() => {
+  if (!POSTED) throw new Error("未发起 POST");
+  if (POSTED.url !== "/api/review") throw new Error("POST 路径错");
+  if (POSTED.opts.method !== "POST") throw new Error("方法非 POST");
+  const sent = JSON.parse(POSTED.opts.body);
+  if (sent.slug !== "alpha" || sent.key !== "api:0") throw new Error("body 错");
+  if (sent.field !== "review" || sent.value !== true) throw new Error("字段错");
+  const after = els["col-feat-spec"].innerHTML;
+  if (!after.includes("■")) throw new Error("成功后未显示勾上");
+  console.log("ok");
+}).catch(e => { console.error("ERR " + e.message); process.exit(1); });
+"""
+    h = tmp_path / "h.js"
+    h.write_text(harness, encoding="utf-8")
+    j = tmp_path / "p.js"
+    j.write_text(js, encoding="utf-8")
+    r = subprocess.run([node, str(h), str(j)],
+                       capture_output=True, text=True, cwd=str(tmp_path))
+    assert "ok" in r.stdout, f"{r.stdout}\n{r.stderr}"
