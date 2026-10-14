@@ -136,3 +136,72 @@ cmd=.venv/bin/pdm ui --web --help
 manual=运行 pdm ui --web，浏览器点提交/笔记，筛选框输入关键字
 expected=三栏联动正常；筛选即时过滤；刷新不变
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 `16846213`（`pdev/webui.py` + `pdm ui --web`），
+补前端契约测试于 `befdab1e`。
+
+### 交付物
+
+| 文件 | 内容 |
+|------|------|
+| `pdev/webui.py` | 新模块；`build_data` + `make_handler` + `run` + 内嵌单页 |
+| `pdev/cli/parser.py` | `--web` / `--port` / `--no-browser` |
+| `pdev/cli/commands.py` | `--web` 分派 |
+| `tests/test_webui.py` | 15 例（纯函数 + HTTP + 前端契约 + node 校验 JS） |
+
+**零新增依赖**：`pyproject.toml` 未改，无 Flask/React/npm。
+
+### 分层（沿用 curses 版做法）
+
+```
+run()                起 http.server，绑 127.0.0.1
+  ↑
+make_handler(data)   纯数据 → HTTP 处理器
+  ↑
+build_data(store, git)   纯函数：store/git → dict
+```
+
+`build_data` 不 import http/socket，测试用 `inspect` 断言。
+
+### 交互能力
+
+| 功能 | 状态 |
+|------|------|
+| 三栏（提交/笔记/详情） | ✅ |
+| 点击提交 → 列笔记；点击笔记 → 出详情 | ✅ |
+| `j`/`k`、`↑`/`↓` 移动 | ✅ |
+| `/` 聚焦筛选框，**前端即时过滤** | ✅ |
+| `Esc` 清筛选，`R` 刷新 | ✅ |
+| HTML 转义（`escapeHtml`）防注入 | ✅ |
+
+### 验证
+
+| 项 | 结果 |
+|----|------|
+| 纯函数 + HTTP + 前端契约测试 | ✅ 15 例 |
+| 真起服务抓 HTML | ✅ HTTP 200，7377 bytes |
+| 真起服务抓 API | ✅ 175 提交 / 73 笔记组 |
+| 未知路径 | ✅ 404 |
+| 非 GET | ✅ 405（只读） |
+| JS 语法 | ✅ `node --check` 通过 |
+| 无外部资源引用 | ✅ 正则断言为空（零依赖） |
+| 非 TUI 全量回归 | ✅ 全绿 |
+
+实测：`.venv/bin/pdm ui --web --port 8765 --no-browser` 后
+`curl /` 与 `/api/data` 均正常，数据为真实 store（175 提交）。
+
+### 本次发现的异常
+
+1. **单页前端需要契约测试**：否则后续加个 CDN 字体就会破坏"零依赖"。
+   已加"无外链"断言 + 交互钩子检查 + `node --check`。
+2. **测试自身写错**（非实现错误）：短 hash 键按 8 位、空 store 用了
+   会返回提交的 git 替身。修测试而非改实现。
+
+### 已知限制（有意不做）
+
+- 只读：无写操作、无跑验证、无审查勾选。
+- 无分页：一次全量下发（当前 175 提交无压力，上千后再议）。
+- 无暗/亮主题切换（默认暗色）。
+- 服务仅绑 `127.0.0.1`，不做认证（本机使用）。
