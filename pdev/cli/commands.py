@@ -406,7 +406,8 @@ def cmd_ui(ctx: AppContext, args) -> int:
     """启动 TUI。
 
     ``pdm ui`` 用配置里的 store；``pdm ui <dir>`` 直接指定。
-    ``--curses`` 时走标准库 curses 版（零依赖，只读浏览）。
+    ``--curses`` 走标准库 curses 版（终端，零依赖）。
+    ``--web`` 走本地 Web UI（浏览器，零依赖）。
     """
     store = ctx.store
     positional = getattr(args, "store_arg", None)
@@ -419,6 +420,12 @@ def cmd_ui(ctx: AppContext, args) -> int:
         if not p.is_absolute():
             p = ctx.cwd / p
         store = NoteStore(p)
+    if getattr(args, "web", False):
+        from ..webui import run as run_web
+
+        return run_web(store, cwd=str(ctx.cwd),
+                       port=int(getattr(args, "port", 0) or 0),
+                       open_browser=not getattr(args, "no_browser", False))
     if getattr(args, "curses", False):
         from ..tui_curses import run as run_curses
 

@@ -418,6 +418,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="笔记存储目录（等同 --store）")
     ui.add_argument("--curses", action="store_true",
                     help="用标准库 curses 版（零依赖，只读浏览）")
+    ui.add_argument("--web", action="store_true",
+                    help="启动本地 Web UI（浏览器里交互，零依赖）")
+    ui.add_argument("--port", type=int, default=0,
+                    help="Web UI 端口（0 = 自动分配，仅 --web）")
+    ui.add_argument("--no-browser", action="store_true",
+                    help="Web UI 不自动开浏览器（仅 --web）")
     ui.add_argument("--store", default=argparse.SUPPRESS)
     ui.set_defaults(func=commands.cmd_ui)
 
