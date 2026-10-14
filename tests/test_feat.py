@@ -589,3 +589,108 @@ def test_review_item_roundtrip_datetime():
     assert back.reviewed_at == now
     assert back.tested_at == now
     assert back.test_status == "passed"
+
+
+# ---------------------------------------------------------------------------
+# 条目级评论（feat-comment）
+# ---------------------------------------------------------------------------
+
+
+def test_set_and_get_comment():
+    f = Feat(slug="a", title="A", api=["f()"])
+    assert f.comment("api:0") == ""
+    f.set_comment("api:0", "这个签名保持最小")
+    assert f.comment("api:0") == "这个签名保持最小"
+
+
+def test_comment_empty_string_clears():
+    f = Feat(slug="a", title="A", api=["f()"])
+    f.set_comment("api:0", "x")
+    f.set_comment("api:0", "")
+    assert f.comment("api:0") == ""
+    assert "api:0" not in f.comments          # 未落盘
+
+
+def test_comment_rejects_bad_key():
+    f = Feat(slug="a", title="A", api=["f()"])
+    with pytest.raises(FeatError):
+        f.set_comment("api:99", "x")
+    with pytest.raises(FeatError):
+        f.set_comment("nope", "x")
+    assert f.comments == {}
+
+
+def test_comment_multiline_preserved():
+    f = Feat(slug="a", title="A", api=["f()"])
+    f.set_comment("api:0", "第一行\n第二行")
+    assert f.comment("api:0") == "第一行\n第二行"
+
+
+def test_commented_items_only_nonempty_in_order():
+    f = Feat(slug="a", title="A", doc="d.md",
+             api=["f()", "g()"], logs=["l"])
+    f.set_comment("api:1", "对第二条")
+    f.set_comment("logs:0", "对日志")
+    rows = f.commented_items()
+    assert [k for k, _, _ in rows] == ["api:1", "logs:0"]
+    labels = {k: lbl for k, lbl, _ in rows}
+    assert labels["api:1"] == "g()"
+    assert rows[0][2] == "对第二条"
+
+
+def test_comment_independent_of_review():
+    f = Feat(slug="a", title="A", api=["f()"])
+    f.set_comment("api:0", "写了评论")
+    assert f.review_counts() == (1, 0, 0)     # 不影响勾选统计
+    f.set_reviewed("api:0")
+    assert f.comment("api:0") == "写了评论"    # 勾选不影响评论
+
+
+def test_store_set_comment_persists(store):
+    store.add(Feat(slug="a", title="A", api=["f()"]))
+    store.set_comment("a", "api:0", "持久化评论")
+    got = FeatStore(store.root).get("a")
+    assert got.comment("api:0") == "持久化评论"
+
+
+def test_store_set_comment_missing_feat(store):
+    with pytest.raises(FeatError, match="找不到"):
+        store.set_comment("nope", "api:0", "x")
+
+
+def test_comments_serialized(store):
+    store.add(Feat(slug="a", title="A", api=["f()"]))
+    store.set_comment("a", "api:0", "评论内容")
+    data = json.loads((store.root / "by-id" / "a.json").read_text("utf-8"))
+    assert data["comments"] == {"api:0": "评论内容"}
+
+
+def test_legacy_json_without_comments(tmp_path):
+    root = tmp_path / "feats"
+    d = root / "by-id"
+    d.mkdir(parents=True)
+    (d / "old.json").write_text(json.dumps({
+        "slug": "old", "title": "旧", "api": ["f()"],
+    }), encoding="utf-8")
+    feat = FeatStore(root).get("old")
+    assert feat.comments == {}
+
+
+def test_comments_non_str_values_dropped(tmp_path):
+    root = tmp_path / "feats"
+    d = root / "by-id"
+    d.mkdir(parents=True)
+    (d / "a.json").write_text(json.dumps({
+        "slug": "a", "title": "A", "api": ["f()"],
+        "comments": {"api:0": "好的", "api:x": 123, "api:y": ["not", "str"]},
+    }), encoding="utf-8")
+    feat = FeatStore(root).get("a")
+    assert feat.comments == {"api:0": "好的"}
+
+
+def test_orphan_comment_kept_but_not_listed():
+    f = Feat(slug="a", title="A", api=["f()", "g()"])
+    f.set_comment("api:1", "对第二条")
+    f.api = ["f()"]                            # api:1 成孤儿
+    assert "api:1" in f.comments               # JSON 保留
+    assert f.commented_items() == []           # 不列出

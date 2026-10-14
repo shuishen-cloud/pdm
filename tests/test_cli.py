@@ -1474,3 +1474,105 @@ def test_review_unreviewed_json_empty(capsys):
     assert data["total"] == 0
     assert data["count"] == 0
     assert data["feats"] == []
+
+
+# ---------------------------------------------------------------------------
+# pdm feat comment（见 doc/feat/feat-comment.md）
+# ---------------------------------------------------------------------------
+
+
+def test_feat_comment_write_and_read(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "comment", "a", "--on", "api:0",
+                 "-m", "这个签名保持最小"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "这个签名保持最小" in out
+
+    code = main(["feat", "comment", "a", "--on", "api:0"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "这个签名保持最小" in out
+
+
+def test_feat_comment_list_all(capsys):
+    _make_feat(capsys)
+    main(["feat", "comment", "a", "--on", "api:0", "-m", "接口评论"])
+    main(["feat", "comment", "a", "--on", "logs:0", "-m", "日志评论"])
+    capsys.readouterr()
+    code = main(["feat", "comment", "a"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "接口评论" in out and "日志评论" in out
+
+
+def test_feat_comment_clear(capsys):
+    _make_feat(capsys)
+    main(["feat", "comment", "a", "--on", "api:0", "-m", "x"])
+    capsys.readouterr()
+    code = main(["feat", "comment", "a", "--on", "api:0", "--clear"])
+    assert code == 0
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    assert FeatStore(tmp_path / ".pdm" / "feats").get("a").comment("api:0") == ""
+
+
+def test_feat_comment_empty_message_clears(capsys):
+    _make_feat(capsys)
+    main(["feat", "comment", "a", "--on", "api:0", "-m", "x"])
+    capsys.readouterr()
+    main(["feat", "comment", "a", "--on", "api:0", "-m", ""])
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    assert FeatStore(tmp_path / ".pdm" / "feats").get("a").comment("api:0") == ""
+
+
+def test_feat_comment_missing_slug(capsys):
+    code = main(["feat", "comment", "nope", "--on", "api:0"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "找不到" in err
+
+
+def test_feat_comment_bad_key(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "comment", "a", "--on", "api:99", "-m", "x"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "api:99" in err or "非法" in err
+
+
+def test_feat_comment_missing_on_with_message(capsys):
+    """给 -m 但没给 --on → 报错。"""
+    _make_feat(capsys)
+    code = main(["feat", "comment", "a", "-m", "x"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "--on" in err
+
+
+def test_feat_comment_json(capsys):
+    _make_feat(capsys)
+    main(["feat", "comment", "a", "--on", "api:0", "-m", "评论"])
+    capsys.readouterr()
+    code = main(["--json", "feat", "comment", "a"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert code == 0
+    assert data["comments"]["api:0"] == "评论"
+
+
+def test_feat_comment_shown_in_feat_show(capsys):
+    _make_feat(capsys)
+    main(["feat", "comment", "a", "--on", "api:0", "-m", "为什么这么定"])
+    capsys.readouterr()
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    assert "为什么这么定" in out
+
+
+def test_feat_comment_clear_and_message_conflict(capsys):
+    _make_feat(capsys)
+    with pytest.raises(SystemExit):
+        main(["feat", "comment", "a", "--on", "api:0",
+              "--clear", "-m", "x"])
