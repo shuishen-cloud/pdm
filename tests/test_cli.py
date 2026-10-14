@@ -1598,7 +1598,7 @@ def test_feat_comment_multiline_display(capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_review_all_review(capsys):
+def test_review_all_review(capsys, tmp_path):
     _make_feat(capsys)                       # doc + api:0/1 + logs:0 + fb:0
     code = main(["feat", "review", "a", "--all", "--review",
                  "--by", "human:lwy"])
@@ -1610,7 +1610,7 @@ def test_review_all_review(capsys):
         == (5, 5, 0)
 
 
-def test_review_prefix_review(capsys):
+def test_review_prefix_review(capsys, tmp_path):
     _make_feat(capsys)
     code = main(["feat", "review", "a", "--item", "api", "--review"])
     out = capsys.readouterr().out
@@ -1620,10 +1620,11 @@ def test_review_prefix_review(capsys):
     f = FeatStore(tmp_path / ".pdm" / "feats").get("a")
     assert f.review_item("api:0").reviewed
     assert f.review_item("api:1").reviewed
-    assert not f.review_item("logs:0").reviewed
+    it = f.review_item("logs:0")           # 未被操作 → None
+    assert it is None or not it.reviewed
 
 
-def test_review_all_test(capsys):
+def test_review_all_test(capsys, tmp_path):
     _make_feat(capsys)
     main(["feat", "review", "a", "--all", "--test", "--cmd", "pytest x"])
     capsys.readouterr()
@@ -1633,7 +1634,7 @@ def test_review_all_test(capsys):
     assert f.review_item("api:0").test_command == "pytest x"
 
 
-def test_review_all_unreview(capsys):
+def test_review_all_unreview(capsys, tmp_path):
     _make_feat(capsys)
     main(["feat", "review", "a", "--all", "--review"])
     capsys.readouterr()
@@ -1674,3 +1675,23 @@ def test_review_all_on_empty_feat(capsys):
     code = main(["feat", "review", "bare", "--all", "--review"])
     err = capsys.readouterr().err
     assert code == 2
+
+
+def test_review_all_json(capsys):
+    """批量勾选 + --json 只输出 JSON。"""
+    _make_feat(capsys)
+    code = main(["--json", "feat", "review", "a", "--all", "--review"])
+    out = capsys.readouterr().out
+    assert code == 0
+    data = json.loads(out)                 # 必须是纯 JSON
+    assert data["action"] == "review"
+    assert data["scope"] == "all"
+    assert data["reviewed"] == data["total"] == 5
+
+
+def test_review_item_exact_doc(capsys):
+    """--item doc 是精确匹配（不是前缀）。"""
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "doc", "--review"])
+    out = capsys.readouterr().out
+    assert "1/5" in out                    # 只勾了 doc 一项

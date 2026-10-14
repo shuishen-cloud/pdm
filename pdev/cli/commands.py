@@ -961,8 +961,19 @@ def cmd_feat_review(ctx: AppContext, args) -> int:
               f"  （审查 {reviewed}/{total}，测试 {tested}/{total}）")
         return 0
 
-    # 批量：逐行 + 汇总
+    # 批量为多条：逐行 + 汇总（或 JSON）
     label_of = dict(targets)
+    if getattr(args, "json", False) or ctx.config.json_output:
+        print(json.dumps({
+            "slug": feat.slug,
+            "action": action,
+            "scope": "all" if all_items else key,
+            "keys": keys,
+            "reviewed": reviewed,
+            "tested": tested,
+            "total": total,
+        }, ensure_ascii=False, indent=2))
+        return 0
     for k in keys:
         print(f"{args.slug}  {render_review_marks(feat, k)}{k:<12}"
               f" {label_of.get(k, '')}")
