@@ -309,3 +309,59 @@ def test_commit_no_gate_for_legacy_feat(tmp_path):
                        "2026-01-01T00:00:00+00:00")))
     store.commit_stage("old", "test", "t", cwd=str(tmp_path),
                        dry_run=True, require_stage_review=True)
+
+
+# ---------------------------------------------------------------------------
+# script 可选阶段（script-stage）
+# ---------------------------------------------------------------------------
+
+
+def test_sequence_has_script_between_test_and_feat():
+    from pdev.stage import STAGE_SEQUENCE
+
+    i = STAGE_SEQUENCE.index("script")
+    assert STAGE_SEQUENCE[i - 1] == "test"
+    assert STAGE_SEQUENCE[i + 1] == "feat"
+
+
+def test_next_stages_from_test_allows_skip():
+    """test 可直接进 feat（跳过可选的 script）。"""
+    assert set(next_stages("test")) == {"test", "script", "feat"}
+
+
+def test_next_stages_from_script():
+    assert set(next_stages("script")) == {"script", "feat"}
+
+
+def test_next_stages_from_doc():
+    assert set(next_stages("doc")) == {"doc", "test"}
+
+
+def test_script_in_optional_stages():
+    from pdev.stage import OPTIONAL_STAGES
+
+    assert "script" in OPTIONAL_STAGES
+    assert "feat" not in OPTIONAL_STAGES
+
+
+def test_format_subject_script():
+    from pdev.stage import format_subject
+
+    assert format_subject("script", "a", "先跑通 MVP") == \
+        "script(a): 先跑通 MVP"
+
+
+def test_subject_prefix_recognizes_script():
+    from pdev.stage import _subject_prefix
+
+    assert _subject_prefix("script(a): x") == "script"
+
+
+def test_assert_allowed_script_path():
+    from pdev.stage import assert_allowed
+
+    assert assert_allowed("test", "script") == "script"
+    assert assert_allowed("test", "feat") == "feat"      # 跳过 script
+    assert assert_allowed("script", "feat") == "feat"
+    with pytest.raises(StageError):
+        assert_allowed("feat", "script")                 # 倒退

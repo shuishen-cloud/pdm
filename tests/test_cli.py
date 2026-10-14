@@ -1874,3 +1874,60 @@ def test_stage_review_list_time_readable(capsys):
     main(["feat", "stage-review", "a", "--list"])
     out = capsys.readouterr().out
     assert "T" not in out.split("human:lwy")[1][:12]
+
+
+# ---------------------------------------------------------------------------
+# script 阶段提交（script-stage）
+# ---------------------------------------------------------------------------
+
+
+def test_commit_script_stage_prefix(capsys, tmp_path, monkeypatch):
+    """feat commit script 生成 script(<slug>): 前缀。"""
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path))
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "--allow-empty", "-qm", "init"], cwd=str(tmp_path))
+    (tmp_path / "doc").mkdir()
+    (tmp_path / "doc" / "f.md").write_text("# d", encoding="utf-8")
+
+    main(["feat", "new", "a", "-t", "A", "--doc", "f.md"])
+    capsys.readouterr()
+    main(["feat", "commit", "doc", "a", "-m", "设计",
+          "--files", "doc/f.md"])
+    capsys.readouterr()
+    (tmp_path / "s.py").write_text("print(1)", encoding="utf-8")
+    code = main(["feat", "commit", "test", "a", "-m", "测试",
+                 "--files", "s.py"])
+    assert code == 0
+    (tmp_path / "t.py").write_text("x=1", encoding="utf-8")
+    code = main(["feat", "commit", "script", "a", "-m", "先跑通 MVP",
+                 "--files", "t.py"])
+    assert code == 0
+    log = subprocess.run(["git", "log", "--format=%s"], cwd=str(tmp_path),
+                         capture_output=True, text=True).stdout
+    assert "script(a): 先跑通 MVP" in log
+
+
+def test_commit_test_can_skip_script(capsys, tmp_path, monkeypatch):
+    """test 之后可直接进 feat（script 可选）。"""
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path))
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "--allow-empty", "-qm", "init"], cwd=str(tmp_path))
+    (tmp_path / "doc").mkdir()
+    (tmp_path / "doc" / "f.md").write_text("# d", encoding="utf-8")
+    main(["feat", "new", "a", "-t", "A", "--doc", "f.md"])
+    capsys.readouterr()
+    main(["feat", "commit", "doc", "a", "-m", "设计", "--files", "doc/f.md"])
+    capsys.readouterr()
+    (tmp_path / "t.py").write_text("x=1", encoding="utf-8")
+    main(["feat", "commit", "test", "a", "-m", "测试", "--files", "t.py"])
+    capsys.readouterr()
+    (tmp_path / "i.py").write_text("y=2", encoding="utf-8")
+    code = main(["feat", "commit", "feat", "a", "-m", "接入",
+                 "--files", "i.py"])
+    assert code == 0

@@ -809,3 +809,39 @@ def test_stage_unreviewed_registered():
     from pdev.check import CODES
 
     assert "stage-unreviewed" in CODES
+
+
+# ---------------------------------------------------------------------------
+# script 阶段识别（script-stage）
+# ---------------------------------------------------------------------------
+
+
+def test_classify_stage_script():
+    from pdev.check import classify_stage
+
+    assert classify_stage("script(a): 先脚本") == "script"
+
+
+def test_script_in_stages_and_pipeline():
+    from pdev.check import STAGES, _PIPELINE
+
+    assert "script" in STAGES
+    assert "script" in _PIPELINE
+    i = _PIPELINE.index("script")
+    assert _PIPELINE[i - 1] == "test"
+    assert _PIPELINE[i + 1] == "feat"
+
+
+def test_missing_stage_does_not_require_script(tmp_path):
+    """script 可选：只有 test/fix 会因缺失告警。"""
+    from pdev.check import check_stages
+    from pdev.feat import Feat, FeatStatus
+
+    repo = _git_repo_with(tmp_path, [
+        "doc(x): 设计", "test(x): 测试", "feat(x): 实现", "fix(x): 修复",
+    ])
+    hashes = [i.hash for i in reversed(repo.log())]
+    f = Feat(slug="a", title="A", doc="d", api=["f()"], fallbacks=["x"],
+             commits=hashes, status=FeatStatus.CLOSED)
+    got = codes(check_stages(f, repo))
+    assert "missing-stage" not in got
