@@ -97,4 +97,17 @@ def cmd_review(ctx, args) -> int
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`pdev/review.py` 新增 `unreviewed_items(feats, *, tested)`
+  （跨 feat 展开未审/未测项）；`pdev/cli/parser.py` 给 `review` 加
+  `--unreviewed` / `--untested`；`pdev/cli/commands.py` 的 `cmd_review`
+  新增清单分支（`_print_pending` + `_total_items`）。
+- **提交**：`doc` a01b38e、`test` e5bfd72、`feat` 26af4bb、`fix` b2e71de。
+- **测试**：`tests/test_review.py` 新增 6 个、`tests/test_cli.py` 新增 7 个；
+  全仓 748 个用例通过。
+- **实测验证**：
+  - `pdm review --unreviewed` 列出全仓未审项（按 feat 分组，带 `[ ][ ]`）；
+  - `--untested` / 两者同给（交集）/ 空清单 / `--json` 均符合设计；
+  - 勾选一项后清单实时减一。
+- **结论**：设计成立。加上这个入口后，「哪些部分没审/没测」可一条命令
+  看到；筛选模式退出码恒为 0（查询性质），与无筛选时的门禁语义（有告警→1）
+  有意区分。

@@ -108,6 +108,9 @@ pdm feat review review-cli --item api:0 --review --by human:lwy
 pdm feat review review-cli --item api:0 --test --cmd "pytest tests/x.py"
 pdm feat review review-cli --item api:0 --unreview
 pdm review                                       # 全局掌握程度 + 告警（有告警退出码 1）
+pdm review --unreviewed                          # 列出全仓未人工审查的项
+pdm review --untested                            # 列出全仓未测试通过的项
+pdm review --unreviewed --untested               # 既未审且未测（交集）
 pdm review --json                                # 机器可读
 ```
 
@@ -128,6 +131,7 @@ pdm review --json                                # 机器可读
 | 2 | `review-score` | 覆盖率评分与低覆盖告警 | ✅ 已完成 |
 | 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 | ✅ 已完成 |
 | 4 | `review-check` | `pdm feat check` 联动规则 | ✅ 已完成 |
+| 4.5 | `review-query` | `pdm review --unreviewed/--untested` 清单 | ✅ 已完成 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
 | 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
 
