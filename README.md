@@ -103,14 +103,14 @@ pdm feat commit close demo -m "收尾文档" --close   # 收尾并置 closed
 
 分阶段落地（每条 Feat 独立走 doc→test→feat→fix→close）：
 
-| 顺序 | slug | 内容 |
-|------|------|------|
-| 1 | `review-model` | 审查项数据模型（`ReviewItem` + 双勾选位存储） |
-| 2 | `review-score` | 覆盖率评分与低覆盖告警 |
-| 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 |
-| 4 | `review-check` | `pdm feat check` 联动规则 |
-| 5 | `review-tui-read` | TUI 只读显示 `[审][测]` |
-| 6 | `review-tui-toggle` | TUI 空格勾选 |
+| 顺序 | slug | 内容 | 状态 |
+|------|------|------|------|
+| 1 | `review-model` | 审查项数据模型（`ReviewItem` + 双勾选位存储） | ✅ 已完成 |
+| 2 | `review-score` | 覆盖率评分与低覆盖告警 | 规划中 |
+| 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 | 规划中 |
+| 4 | `review-check` | `pdm feat check` 联动规则 | 规划中 |
+| 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | 规划中 |
+| 6 | `review-tui-toggle` | TUI 空格勾选 | 规划中 |
 
 ## 目录结构
 
