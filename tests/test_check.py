@@ -756,3 +756,14 @@ def test_empty_sample_various_placeholders(store):
         slug = f"p{i}"
         store.add(_fielded(slug=slug, samples=[bad]))
         assert "empty-sample" in codes(check_one(store, slug)), bad
+
+
+def test_vague_change_ignores_file_extension_dot(store):
+    """文件名里的 .py 不算符号定位。"""
+    store.add(_fielded(changes=["改了 pdev/feat.py 这个文件"]))
+    assert "vague-change" in codes(check_one(store, "a"))
+
+
+def test_vague_change_accepts_class_member(store):
+    store.add(_fielded(changes=["Feat.set_comment 新增方法"]))
+    assert "vague-change" not in codes(check_one(store, "a"))

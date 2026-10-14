@@ -48,7 +48,13 @@ CODES = (
     "note-no-verify",
     "review-none",
     "review-low",
+    "missing-fields",
+    "vague-change",
+    "empty-sample",
 )
+
+# 敷衍样例的占位词（光秃秃才算；带说明如「无：纯计算」不算）
+_SAMPLE_PLACEHOLDERS = {"无", "none", "n/a", "na", "tbd", "-", "待定"}
 
 # 开发阶段 → commit 信息前缀（见 doc/feat/stage-prefix.md）
 STAGES = ("doc", "test", "feat", "fix")
@@ -236,7 +242,76 @@ def _check_feat(feat: Feat, git, note_store=None,
     # 审查覆盖率（见 doc/feat/review-check.md）
     out.extend(_check_review(feat, min_coverage))
 
+    # 五项设计字段（见 doc/feat/feat-fields-check.md）
+    out.extend(_check_fields(feat))
+
     return out
+
+
+def _check_fields(feat: Feat) -> List[CheckIssue]:
+    """五项设计字段规则：``missing-fields`` / ``vague-change`` / ``empty-sample``。
+
+    - ``missing-fields``：仅对**有 stage 游标**的 feat 报（历史豁免）。
+    - ``vague-change``：``changes`` 某条既无 ``::`` 也无 ``.``。
+    - ``empty-sample``：``samples`` 某条过短或光秃秃占位词。
+    """
+    out: List[CheckIssue] = []
+
+    if feat.stage is not None:
+        missing = feat.missing_required_fields()
+        if missing:
+            out.append(CheckIssue(
+                feat.slug, "missing-fields", "warning",
+                f"缺必填字段：{'、'.join(missing)}",
+            ))
+
+    for c in (getattr(feat, "changes", None) or []):
+        if not _locates_symbol(c):
+            out.append(CheckIssue(
+                feat.slug, "vague-change", "warning",
+                f"改动未定位到符号（缺 :: 或类.成员）：{c[:40]!r}",
+            ))
+
+    for s in (getattr(feat, "samples", None) or []):
+        if _is_lazy_sample(s):
+            out.append(CheckIssue(
+                feat.slug, "empty-sample", "warning",
+                f"样例过于敷衍：{s[:40]!r}（应写结构的真实实例）",
+            ))
+
+    return out
+
+
+# 常见文件扩展名：这些点不算「定位到符号」
+_FILE_EXTS = ("py", "md", "json", "txt", "sh", "toml", "yaml", "yml",
+              "ts", "js", "tcss", "cfg", "ini")
+
+
+def _locates_symbol(text: str) -> bool:
+    """判断一条改动说明是否定位到了符号。
+
+    - 含 ``::`` → 算（``pdev/x.py::Feat.f``）
+    - 否则看是否含**非文件扩展名**的点（``Feat.member``）
+    """
+    s = text or ""
+    if "::" in s:
+        return True
+    for part in s.split():
+        if "." not in part:
+            continue
+        head, _, tail = part.rpartition(".")
+        tail_clean = tail.strip("，,。;；:：)")
+        if head and tail_clean and tail_clean.lower() not in _FILE_EXTS:
+            return True
+    return False
+
+
+def _is_lazy_sample(s: str) -> bool:
+    """判定敷衍样例：过短，或去掉空白后是纯占位词。"""
+    text = (s or "").strip()
+    if len(text) < 3:
+        return True
+    return text.lower() in _SAMPLE_PLACEHOLDERS
 
 
 def _check_review(feat: Feat, min_coverage: float = 0.6) -> List[CheckIssue]:

@@ -607,7 +607,10 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
     for name, pairs in sections:
         if not pairs:
             continue
-        print(f"\n{name}")
+        # 样例数据加语义提示（见 doc/feat/feat-fields-check.md）
+        title = ("样例数据（结构的实例，非用法）" if name == "样例数据"
+                 else name)
+        print(f"\n{title}")
         for display, key in pairs:
             mark = render_review_marks(feat, key) if key else ""
             print(f"  {mark}· {display}")
