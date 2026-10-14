@@ -28,6 +28,7 @@ __all__ = [
     "Feat",
     "FeatError",
     "FeatStore",
+    "ReviewItem",
     "valid_slug",
     "VALID_SLUG_CHARS",
 ]
@@ -96,6 +97,27 @@ def valid_slug(slug: str) -> bool:
 
 
 @dataclass
+class ReviewItem:
+    """一个可审项的**双勾选位**记录（见 .pdm/docs/feat/review-model.md）。
+
+    ``reviewed`` 与 ``tested`` 是**独立**布尔位，互不蕴含：可以只审不测，
+    也可以只测未审。只有被操作过的 key 才落盘。
+    """
+
+    reviewed: bool = False
+    reviewed_by: str = ""
+    reviewed_at: Optional[datetime] = None
+    tested: bool = False
+    test_command: str = ""
+    test_status: str = ""
+    tested_at: Optional[datetime] = None
+
+
+# 可审项的字段顺序（review_items 据此展开）
+_REVIEW_FIELDS = ("api", "logs", "fallbacks")
+
+
+@dataclass
 class Feat:
     """一次功能开发的索引卡。
 
@@ -124,6 +146,9 @@ class Feat:
 
     # 阶段提交游标（doc→test→feat→fix→close）；None 表示尚未开始
     stage: Optional[str] = None
+
+    # 审查项：{key: ReviewItem}，key 形如 doc / api:0 / logs:1 / fallbacks:0
+    reviews: dict = field(default_factory=dict)
 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -170,6 +195,80 @@ class Feat:
     def next_step(self) -> Optional[str]:
         """当前流程的下一步（供 Agent 提示）。"""
         return _NEXT.get(self.status)
+
+    # --- 审查项 ---
+
+    def review_items(self) -> List[tuple]:
+        """展开可审项，返回 ``[(key, label), ...]``。
+
+        顺序固定：``doc`` → ``api`` → ``logs`` → ``fallbacks``。
+        ``doc`` 为空、或某个列表为空时，不产生对应项。
+        """
+        out: List[tuple] = []
+        if self.doc:
+            out.append(("doc", self.doc))
+        for name in _REVIEW_FIELDS:
+            for i, text in enumerate(getattr(self, name, []) or []):
+                out.append((f"{name}:{i}", text))
+        return out
+
+    def _review_keys(self) -> set:
+        return {k for k, _ in self.review_items()}
+
+    def review_item(self, key: str) -> Optional[ReviewItem]:
+        """取某 key 的勾选记录；未记录返回 ``None``。"""
+        return self.reviews.get(key)
+
+    def _review_slot(self, key: str) -> ReviewItem:
+        """取（必要时创建）某 key 的勾选记录，校验 key 合法。"""
+        if key not in self._review_keys():
+            raise FeatError(
+                f"非法审查项 key：{key!r}（不在 {sorted(self._review_keys())}）"
+            )
+        item = self.reviews.get(key)
+        if item is None:
+            item = ReviewItem()
+            self.reviews[key] = item
+        return item
+
+    def set_reviewed(self, key: str, value: bool = True,
+                     by: str = "") -> ReviewItem:
+        """置/清 ``[审]`` 位；为真时记录 by 与时间。"""
+        item = self._review_slot(key)
+        item.reviewed = bool(value)
+        if value:
+            item.reviewed_by = by or item.reviewed_by
+            item.reviewed_at = _now()
+        self.touch()
+        return item
+
+    def set_tested(self, key: str, value: bool = True,
+                   command: str = "", status: str = "") -> ReviewItem:
+        """置/清 ``[测]`` 位；为真时记录命令、状态与时间。"""
+        item = self._review_slot(key)
+        item.tested = bool(value)
+        if value:
+            if command:
+                item.test_command = command
+            if status:
+                item.test_status = status
+            item.tested_at = _now()
+        self.touch()
+        return item
+
+    def review_counts(self) -> tuple:
+        """返回 ``(items, reviewed, tested)``，孤儿记录不计入。"""
+        keys = self._review_keys()
+        reviewed = tested = 0
+        for k in keys:
+            item = self.reviews.get(k)
+            if item is None:
+                continue
+            if item.reviewed:
+                reviewed += 1
+            if item.tested:
+                tested += 1
+        return len(keys), reviewed, tested
 
 
 class FeatStore:
@@ -325,6 +424,22 @@ class FeatStore:
             self.update(feat)
         return feat
 
+    def set_reviewed(self, slug: str, key: str, value: bool = True,
+                     by: str = "") -> Feat:
+        """置/清某可审项的 ``[审]`` 位并落盘。"""
+        feat = self._require(slug)
+        feat.set_reviewed(key, value, by=by)
+        self.update(feat)
+        return feat
+
+    def set_tested(self, slug: str, key: str, value: bool = True,
+                   command: str = "", status: str = "") -> Feat:
+        """置/清某可审项的 ``[测]`` 位并落盘。"""
+        feat = self._require(slug)
+        feat.set_tested(key, value, command=command, status=status)
+        self.update(feat)
+        return feat
+
     def set_status(self, slug: str, status: FeatStatus) -> Feat:
         feat = self._require(slug)
         feat.advance(status)
@@ -363,9 +478,44 @@ def _to_dict(f: Feat) -> dict:
         "notes": list(f.notes),
         "discovered": list(f.discovered),
         "stage": f.stage,
+        "reviews": {k: _review_to_dict(v) for k, v in f.reviews.items()},
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
     }
+
+
+def _review_to_dict(r: ReviewItem) -> dict:
+    return {
+        "reviewed": r.reviewed,
+        "reviewed_by": r.reviewed_by,
+        "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+        "tested": r.tested,
+        "test_command": r.test_command,
+        "test_status": r.test_status,
+        "tested_at": r.tested_at.isoformat() if r.tested_at else None,
+    }
+
+
+def _review_from_dict(d: dict) -> ReviewItem:
+    """构造 ReviewItem；时间非法值一律静默置 None，不阻断加载。"""
+    def dt(key: str) -> Optional[datetime]:
+        raw = d.get(key)
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except (ValueError, TypeError):
+            return None
+
+    return ReviewItem(
+        reviewed=bool(d.get("reviewed")),
+        reviewed_by=d.get("reviewed_by", "") or "",
+        reviewed_at=dt("reviewed_at"),
+        tested=bool(d.get("tested")),
+        test_command=d.get("test_command", "") or "",
+        test_status=d.get("test_status", "") or "",
+        tested_at=dt("tested_at"),
+    )
 
 
 # 旧版字段：读取时忽略即可（不做兼容迁移）
@@ -383,6 +533,13 @@ def _from_dict(d: dict) -> Feat:
         except ValueError:
             return None
 
+    raw_reviews = d.get("reviews")
+    reviews = {}
+    if isinstance(raw_reviews, dict):
+        for key, val in raw_reviews.items():
+            if isinstance(val, dict):
+                reviews[key] = _review_from_dict(val)
+
     return Feat(
         slug=d["slug"],
         title=d.get("title", ""),
@@ -396,6 +553,7 @@ def _from_dict(d: dict) -> Feat:
         notes=list(d.get("notes") or []),
         discovered=list(d.get("discovered") or []),
         stage=d.get("stage") or None,
+        reviews=reviews,
         created_at=dt("created_at"),
         updated_at=dt("updated_at"),
     )
