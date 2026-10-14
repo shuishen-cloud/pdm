@@ -646,3 +646,19 @@ def test_review_codes_registered():
 
     assert "review-none" in CODES
     assert "review-low" in CODES
+
+
+def test_review_boundary_equal_threshold_not_reported(store):
+    """覆盖率恰等于阈值 → 不报 review-low（低于才报）。"""
+    f = Feat(slug="a", title="A", api=["f()", "g()"], doc="")
+    f.set_reviewed("api:0")                 # 2 项审 1 项 = 50%
+    store.add(f)
+    assert "review-low" not in codes(check_one(store, "a", min_coverage=0.5))
+    assert "review-low" in codes(check_one(store, "a", min_coverage=0.6))
+
+
+def test_review_none_and_low_coexist_when_zero(store):
+    """一项都没审时，review-none 与 review-low 同时出现。"""
+    store.add(_feat_with_items())
+    got = codes(check_one(store, "a"))
+    assert {"review-none", "review-low"} <= got
