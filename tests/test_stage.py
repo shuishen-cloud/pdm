@@ -366,3 +366,21 @@ def test_assert_allowed_script_path():
     assert assert_allowed("script", "feat") == "feat"
     with pytest.raises(StageError):
         assert_allowed("feat", "script")                 # 倒退
+
+
+def test_stage_error_message_lists_script():
+    """报错文案从 STAGE_SEQUENCE 派生，含 script。"""
+    from pdev.stage import assert_allowed
+
+    with pytest.raises(StageError) as e:
+        assert_allowed("feat", "script")
+    assert "script" in str(e.value)
+
+
+def test_pending_stage_review_skips_optional():
+    """进 feat 时只看上一个必经阶段（test），不要求审可选的 script。"""
+    f = Feat(slug="a", title="A")
+    f.review_stage("doc", "human:lwy")
+    f.review_stage("test", "human:lwy")
+    assert f.pending_stage_review("feat") is None      # script 可选，不拦
+    assert f.pending_stage_review("fix") == "feat"

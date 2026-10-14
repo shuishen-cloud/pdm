@@ -94,7 +94,7 @@ pdm feat commit fix   demo -m "修 bug"
 pdm feat commit close demo -m "收尾文档" --close   # 收尾并置 closed
 ```
 
-- 阶段流水线：`doc → test → feat → fix → close`（`close` 前缀仍是 `doc(`）
+- 阶段流水线：`doc → test → script → feat → fix → close`（`close` 前缀仍是 `doc(`）
 - 允许停留在当前阶段重复提交，禁止回退（feat 之后不能再 test）
 - `--dry-run` 预演，`--no-verify` 跳过 pre-commit 钩子
 - 旧数据无游标时，从已有 commit 前缀自动推断
@@ -185,7 +185,7 @@ doc/                 项目文档 + feat 设计文档（doc/feat/<slug>.md，可
 ## 给 AI 代理用（Skill）
 
 本仓库内置技能 `.pi/skills/pdm-workflow/`，让 AI 编码代理自动遵循
-**doc → test → feat → fix → close** 的开发纪律，并通过 `pdm` 门面提交：
+**doc → test → script → feat → fix → close** 的开发纪律，并通过 `pdm` 门面提交：
 
 - 只经 `pdm feat commit` 创建提交，不手敲 `git commit`
 - 每阶段完成后用 `pdm note add --verify` 沉淀笔记与可执行验证
