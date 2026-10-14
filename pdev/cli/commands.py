@@ -557,50 +557,44 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
     grouped = getattr(view, "notes_grouped", True) if view is not None else True
 
     doc_path = resolve_doc_path(ctx.config.doc.dir, feat.doc)
-    sections = [
-        ("设计文档", [(doc_path, feat.doc)] if doc_path else []),
-        ("交付接口", [(x, x) for x in feat.api]),
-        ("会打的日志", [(x, x) for x in feat.logs]),
-        ("异常兜底", [(x, x) for x in feat.fallbacks]),
-        ("核心数据结构", [(x, x) for x in feat.data_model]),
-        ("样例数据", [(x, x) for x in feat.samples]),
-        ("对既有代码的改动", [(x, x) for x in feat.changes]),
-        ("关联 commit", [(x, x) for x in feat.commits]),
-        ("关联 note", [(x, x) for x in feat.notes]),
-        ("发现的异常", [(x, x) for x in feat.discovered]),
-    ]
-    # 分区标题 → 字段名（用于匹配可审项/评论）
+    # 分区标题 → 字段名（用于生成可审 key）
     _SECTION_FIELD = {
         "设计文档": "doc", "交付接口": "api", "会打的日志": "logs",
         "异常兜底": "fallbacks", "核心数据结构": "data_model",
         "样例数据": "samples", "对既有代码的改动": "changes",
     }
+
+    def _keyed(section: str, values, start: int = 0):
+        """把值列表转成 [(display, key)]；key 按字段+序号生成（可能为 None）。
+
+        不用 label 查表：内容重复的项（如两条相同的 api）会互相覆盖。
+        """
+        field = _SECTION_FIELD.get(section)
+        out = []
+        for i, v in enumerate(values):
+            key = None
+            if field:
+                key = field if field == "doc" else f"{field}:{i + start}"
+            out.append((v, key))
+        return out
+
+    sections = [
+        ("设计文档", _keyed("设计文档", [doc_path] if doc_path else [])),
+        ("交付接口", _keyed("交付接口", feat.api)),
+        ("会打的日志", _keyed("会打的日志", feat.logs)),
+        ("异常兜底", _keyed("异常兜底", feat.fallbacks)),
+        ("核心数据结构", _keyed("核心数据结构", feat.data_model)),
+        ("样例数据", _keyed("样例数据", feat.samples)),
+        ("对既有代码的改动", _keyed("对既有代码的改动", feat.changes)),
+        ("关联 commit", [(x, None) for x in feat.commits]),
+        ("关联 note", [(x, None) for x in feat.notes]),
+        ("发现的异常", [(x, None) for x in feat.discovered]),
+    ]
     # 文本型分区：无 [审][测] 标记，直接逐行缩进展示
     text_blocks = [
         ("设计思路", feat.design_note),
         ("实现方式", feat.impl_note),
     ]
-    # 可审项 → 行前带 [审][测] 标记（见 doc/feat/review-cli.md）
-    # 匹配用 feat.doc / 原文，显示用 (显示文本, 匹配文本)
-    _review_at = {}
-    _key_at = {}
-    for rkey, rlabel in feat.review_items():
-        field = rkey.split(":")[0]
-        _review_at[(field, rlabel)] = render_review_marks(feat, rkey)
-        _key_at[(field, rlabel)] = rkey
-
-    def _mark_for(section: str, match_text: str) -> str:
-        field = _SECTION_FIELD.get(section)
-        if field is None:
-            return ""
-        return _review_at.get((field, match_text), "")
-
-    def _comment_for(section: str, match_text: str) -> str:
-        field = _SECTION_FIELD.get(section)
-        if field is None:
-            return ""
-        rkey = _key_at.get((field, match_text))
-        return feat.comment(rkey) if rkey else ""
 
     # 文本型字段（设计思路 / 实现方式）
     for name, text in text_blocks:
@@ -614,9 +608,10 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
         if not pairs:
             continue
         print(f"\n{name}")
-        for display, match in pairs:
-            print(f"  {_mark_for(name, match)}· {display}")
-            ctext = _comment_for(name, match)
+        for display, key in pairs:
+            mark = render_review_marks(feat, key) if key else ""
+            print(f"  {mark}· {display}")
+            ctext = feat.comment(key) if key else ""
             if ctext:
                 for i, line in enumerate(ctext.splitlines()):
                     prefix = "    💬 " if i == 0 else "       "

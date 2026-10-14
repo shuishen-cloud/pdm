@@ -1789,3 +1789,17 @@ def test_feat_new_json_has_new_fields(capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["design_note"] == "为什么这么设计"
     assert data["changes"] == ["pdev/feat.py::Feat.x —— 新增字段"]
+
+
+def test_feat_show_duplicate_labels_use_distinct_keys(capsys):
+    """内容相同的两条（如两条相同 api）勾选互不串行。"""
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+          "--api", "dup", "--api", "dup", "--fallback", "x"])
+    main(["feat", "review", "a", "--item", "api:1", "--review"])
+    capsys.readouterr()
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    lines = [l for l in out.splitlines() if l.strip().endswith("· dup")]
+    assert len(lines) == 2
+    assert lines[0].strip().startswith("[ ][ ]")
+    assert lines[1].strip().startswith("[x][ ]")
