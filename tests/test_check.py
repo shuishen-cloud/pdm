@@ -662,3 +662,97 @@ def test_review_none_and_low_coexist_when_zero(store):
     store.add(_feat_with_items())
     got = codes(check_one(store, "a"))
     assert {"review-none", "review-low"} <= got
+
+
+# ---------------------------------------------------------------------------
+# 五项设计字段规则（见 doc/feat/feat-fields-check.md）
+# ---------------------------------------------------------------------------
+
+
+def _fielded(slug="a", **over):
+    kw = dict(
+        slug=slug, title=slug, doc="d.md", api=["f()"], fallbacks=["x"],
+        design_note="思路", impl_note="方式",
+        data_model=["X: int"], samples=["X=1"],
+        changes=["pdev/x.py::X —— 新增"],
+        stage="feat",
+    )
+    kw.update(over)
+    return Feat(**kw)
+
+
+def test_missing_fields_reported_for_staged_feat(store):
+    f = _fielded(design_note="", samples=[])
+    store.add(f)
+    got = [i for i in check_one(store, "a") if i.code == "missing-fields"]
+    assert got
+    assert "设计思路" in got[0].message
+    assert "样例数据" in got[0].message
+
+
+def test_missing_fields_exempt_for_legacy_feat(store):
+    """无 stage 游标的历史 feat 豁免 missing-fields。"""
+    store.add(Feat(slug="old", title="旧", api=["f()"]))
+    got = codes(check_one(store, "old"))
+    assert "missing-fields" not in got
+
+
+def test_complete_feat_no_missing_fields(store):
+    store.add(_fielded())
+    got = codes(check_one(store, "a"))
+    assert "missing-fields" not in got
+
+
+def test_vague_change_reported(store):
+    store.add(_fielded(changes=["改了一下 pdev/feat.py"]))   # 无 :: 也无 .
+    got = [i for i in check_one(store, "a") if i.code == "vague-change"]
+    assert got
+    assert "pdev/feat.py" in got[0].message
+
+
+def test_vague_change_accepts_symbol(store):
+    store.add(_fielded(changes=["pdev/feat.py::Feat.x —— 新增"]))
+    assert "vague-change" not in codes(check_one(store, "a"))
+    store.add(_fielded(slug="b", changes=["Feat.x 新增字段"]))     # 含点
+    assert "vague-change" not in codes(check_one(store, "b"))
+
+
+def test_vague_change_not_reported_when_empty(store):
+    store.add(_fielded(changes=[]))
+    assert "vague-change" not in codes(check_one(store, "a"))
+
+
+def test_empty_sample_placeholder(store):
+    store.add(_fielded(samples=["无"]))
+    got = [i for i in check_one(store, "a") if i.code == "empty-sample"]
+    assert got
+
+
+def test_empty_sample_accepts_placeholder_with_note(store):
+    """「无：纯计算」带说明，不算敷衍。"""
+    store.add(_fielded(samples=["无：纯计算无外部数据"]))
+    assert "empty-sample" not in codes(check_one(store, "a"))
+
+
+def test_empty_sample_too_short(store):
+    store.add(_fielded(samples=["x"]))
+    assert "empty-sample" in codes(check_one(store, "a"))
+
+
+def test_empty_sample_not_reported_when_empty(store):
+    store.add(_fielded(samples=[]))
+    assert "empty-sample" not in codes(check_one(store, "a"))
+
+
+def test_field_rules_registered():
+    from pdev.check import CODES
+
+    for c in ("missing-fields", "vague-change", "empty-sample"):
+        assert c in CODES
+
+
+def test_empty_sample_various_placeholders(store):
+    for i, bad in enumerate(["无", "none", "N/A", "tbd", "  "]):
+        slug = f"p{i}"
+        store.add(_fielded(slug=slug, samples=[bad]))
+        assert "empty-sample" in codes(check_one(store, slug)), bad
