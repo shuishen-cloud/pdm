@@ -1591,3 +1591,86 @@ def test_feat_comment_multiline_display(capsys):
     out = capsys.readouterr().out
     assert "💬 第一行" in out
     assert "💬 第二行" not in out
+
+
+# ---------------------------------------------------------------------------
+# 批量勾选 --all / 前缀（review-batch）
+# ---------------------------------------------------------------------------
+
+
+def test_review_all_review(capsys):
+    _make_feat(capsys)                       # doc + api:0/1 + logs:0 + fb:0
+    code = main(["feat", "review", "a", "--all", "--review",
+                 "--by", "human:lwy"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "5/5" in out
+    from pdev.feat import FeatStore
+    assert FeatStore(tmp_path / ".pdm" / "feats").get("a").review_counts() \
+        == (5, 5, 0)
+
+
+def test_review_prefix_review(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "review", "a", "--item", "api", "--review"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "2/5" in out
+    from pdev.feat import FeatStore
+    f = FeatStore(tmp_path / ".pdm" / "feats").get("a")
+    assert f.review_item("api:0").reviewed
+    assert f.review_item("api:1").reviewed
+    assert not f.review_item("logs:0").reviewed
+
+
+def test_review_all_test(capsys):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--all", "--test", "--cmd", "pytest x"])
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    f = FeatStore(tmp_path / ".pdm" / "feats").get("a")
+    assert f.review_counts() == (5, 0, 5)
+    assert f.review_item("api:0").test_command == "pytest x"
+
+
+def test_review_all_unreview(capsys):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--all", "--review"])
+    capsys.readouterr()
+    main(["feat", "review", "a", "--all", "--unreview"])
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    assert FeatStore(tmp_path / ".pdm" / "feats").get("a").review_counts() \
+        == (5, 0, 0)
+
+
+def test_review_single_item_output_unchanged(capsys):
+    """单条命中仍用原输出格式。"""
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--review"])
+    out = capsys.readouterr().out
+    assert "[x][ ] api:0" in out
+
+
+def test_review_all_and_item_conflict(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "review", "a", "--all", "--item", "api:0",
+                 "--review"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "--all" in err
+
+
+def test_review_prefix_no_match(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "review", "a", "--item", "nope", "--review"])
+    err = capsys.readouterr().err
+    assert code == 2
+
+
+def test_review_all_on_empty_feat(capsys):
+    main(["feat", "new", "bare", "-t", "B"])
+    capsys.readouterr()
+    code = main(["feat", "review", "bare", "--all", "--review"])
+    err = capsys.readouterr().err
+    assert code == 2

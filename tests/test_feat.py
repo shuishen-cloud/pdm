@@ -694,3 +694,80 @@ def test_orphan_comment_kept_but_not_listed():
     f.api = ["f()"]                            # api:1 成孤儿
     assert "api:1" in f.comments               # JSON 保留
     assert f.commented_items() == []           # 不列出
+
+
+# ---------------------------------------------------------------------------
+# 批量勾选：resolve_keys / set_reviews（review-batch）
+# ---------------------------------------------------------------------------
+
+
+def _items_feat():
+    return Feat(slug="a", title="A", doc="d.md",
+                api=["f()", "g()"], logs=["l"], fallbacks=["fb"])
+
+
+def test_resolve_keys_all(store):
+    store.add(_items_feat())
+    rows = store.resolve_keys("a", all_items=True)
+    assert [k for k, _ in rows] == ["doc", "api:0", "api:1", "logs:0",
+                                    "fallbacks:0"]
+
+
+def test_resolve_keys_prefix(store):
+    store.add(_items_feat())
+    rows = store.resolve_keys("a", item="api")
+    assert [k for k, _ in rows] == ["api:0", "api:1"]
+
+
+def test_resolve_keys_exact(store):
+    store.add(_items_feat())
+    assert [k for k, _ in store.resolve_keys("a", item="api:0")] == ["api:0"]
+    assert [k for k, _ in store.resolve_keys("a", item="doc")] == ["doc"]
+
+
+def test_resolve_keys_no_match(store):
+    store.add(_items_feat())
+    with pytest.raises(FeatError):
+        store.resolve_keys("a", item="nope")
+
+
+def test_resolve_keys_all_on_empty_feat(store):
+    store.add(Feat(slug="bare", title="B"))
+    with pytest.raises(FeatError):
+        store.resolve_keys("bare", all_items=True)
+
+
+def test_set_reviews_batch_reviewed(store):
+    store.add(_items_feat())
+    keys = [k for k, _ in store.resolve_keys("a", item="api")]
+    store.set_reviews("a", keys, reviewed=True, by="human:lwy")
+    got = FeatStore(store.root).get("a")
+    assert got.review_counts() == (5, 2, 0)
+    assert got.review_item("api:0").reviewed_by == "human:lwy"
+
+
+def test_set_reviews_batch_unreview(store):
+    store.add(_items_feat())
+    store.set_reviews("a", ["api:0", "api:1"], reviewed=True)
+    store.set_reviews("a", ["api:0", "api:1"], reviewed=False)
+    assert store.get("a").review_counts() == (5, 0, 0)
+
+
+def test_set_reviews_batch_tested(store):
+    store.add(_items_feat())
+    store.set_reviews("a", ["logs:0", "fallbacks:0"], tested=True,
+                      command="pytest x", status="passed")
+    got = store.get("a")
+    assert got.review_counts() == (5, 0, 2)
+    assert got.review_item("logs:0").test_command == "pytest x"
+
+
+def test_set_reviews_writes_once(store, monkeypatch):
+    """批量只落盘一次。"""
+    store.add(_items_feat())
+    calls = []
+    orig = store._flush
+    monkeypatch.setattr(store, "_flush",
+                        lambda f: (calls.append(1), orig(f))[1])
+    store.set_reviews("a", ["api:0", "api:1", "logs:0"], reviewed=True)
+    assert len(calls) == 1
