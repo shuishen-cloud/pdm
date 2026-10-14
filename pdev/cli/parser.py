@@ -351,6 +351,20 @@ def build_parser() -> argparse.ArgumentParser:
     act.add_argument("--untest", action="store_true", help="清 [测]")
     freview.set_defaults(func=commands.cmd_feat_review)
 
+    fcomment = feat_sub.add_parser(
+        "comment", help="条目级人工评论（人手动填写，可留空）")
+    fcomment.add_argument("slug")
+    fcomment.add_argument("--on", metavar="KEY",
+                          help="评论对象，如 api:0 / logs:1 / doc")
+    _cacts = fcomment.add_mutually_exclusive_group()
+    _cacts.add_argument("-m", "--message", default=None,
+                        help="评论正文；缺省时查看，空串则清除")
+    _cacts.add_argument("--clear", action="store_true",
+                        help="清除该条目评论（与 -m 互斥）")
+    fcomment.add_argument("--json", action="store_true",
+                          default=argparse.SUPPRESS)
+    fcomment.set_defaults(func=commands.cmd_feat_comment)
+
     # --- review ---
     review = sub.add_parser("review", help="项目代码掌握程度与告警")
     review.add_argument("--unreviewed", action="store_true",

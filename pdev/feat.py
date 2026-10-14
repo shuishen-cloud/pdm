@@ -155,6 +155,9 @@ class Feat:
     # 审查项：{key: ReviewItem}，key 形如 doc / api:0 / logs:1 / fallbacks:0
     reviews: dict = field(default_factory=dict)
 
+    # 条目级人工评论：{key: 文本}，key 同上（见 doc/feat/feat-comment.md）
+    comments: dict = field(default_factory=dict)
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -281,6 +284,37 @@ class Feat:
             if item.tested:
                 tested += 1
         return len(keys), reviewed, tested
+
+    # --- 条目级评论（feat-comment）---
+
+    def comment(self, key: str) -> str:
+        """取某条目的评论；没有返回 ``""``。"""
+        return self.comments.get(key, "")
+
+    def set_comment(self, key: str, text: str) -> None:
+        """写/清某条目的评论；``text`` 为空即清除。非法 key 抛 FeatError。"""
+        if key not in self._review_keys():
+            raise FeatError(
+                f"非法评论 key：{key!r}（不在 {sorted(self._review_keys())}）"
+            )
+        text = text or ""
+        if text:
+            self.comments[key] = text
+        else:
+            self.comments.pop(key, None)
+        self.touch()
+
+    def commented_items(self) -> List[tuple]:
+        """返回 ``[(key, label, comment), ...]``，只含**非空**评论。
+
+        按 `review_items()` 的项顺序；孤儿 key 不返回。
+        """
+        out: List[tuple] = []
+        for key, label in self.review_items():
+            text = self.comments.get(key, "")
+            if text:
+                out.append((key, label, text))
+        return out
 
 
 class FeatStore:
@@ -452,6 +486,13 @@ class FeatStore:
         self.update(feat)
         return feat
 
+    def set_comment(self, slug: str, key: str, text: str) -> Feat:
+        """写/清某条目的评论并落盘。"""
+        feat = self._require(slug)
+        feat.set_comment(key, text)
+        self.update(feat)
+        return feat
+
     def set_status(self, slug: str, status: FeatStatus) -> Feat:
         feat = self._require(slug)
         feat.advance(status)
@@ -491,6 +532,7 @@ def _to_dict(f: Feat) -> dict:
         "discovered": list(f.discovered),
         "stage": f.stage,
         "reviews": {k: _review_to_dict(v) for k, v in f.reviews.items()},
+        "comments": dict(f.comments),
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
     }
@@ -552,6 +594,13 @@ def _from_dict(d: dict) -> Feat:
             if isinstance(val, dict):
                 reviews[key] = _review_from_dict(val)
 
+    raw_comments = d.get("comments")
+    comments = {}
+    if isinstance(raw_comments, dict):
+        for key, val in raw_comments.items():
+            if isinstance(val, str):
+                comments[key] = val
+
     return Feat(
         slug=d["slug"],
         title=d.get("title", ""),
@@ -566,6 +615,7 @@ def _from_dict(d: dict) -> Feat:
         discovered=list(d.get("discovered") or []),
         stage=d.get("stage") or None,
         reviews=reviews,
+        comments=comments,
         created_at=dt("created_at"),
         updated_at=dt("updated_at"),
     )

@@ -45,6 +45,7 @@ __all__ = [
     "cmd_feat_check",
     "cmd_feat_commit",
     "cmd_feat_review",
+    "cmd_feat_comment",
     "cmd_review",
     "render_review_marks",
     "cmd_stats",
@@ -556,9 +557,11 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
     # 可审项 → 行前带 [审][测] 标记（见 doc/feat/review-cli.md）
     # 匹配用 feat.doc / 原文，显示用 (显示文本, 匹配文本)
     _review_at = {}
+    _key_at = {}
     for rkey, rlabel in feat.review_items():
         field = rkey.split(":")[0]
         _review_at[(field, rlabel)] = render_review_marks(feat, rkey)
+        _key_at[(field, rlabel)] = rkey
 
     def _mark_for(section: str, match_text: str) -> str:
         field = {"设计文档": "doc", "交付接口": "api",
@@ -567,12 +570,25 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
             return ""
         return _review_at.get((field, match_text), "")
 
+    def _comment_for(section: str, match_text: str) -> str:
+        field = {"设计文档": "doc", "交付接口": "api",
+                 "会打的日志": "logs", "异常兜底": "fallbacks"}.get(section)
+        if field is None:
+            return ""
+        rkey = _key_at.get((field, match_text))
+        return feat.comment(rkey) if rkey else ""
+
     for name, pairs in sections:
         if not pairs:
             continue
         print(f"\n{name}")
         for display, match in pairs:
             print(f"  {_mark_for(name, match)}· {display}")
+            ctext = _comment_for(name, match)
+            if ctext:
+                for i, line in enumerate(ctext.splitlines()):
+                    prefix = "    💬 " if i == 0 else "       "
+                    print(f"{prefix}{line}")
 
     # 审查覆盖小结
     if feat.review_items():
@@ -811,6 +827,76 @@ def _review_snapshot(feat) -> dict:
     total, reviewed, tested = feat.review_counts()
     return {"slug": feat.slug, "items": items, "total": total,
             "reviewed": reviewed, "tested": tested}
+
+
+def cmd_feat_comment(ctx: AppContext, args) -> int:
+    """查看 / 写 / 清某条目的评论（feat-comment）。"""
+    from ..feat import FeatError
+
+    store = _feat_store(ctx)
+    feat = store.get(args.slug)
+    if feat is None:
+        print(f"错误：找不到 feat：{args.slug}", file=sys.stderr)
+        return 2
+
+    key = getattr(args, "on", None)
+    message = getattr(args, "message", None)
+    clear = getattr(args, "clear", False)
+    as_json = getattr(args, "json", False)
+
+    # 写 / 清（给了 --on 且给了 -m/--clear 时）
+    if key is not None and (message is not None or clear):
+        new_text = "" if (clear or message == "") else message
+        try:
+            store.set_comment(args.slug, key, new_text)
+        except FeatError as e:
+            print(f"错误：{e}", file=sys.stderr)
+            return 2
+        feat = store.get(args.slug)
+        label = dict(feat.review_items()).get(key, "")
+        print(f"{args.slug}  {key}  "
+              f"{'已写入评论' if new_text else '已清除评论'}")
+        if label:
+            print(f"  {label}")
+        if new_text:
+            for line in new_text.splitlines():
+                print(f"    💬 {line}")
+        return 0
+
+    # 给了 -m / --clear 却没给 --on → 报错
+    if key is None and (message is not None or clear):
+        print("错误：写/清评论需要 --on <KEY>", file=sys.stderr)
+        return 2
+
+    # 查看单项
+    if key is not None:
+        if key not in dict(feat.review_items()):
+            print(f"错误：非法评论 key：{key!r}", file=sys.stderr)
+            return 2
+        text = feat.comment(key)
+        if as_json or ctx.config.json_output:
+            print(json.dumps({"slug": args.slug, "key": key,
+                              "comment": text},
+                             ensure_ascii=False, indent=2))
+            return 0
+        print(text if text else "（该条目暂无评论）")
+        return 0
+
+    # 未给 --on：列出全部非空评论
+    if as_json or ctx.config.json_output:
+        print(json.dumps({"slug": feat.slug,
+                          "comments": dict(feat.comments)},
+                         ensure_ascii=False, indent=2))
+        return 0
+    rows = feat.commented_items()
+    if not rows:
+        print("（暂无评论）")
+        return 0
+    for k, label, text in rows:
+        print(f"{k:<12} {label}")
+        for line in text.splitlines():
+            print(f"  {line}")
+    return 0
 
 
 def cmd_feat_review(ctx: AppContext, args) -> int:
