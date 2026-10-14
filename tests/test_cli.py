@@ -1343,3 +1343,36 @@ def test_stats_json_has_review(capsys, store_dir):
     data = json.loads(out)
     assert "review" in data
     assert data["review"]["items"] == 5
+
+
+def test_review_end_to_end_flow(capsys):
+    """端到端：勾选 → 覆盖率和告警同步变化 → 撤销回落。"""
+    _make_feat(capsys)
+    # 初始：全未审，有告警
+    assert main(["review"]) == 1
+    capsys.readouterr()
+
+    # 逐项审查 + 测试（用真实 key）
+    keys = ["api:0", "api:1", "logs:0", "fallbacks:0", "doc"]
+    for k in keys:
+        assert main(["feat", "review", "a", "--item", k, "--review"]) == 0
+        assert main(["feat", "review", "a", "--item", k, "--test",
+                     "--cmd", "pytest x"]) == 0
+    capsys.readouterr()
+
+    code = main(["review"])
+    out = capsys.readouterr().out
+    assert code == 0                      # 全覆盖 → 无告警
+    assert "100%" in out
+    assert "excellent" in out
+
+    # 撤销一项审查 → 覆盖率回落、告警复现
+    main(["feat", "review", "a", "--item", "api:0", "--unreview"])
+    capsys.readouterr()
+    code = main(["review"])
+    out = capsys.readouterr().out
+    assert code == 0                      # 4/5=80% 仍高于 0.6，无 low-review
+    # 人工审查行显示 80%（不再 100%）
+    review_line = [l for l in out.splitlines() if "人工审查" in l][0]
+    assert "80%" in review_line
+    assert "100%" not in review_line
