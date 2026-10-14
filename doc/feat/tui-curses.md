@@ -27,6 +27,10 @@ curses 是标准库，**无全局 Binding、无消息系统、无 widget 树**�
 
 ### 范围：只做只读浏览（明确边界）
 
+> **审查确认（human:lwy）**：第一版**只读浏览**。不做筛选、不做写操作、
+> 不做 Feat/Review 视图。后续要加功能，另开 feat。
+
+
 **做**：
 
 - 三栏：提交 / 笔记 / 详情（复用现有信息层次）
@@ -87,6 +91,7 @@ build_view(store, git, selection)  ← 纯函数：store/git → CursesView
 | `j` / `↓` | 下移 |
 | `k` / `↑` | 上移 |
 | `Tab` / `1` / `2` / `3` | 切换焦点栏 |
+| `h` / `l` / `←` / `→` | 左右切栏（兼容 lazygit 习惯） |
 
 **没有全局 Binding 机制**——键全部在 `run` 的主循环里显式 `if` 分发，
 不存在"冒泡到别处"的可能。
@@ -123,11 +128,11 @@ def run(store, cwd: str = ".", config=None) -> int:
 `pdev/cli/parser.py` 与 `commands.py`：
 
 ```
-pdm ui-curses [store]     # 或复用 pdm ui --curses
+pdm ui --curses [store]     # 独立开关；默认仍走 Textual 版
 ```
 
-本 feat 在 `ui` 上加一个 `--curses` 开关，**不改默认行为**
-（默认仍是 Textual 版，避免破坏现有使用）。
+- **默认不变**：`pdm ui` 仍是 Textual 版，避免破坏现有使用。
+- `--curses` 时走本 feat 的 `run()`，不 import textual。
 
 ## 日志
 
