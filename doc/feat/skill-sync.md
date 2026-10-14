@@ -75,3 +75,39 @@ cmd=<逐条核对>
 manual=通读 SKILL.md 的标准流程，确认按其中命令能实际跑通
 expected=无遗漏、无过时命令
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 commit `fc6ff229`（三份文档同步 + 新增 `tests/test_skill_sync.py`），
+补漏于 `a8a0ef82`（`design-doc.md` 两处旧流水线 + 防漂移断言）。
+
+### 同步了什么
+
+| 文件 | 变化 |
+|------|------|
+| `SKILL.md` | 流水线加 `script`（可选语义）；`feat new` 五项必填进标准流程；新增「审查」一节（review/comment/stage-review/`pdm review`） |
+| `references/commands.md` | 补 `feat review/comment/stage-review` 三个子命令；`feat commit` 的 `script` 阶段；`feat new` 五项必填表；check 规则表由 13 补到 21 个 code |
+| `references/data-model.md` | `Feat.stage` 补 `script`；新增 `script` 可选说明与「审查数据（两级）」小节 |
+| `references/design-doc.md` | 两处旧流水线改为含 `script` |
+
+### 防复发（本 feat 的重点）
+
+新增 `tests/test_skill_sync.py`（9 例），把 skill 钉在代码上：
+
+- 命令面：SKILL.md 的 `pdm <cmd>` → `build_parser()` 顶层 choices；
+  commands.md → `feat` 全部子命令。
+- 阶段序列：三份文档都必须含 `STAGE_SEQUENCE` 派生的流水线串。
+- 规则表：commands.md 必须覆盖 `check.CODES` 全部代号。
+- 必填参数、`script` 可选、`samples` 语义等关键表述。
+- **旧流水线禁止串**：任何参考文件不得含缺 `script` 的 `doc → test → feat → fix → close`。
+
+同时把 `tests/test_skill.py::test_body_mentions_pipeline` 从**硬编码字符串**
+改为从 `STAGE_SEQUENCE` 派生——原先它等于把漂移固化成测试。
+
+### 本次发现的异常
+
+1. **`design-doc.md` 被误判为"无漂移"**：写设计文档时凭判断排除，实际它
+   两处硬编码旧流水线。教训：是否漂移应由**派生串全量 grep** 判定，
+   不能靠人眼。已由 `test_no_reference_doc_has_stale_pipeline` 兜住。
+2. **旧测试固化了旧事实**：`test_body_mentions_pipeline` 直接断言旧串，
+   代码改了它反而拦住正确的更新。文档测试应**从代码派生期望值**。
