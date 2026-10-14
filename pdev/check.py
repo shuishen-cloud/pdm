@@ -46,6 +46,8 @@ CODES = (
     "missing-stage",
     "commit-no-note",
     "note-no-verify",
+    "review-none",
+    "review-low",
 )
 
 # 开发阶段 → commit 信息前缀（见 doc/feat/stage-prefix.md）
@@ -111,35 +113,38 @@ def format_issue(issue: CheckIssue, color: bool = False) -> str:
 
 
 def check_one(store: FeatStore, slug: str, git=None,
-              note_store=None) -> List[CheckIssue]:
+              note_store=None, min_coverage: float = 0.6) -> List[CheckIssue]:
     """检查单个 feat。
 
     :param git: 可选的 :class:`pdev.git.GitRepo`；为 ``None`` 时跳过
         依赖 git 的规则（``commit-missing`` / ``orphan-commit``）。
     :param note_store: 可选的 :class:`pdev.store.NoteStore`；为 ``None``
         时跳过依赖笔记的规则（``commit-no-note`` / ``note-no-verify``）。
+    :param min_coverage: 人工审核覆盖率下限，低于它报 ``review-low``。
     """
     feat = store.get(slug)
     if feat is None:
         raise KeyError(f"找不到 feat：{slug}")
-    return _check_feat(feat, git, note_store)
+    return _check_feat(feat, git, note_store, min_coverage)
 
 
 def check_feats(store: FeatStore, git=None, *,
                 include_orphans: bool = True,
-                note_store=None) -> List[CheckIssue]:
+                note_store=None,
+                min_coverage: float = 0.6) -> List[CheckIssue]:
     """检查全部 feat（含跨 feat 的冲突与孤儿 commit）。
 
     :param git: 可选的 :class:`pdev.git.GitRepo`。
     :param include_orphans: 是否检查未被认领的 commit。
     :param note_store: 可选的 :class:`pdev.store.NoteStore`。
+    :param min_coverage: 人工审核覆盖率下限。
     """
     issues: List[CheckIssue] = []
     feats = list(store.all())
 
     # 逐个 feat 的局部规则
     for feat in feats:
-        issues.extend(_check_feat(feat, git, note_store))
+        issues.extend(_check_feat(feat, git, note_store, min_coverage))
 
     # 跨 feat：commit 冲突
     owners: dict[str, List[str]] = {}
@@ -184,7 +189,8 @@ def check_feats(store: FeatStore, git=None, *,
 # ---------------------------------------------------------------------------
 
 
-def _check_feat(feat: Feat, git, note_store=None) -> List[CheckIssue]:
+def _check_feat(feat: Feat, git, note_store=None,
+                min_coverage: float = 0.6) -> List[CheckIssue]:
     out: List[CheckIssue] = []
 
     def add(code: str, level: str, message: str) -> None:
@@ -227,6 +233,36 @@ def _check_feat(feat: Feat, git, note_store=None) -> List[CheckIssue]:
             and getattr(git, "available", False)):
         out.extend(check_notes(feat, git, note_store))
 
+    # 审查覆盖率（见 doc/feat/review-check.md）
+    out.extend(_check_review(feat, min_coverage))
+
+    return out
+
+
+def _check_review(feat: Feat, min_coverage: float = 0.6) -> List[CheckIssue]:
+    """人工审查覆盖率规则：``review-none`` / ``review-low``。
+
+    不依赖 git / note_store；无可审项时不报。
+    """
+    out: List[CheckIssue] = []
+    items, reviewed, _tested = feat.review_counts()
+    if items == 0:
+        return out
+
+    suffix = "（已 closed）" if feat.status is FeatStatus.CLOSED else ""
+    if reviewed == 0:
+        out.append(CheckIssue(
+            feat.slug, "review-none", "warning",
+            f"规格字段无一项被人工审查：{items} 个可审项{suffix}"
+            f"（用 pdm feat review {feat.slug} --item <KEY> --review）",
+        ))
+    coverage = reviewed / items
+    if coverage < min_coverage:
+        out.append(CheckIssue(
+            feat.slug, "review-low", "warning",
+            f"人工审核覆盖率过低：{coverage:.0%}"
+            f"（低于 {min_coverage:.0%}）",
+        ))
     return out
 
 

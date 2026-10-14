@@ -732,11 +732,16 @@ def cmd_feat_check(ctx: AppContext, args) -> int:
 
     git = GitRepo(str(ctx.cwd))
 
+    rcfg = getattr(ctx.config, "review", None)
+    min_coverage = getattr(rcfg, "min_coverage", 0.6)
+
     try:
         if args.slug:
-            issues = check_one(store, args.slug, git, note_store=ctx.store)
+            issues = check_one(store, args.slug, git, note_store=ctx.store,
+                               min_coverage=min_coverage)
         else:
-            issues = check_feats(store, git, note_store=ctx.store)
+            issues = check_feats(store, git, note_store=ctx.store,
+                                 min_coverage=min_coverage)
     except KeyError as e:
         print(f"错误：{e}", file=sys.stderr)
         return 2

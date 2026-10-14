@@ -249,8 +249,20 @@ def test_format_issue_marks_level():
 
 
 def test_clean_store_has_no_issues(store):
-    add(store, GOOD_FEAT)
+    """全审后的合规 feat 不产生任何问题（含审查规则）。"""
+    f = add(store, GOOD_FEAT)
+    for key, _ in f.review_items():
+        f.set_reviewed(key)
+    store.update(f)
     assert check_feats(store) == []
+
+
+def test_unreviewed_feat_reports_review_warnings(store):
+    """未审的合规 feat 现在会报 review 规则（行为变化）。"""
+    add(store, GOOD_FEAT)
+    got = codes(check_feats(store))
+    assert "review-none" in got
+    assert "review-low" in got
 
 
 def test_short_hash_prefix_not_orphan(store, git_repo):

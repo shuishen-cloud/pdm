@@ -883,11 +883,25 @@ def test_feat_check_clean(capsys):
     main(["feat", "set", "a", "fixing"])
     main(["feat", "link", "a", "abc1234"])
     main(["feat", "set", "a", "closed"])
+    # 审查全部可审项，才是真正「通过校验」
+    for key in ("doc", "api:0", "fallbacks:0"):
+        main(["feat", "review", "a", "--item", key, "--review"])
     capsys.readouterr()
     code = main(["feat", "check", "a"])
     out = capsys.readouterr().out
     assert code == 0
     assert "通过校验" in out
+
+
+def test_feat_check_reports_unreviewed(capsys):
+    """流程齐全但未审 → 仍退出码 0，但报 review 警告。"""
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+          "--api", "f()", "--fallback", "x"])
+    capsys.readouterr()
+    code = main(["feat", "check", "a"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "review-none" in out
 
 
 def test_feat_check_reports_draft_with_commit(capsys):
