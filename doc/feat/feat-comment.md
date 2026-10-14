@@ -129,4 +129,17 @@ def cmd_feat_comment(ctx: AppContext, args) -> int
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`pdev/feat.py` 新增 `Feat.comments` / `comment()` /
+  `set_comment()` / `commented_items()` 与 `FeatStore.set_comment`，
+  及序列化（非 str 值丢弃）；`pdev/cli/parser.py` 加 `feat comment`
+  子命令（`--on` / `-m` / `--clear`，后两者互斥）；`pdev/cli/commands.py`
+  加 `cmd_feat_comment`，并让 `cmd_feat_show` 在每个条目下缩进显示评论。
+- **提交**：`doc` 89e0bf3、`test` cf61126、`feat` 8680f72、`fix` 18a7545。
+- **测试**：`tests/test_feat.py` 新增 12 个、`tests/test_cli.py` 新增 11 个；
+  非 TUI 全量通过。
+- **实测抓出的问题**：写入回显与 `feat show` 各写一份多行渲染逻辑，
+  一个每行都带 `💬`、一个只首行带；已统一为「首行 `💬`、续行 3 空格对齐」
+  并加回归测试。
+- **结论**：设计成立。评论与 `[审][测]` 完全独立（不参与评分与 check），
+  空评论不落盘，孤儿 key 保留但不列出；`--on` 与 `pdm feat review --item`
+  共用 key 空间，无需记两套标识。

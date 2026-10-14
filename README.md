@@ -72,6 +72,7 @@ CommitNote(
 | `pdm feat new/list/show/set/link/check` | 开发记录（设计→测试→实现） |
 | `pdm feat commit <stage> <slug>` | 阶段提交：由 pdm 创建 commit，强制 doc→test→feat→fix→close 顺序 |
 | `pdm feat review <slug>` | 逐项人工审查 / 测试勾选（`[审][测]` 双勾选位） |
+| `pdm feat comment <slug> --on <KEY> -m <TEXT>` | 给某条目写人工评论（可留空，多行） |
 | `pdm review` | 项目代码掌握程度与低覆盖告警（有告警退出码 1） |
 
 ### 阶段提交（推荐用法）
@@ -107,6 +108,8 @@ pdm feat review review-cli                       # 列出可审项与 [审][测]
 pdm feat review review-cli --item api:0 --review --by human:lwy
 pdm feat review review-cli --item api:0 --test --cmd "pytest tests/x.py"
 pdm feat review review-cli --item api:0 --unreview
+pdm feat comment review-cli --on api:0 -m "接口保持最小，不做泛化"  # 条目级评论
+pdm feat comment review-cli                      # 列出已写评论
 pdm review                                       # 全局掌握程度 + 告警（有告警退出码 1）
 pdm review --unreviewed                          # 列出全仓未人工审查的项
 pdm review --untested                            # 列出全仓未测试通过的项
@@ -123,6 +126,10 @@ pdm review --json                                # 机器可读
 `pdm feat check` 同步联动：未审的 feat 会报 `review-none` / `review-low`
 （warning，不阻断），使「关了却没审」一眼可见。
 
+另可用 `pdm feat comment <slug> --on <KEY> -m <文本>` 给每个条目写**人工评论**
+（人手动填，可留空，支持多行），记录「为什么这么定」。评论与 `[审][测]`
+勾选**独立**，共用同一套 key（`doc` / `api:0` / `logs:1` …）。
+
 分阶段落地（每条 Feat 独立走 doc→test→feat→fix→close）：
 
 | 顺序 | slug | 内容 | 状态 |
@@ -132,6 +139,7 @@ pdm review --json                                # 机器可读
 | 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 | ✅ 已完成 |
 | 4 | `review-check` | `pdm feat check` 联动规则 | ✅ 已完成 |
 | 4.5 | `review-query` | `pdm review --unreviewed/--untested` 清单 | ✅ 已完成 |
+| 4.6 | `feat-comment` | 条目级人工评论（`pdm feat comment`） | ✅ 已完成 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
 | 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
 
