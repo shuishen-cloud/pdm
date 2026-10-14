@@ -443,7 +443,8 @@ function renderFeat() {
     ? list.map((f, i) =>
         `<div class="row ${i === fi ? "sel" : ""}" data-f="${i}">` +
         `${escapeHtml(f.slug)} ${stageBadge(f)}` +
-        `<span class="hash">${f.status} ${f.review[0]}/${f.review[1]}` +
+        `${escapeHtml(f.title || "")}` +
+        `<span class="hash">${escapeHtml(f.status)} ${f.review[0]}/${f.review[1]}` +
         `${f.missing_fields.length ? " ⚠" : ""}</span></div>`).join("")
     : `<div class="empty">（暂无 Feat）</div>`;
 
