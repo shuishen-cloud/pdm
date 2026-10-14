@@ -112,6 +112,11 @@ class ReviewItem:
     test_status: str = ""
     tested_at: Optional[datetime] = None
 
+    @property
+    def is_empty(self) -> bool:
+        """两个勾选位都清、且无附加信息——不必落盘。"""
+        return not (self.reviewed or self.tested)
+
 
 # 可审项的字段顺序（review_items 据此展开）
 _REVIEW_FIELDS = ("api", "logs", "fallbacks")
@@ -239,6 +244,7 @@ class Feat:
         if value:
             item.reviewed_by = by or item.reviewed_by
             item.reviewed_at = _now()
+        self._prune(key, item)
         self.touch()
         return item
 
@@ -253,8 +259,14 @@ class Feat:
             if status:
                 item.test_status = status
             item.tested_at = _now()
+        self._prune(key, item)
         self.touch()
         return item
+
+    def _prune(self, key: str, item: ReviewItem) -> None:
+        """两个位都清的记录从 dict 移除，保持 JSON 精简。"""
+        if item.is_empty:
+            self.reviews.pop(key, None)
 
     def review_counts(self) -> tuple:
         """返回 ``(items, reviewed, tested)``，孤儿记录不计入。"""

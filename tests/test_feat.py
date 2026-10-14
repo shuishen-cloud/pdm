@@ -513,6 +513,25 @@ def test_untouched_keys_absent_from_json(store):
     assert set(data["reviews"]) == {"api:0"}
 
 
+def test_clearing_never_set_key_leaves_no_trace():
+    """对一个从未勾选的项取消勾选，不应留下空记录。"""
+    f = Feat(slug="a", title="A", api=["f()"])
+    f.set_reviewed("api:0", False)
+    f.set_tested("api:0", False)
+    assert f.reviews == {}
+
+
+def test_clearing_both_bits_removes_record():
+    """先审后测，再两个都取消 -> 记录从 dict 移除。"""
+    f = Feat(slug="a", title="A", api=["f()"])
+    f.set_reviewed("api:0")
+    f.set_tested("api:0", status="passed")
+    f.set_reviewed("api:0", False)
+    assert "api:0" in f.reviews          # 还有一个测试位
+    f.set_tested("api:0", False)
+    assert f.reviews == {}
+
+
 def test_legacy_json_without_reviews(tmp_path):
     """旧 JSON 无 reviews 键 -> 空 dict，不报错。"""
     root = tmp_path / "feats"
