@@ -71,6 +71,7 @@ CommitNote(
 | `pdm verify list` / `show` / `run` | 验证的查看与执行 |
 | `pdm feat new/list/show/set/link/check` | 开发记录（设计→测试→实现） |
 | `pdm feat commit <stage> <slug>` | 阶段提交：由 pdm 创建 commit，强制 doc→test→feat→fix→close 顺序 |
+| `pdm feat review <slug>` | 逐项人工审查 / 测试勾选（`[审][测]` 双勾选位）（规划中） |
 
 ### 阶段提交（推荐用法）
 
@@ -93,6 +94,23 @@ pdm feat commit close demo -m "收尾文档" --close   # 收尾并置 closed
 | `pdm feat show <slug> --doc/--notes/--verify` | 查看设计正文与关联笔记 |
 | `pdm ui` | TUI（仿 lazygit） |
 | `pdm stats` | 总览（含负债 / 资产 / 验证覆盖） |
+
+### Feat 审查（规划中）
+
+给每条 Feat 的可审信息项（`doc` / `api` / `logs` / `fallbacks`）加**两个
+独立勾选位**：`[审]` 人工审查、`[测]` 测试通过，逐项勾选；再由全部 Feat
+的审查结果算出「项目代码掌握程度」，**人工审核覆盖率过低**时告警。
+
+分阶段落地（每条 Feat 独立走 doc→test→feat→fix→close）：
+
+| 顺序 | slug | 内容 |
+|------|------|------|
+| 1 | `review-model` | 审查项数据模型（`ReviewItem` + 双勾选位存储） |
+| 2 | `review-score` | 覆盖率评分与低覆盖告警 |
+| 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 |
+| 4 | `review-check` | `pdm feat check` 联动规则 |
+| 5 | `review-tui-read` | TUI 只读显示 `[审][测]` |
+| 6 | `review-tui-toggle` | TUI 空格勾选 |
 
 ## 目录结构
 
