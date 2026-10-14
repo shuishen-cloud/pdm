@@ -73,14 +73,28 @@ class _FakeGit:
 
 
 def test_build_view_does_not_import_curses():
-    """纯函数层不得依赖 curses（否则无法脱离终端测试）。"""
-    import pdev.tui_curses as m
-    import sys
+    """纯函数层不得依赖 curses（否则无法脱离终端测试）。
 
-    src = open(m.__file__, encoding="utf-8").read()
-    # curses 只能出现在 run() 相关的 IO 层，用延迟导入
-    assert "import curses" not in src.split("def run(")[0], \
-        "curses 不应在模块顶部导入"
+    做法：把三个纯函数的**可执行源码**取出（剔文档串），断言无 curses。
+    """
+    import inspect
+    import re
+
+    import pdev.tui_curses as m
+
+    for fn in (m.build_view, m.render_view, m._note_detail, m._move):
+        src = inspect.getsource(fn)
+        # 去掉文档串，只查真实代码
+        src = re.sub(r'""".*?"""', "", src, flags=re.S)
+        assert "curses" not in src, f"{fn.__name__} 不应依赖 curses"
+
+
+def test_module_importable_without_curses():
+    """无 curses 平台也能 import 本模块（纯函数层与终端解耦）。"""
+    import pdev.tui_curses as m
+
+    assert m.curses is None, "模块顶部不应导入 curses（应延迟到 _load_curses）"
+    assert callable(m._load_curses)
 
 
 def test_build_view_lists_commits(store):
@@ -123,8 +137,12 @@ def test_build_view_no_git_available(tmp_path):
         def commit_info(self, ref: str):
             return None
 
-    view = build_view(NoteStore(tmp_path / "n"), _NoGit(), Selection())
+    s = NoteStore(tmp_path / "n")
+    s.add(CommitNote(commit="ccc3333444", kind=NoteKind.BUG, title="孤立提交"))
+    view = build_view(s, _NoGit(), Selection())
     assert isinstance(view, CursesView)
+    # 非 git 仓库时退回笔记里的 commit
+    assert [r.commit for r in view.commits] == ["ccc3333444"]
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +211,7 @@ def test_run_returns_2_when_curses_missing(store, monkeypatch):
     """curses 不可用时提示并返回 2。"""
     import pdev.tui_curses as m
 
-    monkeypatch.setattr(m, "curses", None)
+    monkeypatch.setattr(m, "_load_curses", lambda: None)
     assert m.run(store, cwd=".", stdout=_FakeStdout(isatty=True)) == 2
 
 
@@ -203,3 +221,132 @@ class _FakeStdout:
 
     def isatty(self) -> bool:
         return self._isatty
+
+
+# ---------------------------------------------------------------------------
+# 端到端：真实 PTY 下启动、按键、退出后终端恢复
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    __import__("sys").platform.startswith("win"), reason="PTY 仅 Unix"
+)
+def test_pty_start_send_q_exit_restores_terminal(tmp_path):
+    """真实 PTY：启动 → 发 q → 进程结束，且退出序列含 endwin 恢复。
+
+    沿用 tui-signal-restore 的教训：**必须确证进程真的结束**，
+    而不是等超时；并检查终端恢复序列。
+    """
+    import os
+    import pty
+    import select
+    import subprocess
+    import sys
+    import time
+
+    from pdev import Actor, CommitNote, NoteKind, NoteStore
+
+    store = NoteStore(tmp_path / "notes")
+    store.add(CommitNote(commit="abc1234def", kind=NoteKind.PITFALL,
+                         title="PTY 测试", author=Actor("human:lwy")))
+
+    code = (
+        "from pdev.store import NoteStore\n"
+        "from pdev.tui_curses import run\n"
+        f"s=NoteStore({str(store.root)!r})\n"
+        "import sys; sys.exit(run(s, cwd='.', stdout=sys.stdout))\n"
+    )
+
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdin=slave, stdout=slave, stderr=slave,
+        cwd=str(tmp_path), close_fds=True,
+    )
+    os.close(slave)
+
+    out = b""
+    deadline = time.time() + 10
+    try:
+        # 等界面起来（收到任何输出），再发 q
+        while time.time() < deadline:
+            r, _, _ = select.select([master], [], [], 0.5)
+            if r:
+                out += os.read(master, 65536)
+                break
+        os.write(master, b"q")
+        proc.wait(timeout=10)
+        # 收尾读取
+        while True:
+            r, _, _ = select.select([master], [], [], 0.2)
+            if not r:
+                break
+            try:
+                out += os.read(master, 65536)
+            except OSError:
+                break
+    finally:
+        os.close(master)
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    assert proc.returncode == 0, f"退出码 {proc.returncode}"
+    # 正常退出应恢复终端（退出备用屏 + 显示光标）
+    assert b"\x1b[?1049l" in out or b"\x1b[?25h" in out, \
+        "退出后应发出终端恢复序列"
+
+
+@pytest.mark.skipif(
+    __import__("sys").platform.startswith("win"), reason="PTY 仅 Unix"
+)
+def test_pty_ctrl_c_does_not_leave_raw_mode(tmp_path):
+    """Ctrl+C 中断也应恢复终端（不依赖 KeyboardInterrupt 路径）。"""
+    import os
+    import pty
+    import select
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    from pdev import NoteStore
+
+    store = NoteStore(tmp_path / "notes")
+    code = (
+        "from pdev.store import NoteStore\n"
+        "from pdev.tui_curses import run\n"
+        f"s=NoteStore({str(store.root)!r})\n"
+        "import sys; sys.exit(run(s, cwd='.', stdout=sys.stdout))\n"
+    )
+    master, slave = pty.openpty()
+    proc = subprocess.Popen([sys.executable, "-c", code],
+                            stdin=slave, stdout=slave, stderr=slave,
+                            cwd=str(tmp_path), close_fds=True)
+    os.close(slave)
+    out = b""
+    try:
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            r, _, _ = select.select([master], [], [], 0.5)
+            if r:
+                out += os.read(master, 65536)
+                break
+        proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=10)
+        while True:
+            r, _, _ = select.select([master], [], [], 0.2)
+            if not r:
+                break
+            try:
+                out += os.read(master, 65536)
+            except OSError:
+                break
+    finally:
+        os.close(master)
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+    # 关键是进程真的结束了、且尝试恢复终端
+    assert proc.returncode is not None
+    assert b"\x1b[?1049l" in out or b"\x1b[?25h" in out

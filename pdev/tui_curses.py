@@ -315,7 +315,7 @@ def render_view(view: CursesView, height: int, width: int) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-def _enter_curses(stdscr, store: NoteStore, git, key_reader) -> int:
+def _enter_curses(stdscr, store: NoteStore, git) -> int:
     """curses 主循环。只在 ``curses.wrapper`` 内被调用。"""
     c = _load_curses()
     c.curs_set(0)
@@ -386,6 +386,6 @@ def run(store: NoteStore, cwd: str = ".", config=None,
 
     git = GitRepo(cwd)
     try:
-        return c.wrapper(_enter_curses, store, git, None)
+        return c.wrapper(_enter_curses, store, git)
     except KeyboardInterrupt:
         return 130
