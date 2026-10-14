@@ -859,8 +859,9 @@ def cmd_feat_comment(ctx: AppContext, args) -> int:
         if label:
             print(f"  {label}")
         if new_text:
-            for line in new_text.splitlines():
-                print(f"    💬 {line}")
+            for i, line in enumerate(new_text.splitlines()):
+                prefix = "    💬 " if i == 0 else "       "
+                print(f"{prefix}{line}")
         return 0
 
     # 给了 -m / --clear 却没给 --on → 报错

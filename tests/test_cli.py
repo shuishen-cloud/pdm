@@ -1506,7 +1506,7 @@ def test_feat_comment_list_all(capsys):
     assert "接口评论" in out and "日志评论" in out
 
 
-def test_feat_comment_clear(capsys):
+def test_feat_comment_clear(capsys, tmp_path):
     _make_feat(capsys)
     main(["feat", "comment", "a", "--on", "api:0", "-m", "x"])
     capsys.readouterr()
@@ -1517,7 +1517,7 @@ def test_feat_comment_clear(capsys):
     assert FeatStore(tmp_path / ".pdm" / "feats").get("a").comment("api:0") == ""
 
 
-def test_feat_comment_empty_message_clears(capsys):
+def test_feat_comment_empty_message_clears(capsys, tmp_path):
     _make_feat(capsys)
     main(["feat", "comment", "a", "--on", "api:0", "-m", "x"])
     capsys.readouterr()
@@ -1576,3 +1576,18 @@ def test_feat_comment_clear_and_message_conflict(capsys):
     with pytest.raises(SystemExit):
         main(["feat", "comment", "a", "--on", "api:0",
               "--clear", "-m", "x"])
+
+
+def test_feat_comment_multiline_display(capsys):
+    """多行评论：首行带 💬，续行缩进对齐（写入与 show 一致）。"""
+    _make_feat(capsys)
+    main(["feat", "comment", "a", "--on", "api:0", "-m", "第一行\n第二行"])
+    out = capsys.readouterr().out
+    assert "💬 第一行" in out
+    assert "💬 第二行" not in out          # 续行不带 💬
+    assert "第二行" in out
+
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    assert "💬 第一行" in out
+    assert "💬 第二行" not in out
