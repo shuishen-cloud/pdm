@@ -121,4 +121,21 @@ def _review_lines(feat) -> List[str]
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`pdev/cli/parser.py` 新增 `feat review` 与顶层 `review`
+  两个子命令（动作互斥组 `--review/--unreview/--test/--untest`）；
+  `pdev/cli/commands.py` 新增 `cmd_feat_review` / `cmd_review` /
+  `render_review_marks` / `_review_lines` / `_review_snapshot`，并让
+  `cmd_feat_show` 的规格栏带 `[审][测]` 标记、`cmd_stats` 附掌握程度。
+- **提交**：`doc` d372082、`test` ed9bde4、`feat` b6a62ac、`fix` 5c27644。
+- **测试**：`tests/test_cli.py` 新增 21 个用例；全仓 714 个用例通过。
+- **实测抓出的问题**：
+  1. `feat show` 为了让 review 标记匹配上，一度把设计文档栏改成显示
+     `feat.doc` 原文，破坏了「按 doc.dir 解析后显示」的既有语义；
+     修正为 `(display, match)` 二元组，显示解析后路径、匹配用原值。
+  2. `--item` 多次书写时 argparse 只保留最后一条，故此命令一次只勾
+     一项，需逐项调用；已在文档/测试中固定这一语义。
+  3. 端到端测试中笼统断言 `"100%" in out` 会误命中「测试通过 100%」行，
+     改为定位「人工审查」行再断言。
+- **结论**：设计成立。三个入口（逐项勾选 / 全局评分 / 展示标记）均已跑通，
+  `pdm review` 退出码可直接用作 CI 门禁（有告警→1）。真正执行测试命令
+  （复用 `pdm verify run`）留作后续增强，本 feat 只负责登记证据。

@@ -71,8 +71,8 @@ CommitNote(
 | `pdm verify list` / `show` / `run` | 验证的查看与执行 |
 | `pdm feat new/list/show/set/link/check` | 开发记录（设计→测试→实现） |
 | `pdm feat commit <stage> <slug>` | 阶段提交：由 pdm 创建 commit，强制 doc→test→feat→fix→close 顺序 |
-| `pdm feat review <slug>` | 逐项人工审查 / 测试勾选（`[审][测]` 双勾选位）（规划中） |
-| `pdm review` | 项目代码掌握程度与低覆盖告警（规划中） |
+| `pdm feat review <slug>` | 逐项人工审查 / 测试勾选（`[审][测]` 双勾选位） |
+| `pdm review` | 项目代码掌握程度与低覆盖告警（有告警退出码 1） |
 
 ### 阶段提交（推荐用法）
 
@@ -94,18 +94,28 @@ pdm feat commit close demo -m "收尾文档" --close   # 收尾并置 closed
 - 旧数据无游标时，从已有 commit 前缀自动推断
 | `pdm feat show <slug> --doc/--notes/--verify` | 查看设计正文与关联笔记 |
 | `pdm ui` | TUI（仿 lazygit） |
-| `pdm stats` | 总览（含负债 / 资产 / 验证覆盖） |
+| `pdm stats` | 总览（含负债 / 资产 / 验证覆盖 / 掌握程度） |
 
-### Feat 审查（规划中）
+### Feat 审查
 
 给每条 Feat 的可审信息项（`doc` / `api` / `logs` / `fallbacks`）加**两个
 独立勾选位**：`[审]` 人工审查、`[测]` 测试通过，逐项勾选；再由全部 Feat
 的审查结果算出「项目代码掌握程度」，**人工审核覆盖率过低**时告警。
 
+```bash
+pdm feat review review-cli                       # 列出可审项与 [审][测] 状态
+pdm feat review review-cli --item api:0 --review --by human:lwy
+pdm feat review review-cli --item api:0 --test --cmd "pytest tests/x.py"
+pdm feat review review-cli --item api:0 --unreview
+pdm review                                       # 全局掌握程度 + 告警（有告警退出码 1）
+pdm review --json                                # 机器可读
+```
+
 掌握程度：`score = 0.6 × 人工审核覆盖率 + 0.4 × 测试通过覆盖率`，
 分档 `none / poor / fair / good / excellent`；告警只在**过低**时发出
 （`no-review`、`low-review`、`untested`）。阈值由 `review.min_coverage`
-（默认 `0.6`）控制。
+（默认 `0.6`）控制。`pdm feat show` 的规格栏与 `pdm stats` 末尾也会
+显示勾选状态与掌握程度。
 
 分阶段落地（每条 Feat 独立走 doc→test→feat→fix→close）：
 
@@ -113,7 +123,7 @@ pdm feat commit close demo -m "收尾文档" --close   # 收尾并置 closed
 |------|------|------|------|
 | 1 | `review-model` | 审查项数据模型（`ReviewItem` + 双勾选位存储） | ✅ 已完成 |
 | 2 | `review-score` | 覆盖率评分与低覆盖告警 | ✅ 已完成 |
-| 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 | 规划中 |
+| 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 | ✅ 已完成 |
 | 4 | `review-check` | `pdm feat check` 联动规则 | 规划中 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
 | 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
