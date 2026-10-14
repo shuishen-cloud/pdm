@@ -114,4 +114,25 @@ choices=list(STAGE_SEQUENCE)   # feat commit 与 stage-review 两处
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`stage.py` 插入 `script`（`STAGE_SEQUENCE` / `STAGE_PREFIX` /
+  `_PREFIX_TO_STAGE`）、新增 `OPTIONAL_STAGES`，`next_stages` 对可选阶段
+  多放行一跳，`_subject_prefix` 改为从 `STAGE_PREFIX` 派生，报错文案从
+  序列派生；`check.STAGES` / `_PIPELINE` 加 `script`；`feat.pending_stage_review`
+  **跳过可选阶段**；`parser` 的 `choices` 从 `STAGE_SEQUENCE` 派生。
+- **提交**：`doc` 7386d1f、`test` a8a339a、`feat` 5cf5f28、`fix` 2598197、
+  `fix` f28a3bb。
+- **实测验证**（临时仓库）：
+  - `test → script → feat` 正常；
+  - `test → feat` **跳过** `script` 正常；
+  - `feat` 之后再 `script` → 拒绝（`stage-order` 语义）。
+- **发现的问题**：
+  1. **可选阶段会把 `stage-review` 门禁卡死**：`pending_stage_review` 原本用
+     `previous_stage`，进 `feat` 会要求先审 `script`；但 `script` 可能从未
+     提交。已改为**跳过可选阶段**找上一个必经阶段。
+  2. 报错文案 `流程是 doc→test→feat→fix→close` 是硬编码，漏了 `script`；
+     改为 `'→'.join(STAGE_SEQUENCE)`。
+  3. 新增 `script` 后，文档一致性测试（`tests/test_docs.py`）**立刻失败**——
+     它正是为拦这类漂移而写的，已同步。
+- **结论**：设计成立。`script` 可选使得旧流程完全等价（不提交就不出现）；
+  已 close 的历史设计文档（`stage-commit.md` / `stage-prefix.md`）保留
+  当时的五阶段描述，不在本 feat 回改。
