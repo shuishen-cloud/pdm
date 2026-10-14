@@ -119,7 +119,17 @@ class ReviewItem:
 
 
 # 可审项的字段顺序（review_items 据此展开）
-_REVIEW_FIELDS = ("api", "logs", "fallbacks")
+_REVIEW_FIELDS = ("api", "logs", "fallbacks",
+                  "data_model", "samples", "changes")
+
+# 新 feat 必填字段：(属性名, 人类可读名)
+_REQUIRED_FIELDS = (
+    ("design_note", "设计思路"),
+    ("impl_note", "实现方式"),
+    ("data_model", "核心数据结构"),
+    ("samples", "样例数据"),
+    ("changes", "对既有代码的改动"),
+)
 
 
 @dataclass
@@ -143,6 +153,13 @@ class Feat:
     api: List[str] = field(default_factory=list)        # 真实接口签名
     logs: List[str] = field(default_factory=list)       # 会打什么日志
     fallbacks: List[str] = field(default_factory=list)  # 异常兜底策略
+
+    # 五项设计字段（见 doc/feat/feat-fields.md）；全必填
+    design_note: str = ""                               # 设计思路
+    impl_note: str = ""                                 # 实现方式
+    data_model: List[str] = field(default_factory=list)  # 核心数据结构
+    samples: List[str] = field(default_factory=list)     # 样例数据
+    changes: List[str] = field(default_factory=list)     # 对既有代码的改动
 
     # 关联（手动串联）
     commits: List[str] = field(default_factory=list)
@@ -205,6 +222,15 @@ class Feat:
         return _NEXT.get(self.status)
 
     # --- 审查项 ---
+
+    def missing_required_fields(self) -> List[str]:
+        """新 feat 必填字段检查；返回缺失项的**人类可读名**（空 = 齐全）。"""
+        out: List[str] = []
+        for attr, label in _REQUIRED_FIELDS:
+            val = getattr(self, attr, None)
+            if not val:
+                out.append(label)
+        return out
 
     def review_items(self) -> List[tuple]:
         """展开可审项，返回 ``[(key, label), ...]``。
@@ -573,6 +599,11 @@ def _to_dict(f: Feat) -> dict:
         "api": list(f.api),
         "logs": list(f.logs),
         "fallbacks": list(f.fallbacks),
+        "design_note": f.design_note,
+        "impl_note": f.impl_note,
+        "data_model": list(f.data_model),
+        "samples": list(f.samples),
+        "changes": list(f.changes),
         "commits": list(f.commits),
         "notes": list(f.notes),
         "discovered": list(f.discovered),
@@ -656,6 +687,11 @@ def _from_dict(d: dict) -> Feat:
         api=list(d.get("api") or []),
         logs=list(d.get("logs") or []),
         fallbacks=list(d.get("fallbacks") or []),
+        design_note=d.get("design_note", "") or "",
+        impl_note=d.get("impl_note", "") or "",
+        data_model=list(d.get("data_model") or []),
+        samples=list(d.get("samples") or []),
+        changes=list(d.get("changes") or []),
         commits=list(d.get("commits") or []),
         notes=list(d.get("notes") or []),
         discovered=list(d.get("discovered") or []),

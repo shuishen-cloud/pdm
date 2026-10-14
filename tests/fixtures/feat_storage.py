@@ -36,7 +36,8 @@ MINIMAL_FEAT = {"slug": "minimal", "title": "最小"}
 BAD_SLUGS = ["Bad", "has_underscore", "-lead", "trail-", "", "有空 格"]
 
 # 已废弃的字段（旧版塞进 Feat 的"文档正文"，重构后应被忽略）
-LEGACY_FIELDS = ["design", "data_model", "fixtures", "touches",
+# 注：data_model 曾属废弃字段，feat-fields 后又复活为真实字段，故移除。
+LEGACY_FIELDS = ["design", "fixtures", "touches",
                  "follows", "debug"]
 
 

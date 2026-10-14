@@ -260,6 +260,17 @@ def build_parser() -> argparse.ArgumentParser:
                       metavar="TEXT", help="会打什么日志（可多次）")
     fnew.add_argument("--fallback", action="append", default=[],
                       metavar="TEXT", help="异常兜底（可多次）")
+    fnew.add_argument("--design-note", default="",
+                      help="设计思路（为什么这么做）")
+    fnew.add_argument("--impl-note", default="",
+                      help="实现方式（怎么落地的）")
+    fnew.add_argument("--data-model", action="append", default=[],
+                      metavar="TEXT", help="核心数据结构（可多次）")
+    fnew.add_argument("--sample", action="append", default=[],
+                      metavar="TEXT", help="样例数据（可多次）")
+    fnew.add_argument("--change", action="append", default=[],
+                      metavar="TEXT",
+                      help="对既有代码的改动，格式 文件::符号 —— 说明（可多次）")
     fnew.set_defaults(func=commands.cmd_feat_new)
 
     flist = feat_sub.add_parser("list", help="列出 feat")

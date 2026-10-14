@@ -469,7 +469,19 @@ def cmd_feat_new(ctx: AppContext, args) -> int:
             api=list(args.api),
             logs=list(args.log),
             fallbacks=list(args.fallback),
+            design_note=args.design_note or "",
+            impl_note=args.impl_note or "",
+            data_model=list(args.data_model),
+            samples=list(args.sample),
+            changes=list(args.change),
         )
+        missing = feat.missing_required_fields()
+        if missing:
+            print(f"错误：缺必填字段：{'、'.join(missing)}", file=sys.stderr)
+            print("  用 --design-note / --impl-note / --data-model / "
+                  "--sample / --change 登记（没有也要写明「无」）",
+                  file=sys.stderr)
+            return 2
         _feat_store(ctx).add(feat)
     except FeatError as e:
         print(f"错误：{e}", file=sys.stderr)
@@ -550,9 +562,23 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
         ("交付接口", [(x, x) for x in feat.api]),
         ("会打的日志", [(x, x) for x in feat.logs]),
         ("异常兜底", [(x, x) for x in feat.fallbacks]),
+        ("核心数据结构", [(x, x) for x in feat.data_model]),
+        ("样例数据", [(x, x) for x in feat.samples]),
+        ("对既有代码的改动", [(x, x) for x in feat.changes]),
         ("关联 commit", [(x, x) for x in feat.commits]),
         ("关联 note", [(x, x) for x in feat.notes]),
         ("发现的异常", [(x, x) for x in feat.discovered]),
+    ]
+    # 分区标题 → 字段名（用于匹配可审项/评论）
+    _SECTION_FIELD = {
+        "设计文档": "doc", "交付接口": "api", "会打的日志": "logs",
+        "异常兜底": "fallbacks", "核心数据结构": "data_model",
+        "样例数据": "samples", "对既有代码的改动": "changes",
+    }
+    # 文本型分区：无 [审][测] 标记，直接逐行缩进展示
+    text_blocks = [
+        ("设计思路", feat.design_note),
+        ("实现方式", feat.impl_note),
     ]
     # 可审项 → 行前带 [审][测] 标记（见 doc/feat/review-cli.md）
     # 匹配用 feat.doc / 原文，显示用 (显示文本, 匹配文本)
@@ -564,19 +590,25 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
         _key_at[(field, rlabel)] = rkey
 
     def _mark_for(section: str, match_text: str) -> str:
-        field = {"设计文档": "doc", "交付接口": "api",
-                 "会打的日志": "logs", "异常兜底": "fallbacks"}.get(section)
+        field = _SECTION_FIELD.get(section)
         if field is None:
             return ""
         return _review_at.get((field, match_text), "")
 
     def _comment_for(section: str, match_text: str) -> str:
-        field = {"设计文档": "doc", "交付接口": "api",
-                 "会打的日志": "logs", "异常兜底": "fallbacks"}.get(section)
+        field = _SECTION_FIELD.get(section)
         if field is None:
             return ""
         rkey = _key_at.get((field, match_text))
         return feat.comment(rkey) if rkey else ""
+
+    # 文本型字段（设计思路 / 实现方式）
+    for name, text in text_blocks:
+        if not text:
+            continue
+        print(f"\n{name}")
+        for line in text.splitlines():
+            print(f"  · {line}")
 
     for name, pairs in sections:
         if not pairs:
