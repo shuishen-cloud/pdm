@@ -244,3 +244,67 @@ def test_score_is_plain_dataclass():
     s = ReviewScore()
     assert s.items == 0
     assert s.warnings == []
+
+
+# ---------------------------------------------------------------------------
+# 未审 / 未测清单（review-query）
+# ---------------------------------------------------------------------------
+
+
+def test_unreviewed_items_lists_unchecked():
+    from pdev.review import unreviewed_items
+
+    f = _feat("a", api=["f()", "g()"], doc="")
+    f.set_reviewed("api:0")                  # 只审一项
+    rows = unreviewed_items([f])
+    keys = [(s, k) for s, k, _ in rows]
+    assert ("a", "api:1") in keys
+    assert ("a", "api:0") not in keys
+
+
+def test_unreviewed_items_untested_only():
+    from pdev.review import unreviewed_items
+
+    f = _feat("a", api=["f()", "g()"], doc="")
+    f.set_tested("api:0", status="passed")   # 只测一项
+    rows = unreviewed_items([f], tested=True)
+    keys = [(s, k) for s, k, _ in rows]
+    assert ("a", "api:1") in keys
+    assert ("a", "api:0") not in keys
+
+
+def test_unreviewed_items_with_tested_flag_is_intersection():
+    """tested=True 时取「既未审且未测」的交集。"""
+    from pdev.review import unreviewed_items
+
+    f = _feat("a", api=["f()", "g()", "h()"], doc="")
+    f.set_reviewed("api:0")                  # 审了
+    f.set_tested("api:1", status="passed")   # 测了
+    # api:2 既未审也未测
+    rows = unreviewed_items([f], tested=True)
+    keys = [(s, k) for s, k, _ in rows]
+    assert keys == [("a", "api:2")]
+
+
+def test_unreviewed_items_multiple_feats_order():
+    from pdev.review import unreviewed_items
+
+    f1 = _feat("a", api=["f()"], doc="")
+    f2 = _feat("b", api=["g()"], doc="")
+    rows = unreviewed_items([f1, f2])
+    assert [s for s, _, _ in rows] == ["a", "b"]
+
+
+def test_unreviewed_items_empty():
+    from pdev.review import unreviewed_items
+
+    assert unreviewed_items([]) == []
+    assert unreviewed_items([Feat(slug="a", title="A")]) == []
+
+
+def test_unreviewed_items_all_reviewed():
+    from pdev.review import unreviewed_items
+
+    f = _feat("a", api=["f()"], doc="")
+    _review_all(f)
+    assert unreviewed_items([f]) == []

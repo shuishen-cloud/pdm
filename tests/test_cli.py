@@ -1390,3 +1390,76 @@ def test_review_end_to_end_flow(capsys):
     review_line = [l for l in out.splitlines() if "人工审查" in l][0]
     assert "80%" in review_line
     assert "100%" not in review_line
+
+
+# ---------------------------------------------------------------------------
+# pdm review --unreviewed / --untested（见 doc/feat/review-query.md）
+# ---------------------------------------------------------------------------
+
+
+def test_review_unreviewed_lists_items(capsys):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--review"])
+    capsys.readouterr()
+    code = main(["review", "--unreviewed"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "api:1" in out
+    assert "api:0" not in out.split("未审查")[0]   # 已审的不列
+    assert "未审查：" in out
+
+
+def test_review_untested_lists_items(capsys):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--test", "--cmd", "x"])
+    capsys.readouterr()
+    code = main(["review", "--untested"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "未测试：" in out
+    assert "api:1" in out
+
+
+def test_review_both_filters_intersection(capsys):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--review"])
+    capsys.readouterr()
+    code = main(["review", "--unreviewed", "--untested"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "未审查且未测试" in out
+    assert "api:0" not in out.split("未审查")[0]
+
+
+def test_review_unreviewed_empty(capsys):
+    """全部审完 → 无待办，退出码 0。"""
+    _make_feat(capsys)
+    for key in ("doc", "api:0", "api:1", "logs:0", "fallbacks:0"):
+        main(["feat", "review", "a", "--item", key, "--review"])
+    capsys.readouterr()
+    code = main(["review", "--unreviewed"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "没有未审查的项" in out
+
+
+def test_review_unreviewed_json(capsys):
+    _make_feat(capsys)
+    capsys.readouterr()
+    main(["--json", "review", "--unreviewed"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["filter"] == "unreviewed"
+    assert data["count"] == data["total"]
+    slugs = [f["slug"] for f in data["feats"]]
+    assert "a" in slugs
+
+
+def test_review_no_filter_keeps_summary(capsys):
+    """不带筛选时保持汇总行为（向后兼容）。"""
+    _make_feat(capsys)
+    capsys.readouterr()
+    main(["review"])
+    out = capsys.readouterr().out
+    assert "掌握程度" in out
+    assert "未审查：" not in out
