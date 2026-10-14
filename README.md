@@ -117,6 +117,9 @@ pdm review --json                                # 机器可读
 （默认 `0.6`）控制。`pdm feat show` 的规格栏与 `pdm stats` 末尾也会
 显示勾选状态与掌握程度。
 
+`pdm feat check` 同步联动：未审的 feat 会报 `review-none` / `review-low`
+（warning，不阻断），使「关了却没审」一眼可见。
+
 分阶段落地（每条 Feat 独立走 doc→test→feat→fix→close）：
 
 | 顺序 | slug | 内容 | 状态 |
@@ -124,7 +127,7 @@ pdm review --json                                # 机器可读
 | 1 | `review-model` | 审查项数据模型（`ReviewItem` + 双勾选位存储） | ✅ 已完成 |
 | 2 | `review-score` | 覆盖率评分与低覆盖告警 | ✅ 已完成 |
 | 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 | ✅ 已完成 |
-| 4 | `review-check` | `pdm feat check` 联动规则 | 规划中 |
+| 4 | `review-check` | `pdm feat check` 联动规则 | ✅ 已完成 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
 | 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
 

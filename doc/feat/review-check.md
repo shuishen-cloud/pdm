@@ -86,4 +86,19 @@ def cmd_feat_check(ctx, args) -> int
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`pdev/check.py` 新增 `review-none` / `review-low` 两条规则
+  （由 `_check_review` 实现，不依赖 git/note_store）；`check_one` /
+  `check_feats` 新增 `min_coverage` 参数；`cmd_feat_check` 从
+  `ctx.config.review.min_coverage` 传入。
+- **提交**：`doc` 7bd4031、`test` 937e37e、`feat` f700f73、`fix` be20e8d。
+- **测试**：`tests/test_check.py` 新增 11 个用例、`tests/test_cli.py` 新增/更新
+  2 个；全仓 733 个用例通过。
+- **实测抓出的问题**：
+  1. 新规则接入后，既有的「干净仓库」断言（`test_clean_store_has_no_issues`、
+     `test_feat_check_clean`）因未审而失败——这是预期的行为变化，
+     已改为「先审完再断言干净」，而非放开规则。
+  2. 验证阈值边界时，把 `doc` 置空会让可审项分母少一项，导致手动
+     推算的百分比与实际不符；边界测试改为显式构造 `api` 列表控制分母。
+- **结论**：设计成立。`reviewed == 0` 时 `review-none` 与 `review-low`
+  同时出现属有意（前者更具体）；`items == 0` 的 feat 不受影响，
+  历史无规格字段的 feat 不会突然变脏。
