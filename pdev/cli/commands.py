@@ -421,11 +421,24 @@ def cmd_ui(ctx: AppContext, args) -> int:
             p = ctx.cwd / p
         store = NoteStore(p)
     if getattr(args, "web", False):
+        from pathlib import Path
+
+        from ..feat import FeatStore
         from ..webui import run as run_web
 
+        # feat store 按 config 解析（相对 cwd）
+        fp = Path(ctx.config.feat.store)
+        if not fp.is_absolute():
+            fp = ctx.cwd / fp
+        try:
+            feat_store = FeatStore(fp)
+        except Exception:  # noqa: BLE001 - 读不到就当无 feat
+            feat_store = None
         return run_web(store, cwd=str(ctx.cwd),
                        port=int(getattr(args, "port", 0) or 0),
-                       open_browser=not getattr(args, "no_browser", False))
+                       open_browser=not getattr(args, "no_browser", False),
+                       feat_store=feat_store, note_store=store,
+                       doc_dir=ctx.config.doc.dir)
     if getattr(args, "curses", False):
         from ..tui_curses import run as run_curses
 

@@ -18,9 +18,19 @@ from .git import GitRepo
 from .note import CommitNote
 from .store import NoteStore
 
-__all__ = ["build_data", "make_handler", "run", "PAGE"]
+__all__ = [
+    "build_data",
+    "build_feats",
+    "build_feat_detail",
+    "make_handler",
+    "run",
+    "PAGE",
+]
 
 BIND_HOST = "127.0.0.1"
+
+# featview.read_doc_body 读不到文件时返回的占位串（视作缺失）
+_DOC_UNREADABLE = "（设计文档不可读）"
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +128,128 @@ def build_data(store: NoteStore, git, cwd: str = ".") -> Dict[str, Any]:
     }
 
 
+def build_feats(feat_store, note_store) -> List[Dict[str, Any]]:
+    """Feat 列表（**不含设计正文**，保持响应轻量）。**纯函数。**
+
+    无 ``feat_store`` → ``[]``。关联笔记的 hash 匹配**一律走
+    ``featview``**，本函数不自行实现。
+    """
+    if feat_store is None:
+        return []
+    out: List[Dict[str, Any]] = []
+    try:
+        feats = list(feat_store.all())
+    except Exception as e:  # noqa: BLE001
+        return out
+    for f in feats:
+        try:
+            out.append(_feat_summary(f))
+        except Exception:  # noqa: BLE001 - 单条脏数据不拖垮整包
+            continue
+    return out
+
+
+def _feat_summary(f) -> Dict[str, Any]:
+    """一条 feat 的摘要（列表项）。"""
+    total, reviewed = 0, 0
+    try:
+        total, reviewed, _tested = f.review_counts()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        missing = list(f.missing_required_fields())
+    except Exception:  # noqa: BLE001
+        missing = []
+    return {
+        "slug": f.slug,
+        "title": f.title or "",
+        "kind": f.kind.value,
+        "status": f.status.value,
+        "stage": f.stage,
+        "commit_count": len(f.commits or []),
+        "review": [reviewed, total],
+        "missing_fields": missing,
+    }
+
+
+def build_feat_detail(feat_store, note_store, doc_dir: str,
+                      slug: str) -> Optional[Dict[str, Any]]:
+    """单条 Feat 全量（含 ``doc_body`` 与关联笔记）。**纯函数。**
+
+    不存在 → ``None``。设计文档缺失 → ``doc_body=""`` 且
+    ``doc_missing=True``。
+    """
+    if feat_store is None or not slug:
+        return None
+    try:
+        feat = feat_store.get(slug)
+    except Exception:  # noqa: BLE001
+        return None
+    if feat is None:
+        return None
+
+    d = _feat_summary(feat)
+
+    # 关联笔记：复用 featview 的匹配（含 >=6 位前缀），不自行 startswith
+    from .featview import (  # noqa: PLC0415
+        group_notes_by_kind,
+        notes_for_feat,
+        read_doc_body,
+    )
+
+    notes = notes_for_feat(feat, note_store)
+
+    # 设计正文（read_doc_body 读不到时返回固定占位串）
+    body, missing = "", False
+    if feat.doc:
+        try:
+            body = read_doc_body(doc_dir, feat.doc)
+        except Exception:  # noqa: BLE001
+            body = ""
+        missing = (not body) or body == _DOC_UNREADABLE
+    else:
+        missing = True
+    if missing:
+        body = ""
+
+    d.update({
+        "design_note": feat.design_note or "",
+        "impl_note": feat.impl_note or "",
+        "api": list(feat.api or []),
+        "logs": list(feat.logs or []),
+        "fallbacks": list(feat.fallbacks or []),
+        "data_model": list(feat.data_model or []),
+        "samples": list(feat.samples or []),
+        "changes": list(feat.changes or []),
+        "commits": list(feat.commits or []),
+        "discovered": list(feat.discovered or []),
+        "doc": feat.doc or "",
+        "doc_body": body,
+        "doc_missing": bool(missing),
+        "stage_reviews": _stage_reviews_dict(feat),
+        "notes": [_note_dict(n) for n in notes],
+        "notes_by_kind": [
+            [k, [_note_dict(n) for n in items]]
+            for k, items in group_notes_by_kind(notes)
+        ],
+    })
+    return d
+
+
+def _stage_reviews_dict(feat) -> Dict[str, Any]:
+    """阶段审核 → 可序列化 dict。"""
+    out: Dict[str, Any] = {}
+    for stage, rec in (getattr(feat, "stage_reviews", None) or {}).items():
+        by = getattr(rec, "by", "") or ""
+        at = getattr(rec, "at", None)
+        out[stage] = {
+            "by": by,
+            "at": at.isoformat(sep=" ", timespec="seconds") if at else "",
+            "note": getattr(rec, "note", "") or "",
+        }
+    return out
+
+
 # ---------------------------------------------------------------------------
 # HTTP 层
 # ---------------------------------------------------------------------------
@@ -149,6 +281,12 @@ PAGE = r"""<!DOCTYPE html>
   }
   header .title { font-weight: 700; color: var(--acc); }
   header .meta { color: var(--dim); font-size: 12px; }
+  header .tabs { display: flex; gap: 4px; }
+  header .tabs button {
+    background: #181825; color: var(--dim); border: 1px solid var(--line);
+    border-radius: 4px; padding: 3px 10px; font: inherit; cursor: pointer;
+  }
+  header .tabs button.on { color: var(--fg); border-color: var(--acc); }
   header input {
     flex: 1; min-width: 160px; background: #181825; color: var(--fg);
     border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px;
@@ -177,6 +315,16 @@ PAGE = r"""<!DOCTYPE html>
   .kind.controlled-exception { background: var(--exc); color: #111; }
   .verify { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
   .verify code { background: #181825; padding: 1px 5px; border-radius: 3px; }
+  .spec-sec { margin: 8px 0; }
+  .spec-sec .h { color: var(--acc); font-weight: 700; margin-bottom: 2px; }
+  .spec-sec li { margin-left: -12px; }
+  .badge { padding: 0 6px; border-radius: 3px; background: #313244;
+           color: var(--fg); font-size: 11px; margin-right: 4px; }
+  .badge.miss { background: #f38ba8; color: #111; }
+  pre.body { white-space: pre-wrap; word-break: break-word; }
+  .md-h { color: var(--acc); font-weight: 700; margin: 10px 0 4px; }
+  .md-code { background: #181825; padding: 6px 8px; border-radius: 4px;
+             overflow-x: auto; }
   footer { padding: 6px 12px; border-top: 1px solid var(--line);
            color: var(--dim); font-size: 12px; }
   kbd { background: #181825; border: 1px solid var(--line);
@@ -186,24 +334,38 @@ PAGE = r"""<!DOCTYPE html>
 <body>
 <header>
   <span class="title">✎ PDM</span>
+  <span class="tabs">
+    <button id="tab-commits" class="on" data-view="commits">提交</button>
+    <button id="tab-feats" data-view="feats">Feat</button>
+  </span>
   <input id="filter" placeholder="筛选（按 / 聚焦）…" autocomplete="off">
   <span class="meta" id="meta"></span>
 </header>
 <main>
-  <div class="col" id="col-commits"></div>
-  <div class="col" id="col-notes"></div>
-  <div class="col detail" id="col-detail"></div>
+  <div id="view-commits" style="display:flex;flex:1;min-height:0">
+    <div class="col" id="col-commits"></div>
+    <div class="col" id="col-notes"></div>
+    <div class="col detail" id="col-detail"></div>
+  </div>
+  <div id="view-feat" style="display:none;flex:1;min-height:0">
+    <div class="col" id="col-feats"></div>
+    <div class="col detail" id="col-feat-spec"></div>
+    <div class="col detail" id="col-feat-notes"></div>
+  </div>
 </main>
 <footer>
   <kbd>j</kbd>/<kbd>k</kbd> 移动 · <kbd>/</kbd> 筛选 · <kbd>R</kbd> 刷新 ·
-  <kbd>Esc</kbd> 清筛选 · 点击切换
+  <kbd>Tab</kbd> 切换视图 · <kbd>Esc</kbd> 清筛选 · 点击切换
 </footer>
 <script>
 "use strict";
-let DATA = {commits: [], notes: {}};
+let DATA = {commits: [], notes: {}, feats: []};
 let ci = 0;          // 选中的提交下标
 let ni = 0;          // 选中的笔记下标
 let q = "";          // 筛选词
+let VIEW = "commits"; // commits | feats
+let fi = 0;          // 选中的 feat 下标
+let FEAT = null;     // 当前 feat 详情（按需拉取）
 
 function filteredCommits() {
   if (!q) return DATA.commits;
@@ -225,6 +387,7 @@ function fmtNotes(c) {
 }
 
 function render() {
+  if (VIEW === "feats") { renderFeat(); return; }
   const list = filteredCommits();
   if (ci >= list.length) ci = Math.max(0, list.length - 1);
   const cur = list[ci];
@@ -254,7 +417,134 @@ function render() {
     : `<div class="empty">选中左侧提交与笔记查看详情</div>`;
 
   document.getElementById("meta").textContent =
-    `${list.length} 提交 · store ${DATA.store_root}`;
+    `${list.length} 提交 · ${(DATA.feats || []).length} feat · store ${DATA.store_root}`;
+}
+
+// --- Feat 视图 ---
+
+function filteredFeats() {
+  const all = DATA.feats || [];
+  if (!q) return all;
+  const k = q.toLowerCase();
+  return all.filter(f => (f.slug + " " + f.title + " " + f.status +
+                          " " + (f.stage || "")).toLowerCase().includes(k));
+}
+
+function stageBadge(f) {
+  return f.stage ? `<span class="badge">${escapeHtml(f.stage)}</span>` : "";
+}
+
+function renderFeat() {
+  const list = filteredFeats();
+  if (fi >= list.length) fi = Math.max(0, list.length - 1);
+  const cur = list[fi];
+
+  document.getElementById("col-feats").innerHTML = list.length
+    ? list.map((f, i) =>
+        `<div class="row ${i === fi ? "sel" : ""}" data-f="${i}">` +
+        `${escapeHtml(f.slug)} ${stageBadge(f)}` +
+        `<span class="hash">${f.status} ${f.review[0]}/${f.review[1]}` +
+        `${f.missing_fields.length ? " ⚠" : ""}</span></div>`).join("")
+    : `<div class="empty">（暂无 Feat）</div>`;
+
+  document.getElementById("meta").textContent =
+    `${list.length} feat · store ${DATA.store_root}`;
+
+  if (!cur) {
+    document.getElementById("col-feat-spec").innerHTML =
+      `<div class="empty">选中左侧 Feat 查看规格</div>`;
+    document.getElementById("col-feat-notes").innerHTML = "";
+    return;
+  }
+  if (!FEAT || FEAT.slug !== cur.slug) loadFeat(cur.slug);
+  else renderFeatDetail(FEAT);
+}
+
+function sec(title, items) {
+  if (!items || !items.length) return "";
+  return `<div class="spec-sec"><div class="h">${title}</div><ul>` +
+    items.map(x => `<li>${escapeHtml(String(x))}</li>`).join("") + `</ul></div>`;
+}
+
+function renderFeatDetail(f) {
+  const miss = (f.missing_fields || []).length
+    ? `<div class="spec-sec"><span class="badge miss">缺 ${f.missing_fields.join("、")}</span></div>` : "";
+  let h = `<h3>${escapeHtml(f.slug)} — ${escapeHtml(f.title || "")}</h3>`;
+  h += `<div class="kv">状态 <b>${f.status}</b>　阶段 <b>${f.stage || "—"}</b>` +
+       `　审查 <b>${f.review[0]}/${f.review[1]}</b>　提交 <b>${f.commit_count}</b></div>`;
+  h += miss;
+  if (f.design_note) h += `<div class="spec-sec"><div class="h">设计思路</div>${escapeHtml(f.design_note)}</div>`;
+  if (f.impl_note) h += `<div class="spec-sec"><div class="h">实现方式</div>${escapeHtml(f.impl_note)}</div>`;
+  h += sec("接口", f.api);
+  h += sec("日志", f.logs);
+  h += sec("兜底", f.fallbacks);
+  h += sec("核心数据结构", f.data_model);
+  h += sec("样例数据", f.samples);
+  h += sec("既有改动", f.changes);
+  h += sec("关联提交", (f.commits || []).map(c => c.slice(0, 8)));
+  h += sec("发现的异常", f.discovered);
+  if (f.doc_missing) h += `<div class="spec-sec"><span class="badge miss">设计文档缺失</span> ${escapeHtml(f.doc || "")}</div>`;
+  document.getElementById("col-feat-spec").innerHTML = h;
+
+  // 正文 + 笔记
+  let r = "";
+  if (f.doc_body) r += `<div class="h md-h">设计正文</div>` + mdLite(f.doc_body);
+  const notes = f.notes || [];
+  r += `<div class="spec-sec"><div class="h">关联笔记（${notes.length}）</div></div>`;
+  r += notes.length
+    ? notes.map(n => `<div class="spec-sec"><span class="kind ${n.kind}">${n.kind}</span>` +
+        `<b>${escapeHtml(n.title)}</b><div class="kv">${escapeHtml(n.author)}` +
+        `${n.severity ? " · " + n.severity : ""}</div></div>`).join("")
+    : `<div class="empty">（无关联笔记）</div>`;
+  document.getElementById("col-feat-notes").innerHTML = r;
+}
+
+// 极简 Markdown（标题/列表/代码块/段落）——不引任何库
+function mdLite(src) {
+  const lines = String(src).split("\n");
+  let out = "", inCode = false;
+  for (const ln of lines) {
+    if (ln.startsWith("```")) {
+      out += inCode ? "</pre>" : "<pre class='md-code'>";
+      inCode = !inCode; continue;
+    }
+    if (inCode) { out += escapeHtml(ln) + "\n"; continue; }
+    const m = /^(#{1,4})\s+(.*)$/.exec(ln);
+    if (m) { out += `<div class="md-h">${escapeHtml(m[2])}</div>`; continue; }
+    if (/^\s*[-*]\s+/.test(ln)) {
+      out += `<div class="kv">• ${escapeHtml(ln.replace(/^\s*[-*]\s+/, ""))}</div>`;
+      continue;
+    }
+    if (!ln.trim()) { out += "<div style='height:6px'></div>"; continue; }
+    out += `<div>${escapeHtml(ln)}</div>`;
+  }
+  if (inCode) out += "</pre>";
+  return out;
+}
+
+async function loadFeat(slug) {
+  try {
+    const r = await fetch("/api/feat/" + encodeURIComponent(slug));
+    if (!r.ok) { FEAT = null;
+      document.getElementById("col-feat-spec").innerHTML =
+        `<div class="empty">加载失败（${r.status}）</div>`; return; }
+    FEAT = await r.json();
+    if (VIEW === "feats") renderFeatDetail(FEAT);
+  } catch (e) {
+    document.getElementById("col-feat-spec").innerHTML =
+      `<div class="empty">加载失败：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function setView(v) {
+  VIEW = v;
+  document.getElementById("view-commits").style.display =
+    v === "commits" ? "flex" : "none";
+  document.getElementById("view-feat").style.display =
+    v === "feats" ? "flex" : "none";
+  document.getElementById("tab-commits").className = v === "commits" ? "on" : "";
+  document.getElementById("tab-feats").className = v === "feats" ? "on" : "";
+  render();
 }
 
 function detailHtml(c, n) {
@@ -300,19 +590,34 @@ document.getElementById("col-notes").addEventListener("click", e => {
   ni = +row.dataset.n; render();
 });
 
+document.getElementById("col-feats").addEventListener("click", e => {
+  const row = e.target.closest(".row"); if (!row) return;
+  fi = +row.dataset.f; FEAT = null; renderFeat();
+});
+
+document.getElementById("tab-commits").addEventListener("click", () => setView("commits"));
+document.getElementById("tab-feats").addEventListener("click", () => setView("feats"));
+
 document.getElementById("filter").addEventListener("input", e => {
-  q = e.target.value.trim(); ci = 0; ni = 0; render();
+  q = e.target.value.trim(); ci = 0; ni = 0; fi = 0; render();
 });
 
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" && e.key !== "Escape") return;
-  if (e.key === "j" || e.key === "ArrowDown") { ci++; render(); e.preventDefault(); }
-  else if (e.key === "k" || e.key === "ArrowUp") { ci--; render(); e.preventDefault(); }
+  if (e.key === "j" || e.key === "ArrowDown") {
+    if (VIEW === "feats") fi++; else ci++;
+    render(); e.preventDefault();
+  }
+  else if (e.key === "k" || e.key === "ArrowUp") {
+    if (VIEW === "feats") fi--; else ci--;
+    render(); e.preventDefault();
+  }
   else if (e.key === "/") { document.getElementById("filter").focus(); e.preventDefault(); }
   else if (e.key === "R") { load(); }
+  else if (e.key === "Tab") { setView(VIEW === "feats" ? "commits" : "feats"); e.preventDefault(); }
   else if (e.key === "Escape") {
     const f = document.getElementById("filter");
-    f.value = ""; q = ""; f.blur(); ci = 0; ni = 0; render();
+    f.value = ""; q = ""; f.blur(); ci = 0; ni = 0; fi = 0; render();
   }
 });
 
@@ -330,8 +635,12 @@ load();
 """
 
 
-def make_handler(data: Dict[str, Any]):
-    """返回一个绑定好数据的 ``BaseHTTPRequestHandler`` 子类。"""
+def make_handler(data: Dict[str, Any], feat_store=None, note_store=None,
+                 doc_dir: str = "doc"):
+    """返回一个绑定好数据的 ``BaseHTTPRequestHandler`` 子类。
+
+    传了 ``feat_store`` 时启用 ``GET /api/feat/<slug>``；否则该路由 404。
+    """
     import http.server
 
     payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -351,12 +660,31 @@ def make_handler(data: Dict[str, Any]):
             if self.command != "HEAD":
                 self.wfile.write(body)
 
+        def _feat_detail(self, slug: str) -> None:
+            """按需拉取单条 feat（含正文）。"""
+            if feat_store is None:
+                body = json.dumps({"error": "feat store 未配置"},
+                                  ensure_ascii=False).encode("utf-8")
+                self._send(404, body, "application/json; charset=utf-8")
+                return
+            d = build_feat_detail(feat_store, note_store, doc_dir, slug)
+            if d is None:
+                body = json.dumps({"error": "not found"},
+                                  ensure_ascii=False).encode("utf-8")
+                self._send(404, body, "application/json; charset=utf-8")
+                return
+            body = json.dumps(d, ensure_ascii=False).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+
         def do_GET(self):  # noqa: N802 - http.server 约定
             path = self.path.split("?", 1)[0]
             if path in ("/", "/index.html"):
                 self._send(200, page, "text/html; charset=utf-8")
             elif path == "/api/data":
                 self._send(200, payload, "application/json; charset=utf-8")
+            elif path.startswith("/api/feat/"):
+                slug = path[len("/api/feat/"):].strip("/")
+                self._feat_detail(slug)
             else:
                 self._send(404, b"not found", "text/plain; charset=utf-8")
 
@@ -378,19 +706,24 @@ def make_handler(data: Dict[str, Any]):
 
 def run(store: NoteStore, cwd: str = ".", port: int = 0,
         open_browser: bool = True, stdout=None,
+        feat_store=None, note_store=None, doc_dir: str = "doc",
         _serve_forever: bool = True) -> int:
     """起本地 Web 服务；返回退出码。
 
     只绑 ``127.0.0.1``（不对外暴露）。``port=0`` 时由系统分配空闲端口。
+    传了 ``feat_store`` 时启用 Feat 视图（列表 + ``/api/feat/<slug>``）。
     """
     import sys
     import webbrowser
 
     out = stdout if stdout is not None else sys.stdout
 
+    note_store = note_store if note_store is not None else store
     git = GitRepo(cwd)
     data = build_data(store, git, cwd=str(cwd))
-    handler = make_handler(data)
+    data["feats"] = build_feats(feat_store, note_store)
+    handler = make_handler(data, feat_store=feat_store,
+                           note_store=note_store, doc_dir=doc_dir)
 
     import http.server
     import socketserver
@@ -409,6 +742,7 @@ def run(store: NoteStore, cwd: str = ".", port: int = 0,
     url = f"http://{BIND_HOST}:{actual}"
     print(f"Web UI: {url}")
     print(f"store:  {data['store_root']}   ({len(data['commits'])} 提交)")
+    print(f"feat:   {len(data.get('feats', []))} 条")
     for w in data.get("warnings", []):
         print(f"警告: {w}", file=sys.stderr)
 
