@@ -106,4 +106,16 @@ def cmd_feat_review(ctx, args) -> int
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`pdev/feat.py` 新增 `FeatStore.resolve_keys`（把 `--item` /
+  `--all` 展开为命中项）与 `set_reviews`（批量置位、只落盘一次）；
+  `parser.py` 加 `--all`；`cmd_feat_review` 改走展开 + 批量路径。
+- **提交**：`doc` b5e6454、`test` bdeb853、`feat` ba0a14a、`fix` 831ce55。
+- **测试**：`tests/test_feat.py` 新增 10 个、`tests/test_cli.py` 新增 10 个；
+  非 TUI 全量通过。
+- **实测抓出的问题**：
+  1. 批量分支漏接 `--json`，`--all --json` 仍打印人类文本，破坏「--json 只输出
+     JSON」约定；已补 JSON 出口 + 回归。
+  2. 「未命中项未被勾选」不能用 `not item.reviewed` 断言——未操作时
+     `review_item()` 返回 `None`，应容忍 None。
+- **结论**：设计成立。一次动作只写一次盘；单条命中仍走原输出，既有调用
+  方与测试无需改动；`--all` 与 `--item` 互斥由命令层直接拒绝。

@@ -108,6 +108,8 @@ pdm feat review review-cli                       # 列出可审项与 [审][测]
 pdm feat review review-cli --item api:0 --review --by human:lwy
 pdm feat review review-cli --item api:0 --test --cmd "pytest tests/x.py"
 pdm feat review review-cli --item api:0 --unreview
+pdm feat review review-cli --all --review           # 整条 feat 一次勾完
+pdm feat review review-cli --item api --review      # 只勾 api 一片（前缀匹配）
 pdm feat comment review-cli --on api:0 -m "接口保持最小，不做泛化"  # 条目级评论
 pdm feat comment review-cli                      # 列出已写评论
 pdm review                                       # 全局掌握程度 + 告警（有告警退出码 1）
@@ -140,6 +142,7 @@ pdm review --json                                # 机器可读
 | 4 | `review-check` | `pdm feat check` 联动规则 | ✅ 已完成 |
 | 4.5 | `review-query` | `pdm review --unreviewed/--untested` 清单 | ✅ 已完成 |
 | 4.6 | `feat-comment` | 条目级人工评论（`pdm feat comment`） | ✅ 已完成 |
+| 4.7 | `review-batch` | 批量勾选（`--all` / `--item` 前缀） | ✅ 已完成 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
 | 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
 
