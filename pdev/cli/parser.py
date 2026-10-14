@@ -353,6 +353,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- review ---
     review = sub.add_parser("review", help="项目代码掌握程度与告警")
+    review.add_argument("--unreviewed", action="store_true",
+                        help="只列出未人工审查的可审项")
+    review.add_argument("--untested", action="store_true",
+                        help="只列出未测试通过的可审项（与 --unreviewed 同给则取交集）")
     review.add_argument("--json", action="store_true",
                         default=argparse.SUPPRESS)
     review.set_defaults(func=commands.cmd_review)

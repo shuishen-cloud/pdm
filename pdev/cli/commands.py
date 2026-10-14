@@ -883,17 +883,27 @@ def _print_review_list(ctx: AppContext, feat) -> int:
 
 
 def cmd_review(ctx: AppContext, args) -> int:
-    """全仓掌握程度与告警；有告警返回 1。"""
-    from ..review import ReviewPolicy, compute_review, format_score
+    """全仓掌握程度与告警；带筛选时列出未审/未测清单。"""
+    from ..review import (ReviewPolicy, compute_review, format_score,
+                          unreviewed_items)
 
     store = _feat_store(ctx)
+    feats = list(store.all())
+
+    # 清单模式：给了 --unreviewed / --untested
+    want_unreviewed = getattr(args, "unreviewed", False)
+    want_untested = getattr(args, "untested", False)
+    if want_unreviewed or want_untested:
+        return _print_pending(ctx, feats, want_unreviewed, want_untested,
+                              as_json=getattr(args, "json", False))
+
     cfg = getattr(ctx.config, "review", None)
     policy = ReviewPolicy(
         min_coverage=getattr(cfg, "min_coverage", 0.6),
         warn_no_review=getattr(cfg, "warn_no_review", True),
         warn_untested=getattr(cfg, "warn_untested", True),
     )
-    score = compute_review(list(store.all()), policy)
+    score = compute_review(feats, policy)
 
     if ctx.config.json_output or getattr(args, "json", False):
         print(json.dumps({
@@ -914,6 +924,65 @@ def cmd_review(ctx: AppContext, args) -> int:
 
     print(format_score(score))
     return 1 if score.warnings else 0
+
+
+def _print_pending(ctx: AppContext, feats, want_unreviewed: bool,
+                   want_untested: bool, *, as_json: bool = False) -> int:
+    """列出未审 / 未测清单（review-query）。
+
+    - 只给一个开关：按该位过滤。
+    - 两个都给：取交集（既未审且未测）。
+    查询性质，退出码恒为 0。
+    """
+    from ..review import unreviewed_items
+
+    both = want_unreviewed and want_untested
+    rows = unreviewed_items(feats, tested=want_untested)
+    if both:
+        label = "未审查且未测试"
+        flt = "both"
+    elif want_untested:
+        label = "未测试"
+        flt = "untested"
+    else:
+        label = "未审查"
+        flt = "unreviewed"
+
+    key_of = {f.slug: f for f in feats}
+
+    if ctx.config.json_output or as_json:
+        grouped: dict = {}
+        for slug, key, _lbl in rows:
+            grouped.setdefault(slug, []).append(key)
+        payload = {
+            "filter": flt,
+            "total": _total_items(feats),
+            "count": len(rows),
+            "feats": [
+                {"slug": slug, "keys": keys} for slug, keys in grouped.items()
+            ],
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if not rows:
+        print(f"（没有{label}的项）")
+        return 0
+
+    cur = None
+    for slug, key, lbl in rows:
+        if slug != cur:
+            cur = slug
+            print(f"\n{slug}")
+        print(f"  {render_review_marks(key_of[slug], key)}{key:<12} {lbl}")
+    print(f"\n{label}：{len(rows)}/{_total_items(feats)} 项"
+          f"（共 {len({s for s, _, _ in rows})} 条 feat）")
+    return 0
+
+
+def _total_items(feats) -> int:
+    """全部可审项总数。"""
+    return sum(len(f.review_items()) for f in feats)
 
 
 def cmd_theme(ctx: AppContext, args) -> int:

@@ -20,6 +20,7 @@ __all__ = [
     "ReviewScore",
     "compute_review",
     "format_score",
+    "unreviewed_items",
     "LEVELS",
 ]
 
@@ -139,6 +140,28 @@ def _warnings(s: ReviewScore, policy: ReviewPolicy) -> List[ReviewWarning]:
             "untested", "warning",
             f"完全没有测试通过记录：{s.items} 个可审项都未绑定通过的测试",
         ))
+    return out
+
+
+def unreviewed_items(feats: Optional[Iterable], *,
+                     tested: bool = False) -> List[tuple]:
+    """跨 feat 展开未审（可选：且未测）的可审项。
+
+    :param feats: 任意可迭代的 :class:`pdev.feat.Feat`。
+    :param tested: 为真时取交集（既未审**且**未测）。
+    :returns: ``[(feat_slug, key, label), ...]``，按 feat 顺序、项顺序。
+    """
+    out: List[tuple] = []
+    for f in (list(feats) if feats else []):
+        for key, label in f.review_items():
+            item = f.review_item(key)
+            reviewed = bool(item and item.reviewed)
+            was_tested = bool(item and item.tested)
+            if reviewed:
+                continue
+            if tested and was_tested:
+                continue
+            out.append((f.slug, key, label))
     return out
 
 
