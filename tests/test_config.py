@@ -461,3 +461,39 @@ def test_save_user_config_merges(tmp_path):
     data = json.loads(user.read_text(encoding="utf-8"))
     assert data["ui"]["theme"] == "nord"          # 保留
     assert data["ui"]["commit_width"] == 50      # 新增
+
+
+# ---------------------------------------------------------------------------
+# review 配置（review-score）
+# ---------------------------------------------------------------------------
+
+
+def test_review_defaults(tmp_path):
+    cfg = load_config(env={}, cwd=tmp_path, find=False)
+    assert cfg.review.min_coverage == 0.6
+    assert cfg.review.warn_no_review is True
+    assert cfg.review.warn_untested is True
+
+
+def test_review_reads_project_config(tmp_path):
+    write(tmp_path / ".pdm.json", {
+        "review": {"min_coverage": 0.5, "warn_no_review": False},
+    })
+    cfg = load_config(env={}, cwd=tmp_path)
+    assert cfg.review.min_coverage == 0.5
+    assert cfg.review.warn_no_review is False
+    assert cfg.review.warn_untested is True      # 未覆盖保持默认
+
+
+def test_review_coerces_string_threshold(tmp_path):
+    """JSON 里把阈值写成字符串也应转成 float。"""
+    write(tmp_path / ".pdm.json", {"review": {"min_coverage": "0.75"}})
+    cfg = load_config(env={}, cwd=tmp_path)
+    assert cfg.review.min_coverage == 0.75
+    assert isinstance(cfg.review.min_coverage, float)
+
+
+def test_review_survives_config_roundtrip(tmp_path):
+    """to_dict 后仍含 review 段。"""
+    cfg = load_config(env={}, cwd=tmp_path, find=False)
+    assert cfg.to_dict()["review"]["min_coverage"] == 0.6

@@ -237,6 +237,8 @@ def _coerce(value: Any, target: Any) -> Any:
         return bool(value)
     if target is int:
         return int(value)
+    if target is float:
+        return float(value)
     if target is NoteStatus:
         return value if isinstance(value, NoteStatus) else NoteStatus(value)
     return value
