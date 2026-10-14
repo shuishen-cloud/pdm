@@ -406,6 +406,7 @@ def cmd_ui(ctx: AppContext, args) -> int:
     """启动 TUI。
 
     ``pdm ui`` 用配置里的 store；``pdm ui <dir>`` 直接指定。
+    ``--curses`` 时走标准库 curses 版（零依赖，只读浏览）。
     """
     store = ctx.store
     positional = getattr(args, "store_arg", None)
@@ -418,6 +419,10 @@ def cmd_ui(ctx: AppContext, args) -> int:
         if not p.is_absolute():
             p = ctx.cwd / p
         store = NoteStore(p)
+    if getattr(args, "curses", False):
+        from ..tui_curses import run as run_curses
+
+        return run_curses(store, cwd=str(ctx.cwd), config=ctx.config)
     try:
         from ..tui import run as run_tui
     except ImportError:
