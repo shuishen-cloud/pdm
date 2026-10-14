@@ -80,8 +80,10 @@ def test_build_data_shape(store):
 def test_build_data_notes_grouped_by_short_hash(store):
     data = build_data(store, _FakeGit())
     notes = data["notes"]
-    assert "aaa1111"[:8] in notes or "aaa1111222" in notes
-    # 至少有一个 key 对应的笔记标题能被找到
+    # 键为 8 位短 hash（hash[:8]）
+    assert "aaa11112" in notes
+    assert "bbb22223" in notes
+    # 标题能被找到（序列化后不应丢中文）
     joined = json.dumps(data, ensure_ascii=False)
     assert "并发竞态" in joined
     assert "计数泄漏" in joined
@@ -124,7 +126,16 @@ def test_build_data_non_git_uses_note_commits(tmp_path):
 
 
 def test_build_data_empty_store(tmp_path):
-    data = build_data(NoteStore(tmp_path / "e"), _FakeGit())
+    class _NoGit:
+        available = False
+
+        def log(self, limit: int = 0, ref: str = "HEAD"):
+            return []
+
+        def commit_info(self, ref: str):
+            return None
+
+    data = build_data(NoteStore(tmp_path / "e"), _NoGit())
     assert data["commits"] == []
     assert data["notes"] == {}
 
@@ -203,3 +214,71 @@ def test_run_rejects_non_localhost_bind():
 
     src = inspect.getsource(webui.run)
     assert "127.0.0.1" in src or "localhost" in src
+
+
+# ---------------------------------------------------------------------------
+# 前端页面契约（零依赖不可被悄悄破坏）
+# ---------------------------------------------------------------------------
+
+
+def test_page_has_no_external_resources():
+    """单页不得引用任何外部资源（CDN/字体/脚本）——零依赖的硬约束。"""
+    import re
+
+    from pdev.webui import PAGE
+
+    # 找出所有 src=/href= 的外链
+    urls = re.findall(r'(?:src|href)\s*=\s*["\']([^"\']+)["\']', PAGE)
+    external = [u for u in urls if u.startswith(("http://", "https://", "//"))]
+    assert not external, f"页面引用了外部资源：{external}"
+
+
+def test_page_has_interaction_hooks():
+    """关键交互钩子存在（防止重构时悄悄删掉）。"""
+    from pdev.webui import PAGE
+
+    for token in ("/api/data", "addEventListener", "escapeHtml",
+                  "filteredCommits", "col-commits", "col-notes", "col-detail"):
+        assert token in PAGE, token
+
+
+def test_page_escapes_html():
+    """必须转义用户内容，避免笔记标题里的 < 破坏页面。"""
+    from pdev.webui import PAGE
+
+    assert "escapeHtml" in PAGE
+    assert "&amp;" in PAGE
+
+
+def test_api_data_matches_ui_expectations(store):
+    """API 返回的字段要与前端读取的键一致。"""
+    data = build_data(store, _FakeGit())
+    c = data["commits"][0]
+    # 前端读取 c.short / c.subject / c.note_count
+    for key in ("short", "subject", "note_count"):
+        assert key in c
+    note = data["notes"]["aaa11112"][0]
+    for key in ("kind", "title", "author", "status", "files", "tags",
+                "detail", "verifications"):
+        assert key in note, key
+
+
+def test_embedded_js_is_syntactically_valid(tmp_path):
+    """用 node --check 校验内嵌 JS 语法（无 node 则跳过）。"""
+    import re
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("未安装 node")
+
+    from pdev.webui import PAGE
+
+    m = re.search(r"<script>(.*?)</script>", PAGE, re.S)
+    assert m, "页面应含 <script> 块"
+    js = tmp_path / "page.js"
+    js.write_text(m.group(1), encoding="utf-8")
+    r = subprocess.run([node, "--check", str(js)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
