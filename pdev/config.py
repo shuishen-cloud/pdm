@@ -33,6 +33,7 @@ __all__ = [
     "DocConfig",
     "FeatConfig",
     "FeatViewConfig",
+    "ReviewConfig",
     "UIConfig",
     "GitHubConfig",
     "load_config",
@@ -144,6 +145,15 @@ class FeatConfig:
 
 
 @dataclass
+class ReviewConfig:
+    """Feat 审查覆盖率告警阈值（见 .pdm/docs/feat/review-score.md）。"""
+
+    min_coverage: float = 0.6     # 人工审核覆盖率下限
+    warn_no_review: bool = True   # 完全不审查时告警
+    warn_untested: bool = True    # 完全无测试通过记录时告警
+
+
+@dataclass
 class UIConfig:
     """TUI 外观与交互设置。
 
@@ -185,6 +195,7 @@ class Config:
     issue: IssueConfig = field(default_factory=IssueConfig)
     doc: DocConfig = field(default_factory=DocConfig)
     feat: FeatConfig = field(default_factory=FeatConfig)
+    review: ReviewConfig = field(default_factory=ReviewConfig)
     ui: UIConfig = field(default_factory=UIConfig)
     github: GitHubConfig = field(default_factory=GitHubConfig)
 
@@ -212,6 +223,7 @@ _SEGMENTS = {
     "issue": IssueConfig,
     "doc": DocConfig,
     "feat": FeatConfig,
+    "review": ReviewConfig,
     "ui": UIConfig,
     "github": GitHubConfig,
 }
@@ -262,6 +274,8 @@ def _coerce_value(value: Any, declared: Any, key: str) -> Any:
         return _coerce(value, bool)
     if name == "int" or key in _INT_KEYS:
         return _coerce(value, int)
+    if name == "float" or key in _FLOAT_KEYS:
+        return _coerce(value, float)
     if name == "NoteStatus" or key == "default_status":
         return _coerce(value, NoteStatus)
     return value
@@ -271,8 +285,10 @@ _BOOL_KEYS = {
     "color", "json_output", "auto_commit", "require_detail", "auto_push",
     "show_footer",
     "doc_body", "notes_detail", "verify", "specs", "notes_grouped",
+    "warn_no_review", "warn_untested",
 }
 _INT_KEYS = {"default_limit", "commit_width", "doc_max_lines"}
+_FLOAT_KEYS = {"min_coverage"}
 
 
 def _merge_into(cfg: Config, data: Mapping[str, Any]) -> None:
