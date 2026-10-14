@@ -48,6 +48,9 @@ GOOD_FEAT = {
     "slug": "good-feat", "title": "合规", "status": "closed",
     "doc": "docs/feat/good.md", "api": ["f() -> None"],
     "logs": ["记录调用"], "fallbacks": ["报错"], "commits": ["aaa111"],
+    "design_note": "这么设计的原因", "impl_note": "这么实现的",
+    "data_model": ["X: int —— 计数"], "samples": ["X=1"],
+    "changes": ["pdev/x.py::X —— 新增"],
 }
 
 # draft 却已有 commit（draft-has-commit）

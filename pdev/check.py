@@ -248,6 +248,26 @@ def _check_feat(feat: Feat, git, note_store=None,
     return out
 
 
+# 五项字段的强制起点：此时间之后新建的 feat 才报 missing-fields。
+# 不用 stage 游标做判据——走新流程的历史 feat 也有 stage，会被误伤。
+# 取 feat-fields 落地之后的那一刻（2026-10-14 11:15 之后）为界。
+FIELDS_SINCE = "2026-10-14T11:16:00+00:00"
+
+
+def _fields_enforced(feat: Feat) -> bool:
+    """该 feat 是否受五项必填字段约束（历史豁免）。"""
+    from datetime import datetime
+
+    created = getattr(feat, "created_at", None)
+    if created is None:
+        return False
+    try:
+        since = datetime.fromisoformat(FIELDS_SINCE)
+    except ValueError:                       # 常量写错则不强制，不拖垮 check
+        return False
+    return created >= since
+
+
 def _check_fields(feat: Feat) -> List[CheckIssue]:
     """五项设计字段规则：``missing-fields`` / ``vague-change`` / ``empty-sample``。
 
@@ -257,7 +277,7 @@ def _check_fields(feat: Feat) -> List[CheckIssue]:
     """
     out: List[CheckIssue] = []
 
-    if feat.stage is not None:
+    if _fields_enforced(feat):
         missing = feat.missing_required_fields()
         if missing:
             out.append(CheckIssue(

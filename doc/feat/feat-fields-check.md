@@ -23,10 +23,12 @@
 | code | 触发 | 含义 |
 |------|------|------|
 | `missing-fields` | `missing_required_fields()` 非空 | 五项必填有缺 |
-| `vague-change` | `changes` 某条既无 `::` 也无 `.` | 改动没定位到符号 |
+| `vague-change` | `changes` 某条既无 `::` 也无「非扩展名的点」 | 改动没定位到符号 |
 | `empty-sample` | `samples` 某条长度 < 3 或只含占位词 | 样例过于敷衍 |
 
-- 只对**有 `stage` 游标**的 feat 报 `missing-fields`（历史豁免，方案 A）。
+- 只对**创建的 feat 在强制起点之后**的报 `missing-fields`（历史豁免，方案 A）。
+  起点取 `FIELDS_SINCE = 2026-10-14 11:16`（feat-fields 落地日）；
+  不用 `stage` 游标——走新流程的历史 feat 也有 stage，会误伤。
 - `vague-change` / `empty-sample` 对**有该字段内容**的 feat 都报（补填即消失）。
 
 ### `samples` 的语义（明确）
@@ -66,12 +68,15 @@ def _check_fields(feat) -> List[CheckIssue]
 
 ## 兜底
 
-- **`stage is None`（历史 feat）** → 跳过 `missing-fields`，但 `vague-change`
-  / `empty-sample` 仍按内容检查（有内容才可能违反）。
+- **`created_at` 早于 `FIELDS_SINCE`（历史 feat）** → 跳过 `missing-fields`，但
+  `vague-change` / `empty-sample` 仍按内容检查（有内容才可能违反）。
 - **`changes` 为空列表** → 不报 `vague-change`（空是缺字段的事，不重复报）。
 - **`samples` 为空** → 不报 `empty-sample`。
 - **占位词判定**：长度 `< 3`，或整条去掉空白后属 `{"无", "none", "n/a", "tbd"}`。
   注意：允许写「无：纯计算无外部数据」（含说明），只有**光秃秃的占位词**才报。
+- **`vague-change` 的「点」要排除文件扩展名**：`pdev/feat.py` 里的 `.py` 不是
+  符号定位，否则「改了 pdev/feat.py」会被误判为合格。判据：含 `::`，或含
+  一个点且其后不是常见扩展名（py/md/json/…）。
 - **`--strict`** → 新规则是 warning，行为与既有 warning 一致。
 
 ## 实现与校验结果（收尾）

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import datetime
 
 import pytest
 
@@ -676,6 +677,8 @@ def _fielded(slug="a", **over):
         data_model=["X: int"], samples=["X=1"],
         changes=["pdev/x.py::X —— 新增"],
         stage="feat",
+        # 设为强制起点之后，使其受 missing-fields 约束
+        created_at=datetime.fromisoformat("2026-10-15T00:00:00+00:00"),
     )
     kw.update(over)
     return Feat(**kw)
@@ -691,10 +694,19 @@ def test_missing_fields_reported_for_staged_feat(store):
 
 
 def test_missing_fields_exempt_for_legacy_feat(store):
-    """无 stage 游标的历史 feat 豁免 missing-fields。"""
-    store.add(Feat(slug="old", title="旧", api=["f()"]))
+    """早期建立的 feat 豁免 missing-fields（按 created_at 判定）。"""
+    store.add(Feat(slug="old", title="旧", api=["f()"],
+                   created_at=datetime.fromisoformat(
+                       "2026-10-01T00:00:00+00:00")))
     got = codes(check_one(store, "old"))
     assert "missing-fields" not in got
+
+
+def test_missing_fields_enforced_after_since(store):
+    """创建的 feat 在强制起点之后才报。"""
+    f = _fielded(design_note="")
+    store.add(f)
+    assert "missing-fields" in codes(check_one(store, "a"))
 
 
 def test_complete_feat_no_missing_fields(store):
