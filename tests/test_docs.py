@@ -47,7 +47,7 @@ def test_main_doc_commands_are_real():
 def test_main_doc_covers_feat_flow():
     """主文档必须覆盖 Feat 全流程与审查机制。"""
     text = MAIN_DOC.read_text(encoding="utf-8")
-    for kw in ("feat new", "feat commit", "doc → test → feat → fix → close",
+    for kw in ("feat new", "feat commit", "doc → test → script → feat → fix → close",
                "feat review", "feat comment", "pdm review",
                "--unreviewed", "掌握程度"):
         assert kw in text, f"主文档缺关键内容：{kw}"
