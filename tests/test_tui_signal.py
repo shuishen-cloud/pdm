@@ -60,7 +60,7 @@ def test_restore_idempotent():
 
 
 def test_run_restores_on_keyboard_interrupt(monkeypatch):
-    """run() 在 app.run() 抛 KeyboardInterrupt 时也恢复终端。"""
+    """run() 在 app.run() 抛 KeyboardInterrupt 时恢复终端并返回 130。"""
     written = []
 
     def fake_restore(stream=None):
@@ -77,9 +77,7 @@ def test_run_restores_on_keyboard_interrupt(monkeypatch):
 
     monkeypatch.setattr(app_mod, "PDMApp", BoomApp)
 
-    with pytest.raises(KeyboardInterrupt):
-        app_mod.run(store=None)
-
+    assert app_mod.run(store=None) == 130
     assert written, "run() 必须在 KeyboardInterrupt 时调用 _restore_terminal"
 
 

@@ -88,6 +88,19 @@ class Application:
         finally:
             self._running = False
             self.teardown()
+            _restore_terminal()
+
+
+def _restore_terminal() -> None:
+    """进程退出前恢复终端（复用 TUI 层的幂等实现）。
+
+    非 tty 或 textual 未安装时静默跳过。
+    """
+    try:
+        from pdev.tui.app import _restore_terminal as _impl
+    except Exception:  # noqa: BLE001
+        return
+    _impl()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -106,6 +119,9 @@ def parse_args(argv: Optional[List[str]] = None) -> AppConfig:
 def install_signal_handlers(app: Application) -> None:
     def _handler(signum: int, _frame: Any) -> None:
         app.logger.warning("捕获信号 %s，准备退出...", signum)
+        # 收到信号时先恢复终端：此时可能正处在 TUI 的 raw mode / 备用屏，
+        # 直接抛 KeyboardInterrupt 会跳过 Textual 的清理，留下乱码。
+        _restore_terminal()
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGINT, _handler)

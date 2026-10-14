@@ -415,8 +415,72 @@ class PDMApp(App):
                                     doc_dir=doc_dir, view=view))
 
 
+def _restore_terminal(stream=None) -> None:
+    """把终端恢复到正常模式（幂等、非 tty 安全）。
+
+    Textual 的 ``stop_application_mode()`` 会写这些序列，但当 ``asyncio.run``
+    被 SIGINT 硬中断（KeyboardInterrupt）时，其 ``_shutdown`` 可能来不及完成，
+    导致终端留在备用屏/raw mode，出现乱码。本函数作为**无条件的兜底**，
+    在 ``run()`` 的 finally 中调用。
+
+    :param stream: 输出流，默认 ``sys.stdout``。非 tty 时什么都不写。
+    """
+    import sys
+
+    out = stream if stream is not None else sys.stdout
+    try:
+        if not out.isatty():
+            return
+    except Exception:  # noqa: BLE001
+        return
+
+    # 关鼠标 / kitty 键盘协议 / 退出备用屏 / 显示光标 / 关 FocusIn-Out、粘贴
+    seq = (
+        "\x1b[?1000l"    # 关 VT200 鼠标
+        "\x1b[?1003l"    # 关 all-motion 鼠标
+        "\x1b[?1015l"    # 关 urxvt 鼠标
+        "\x1b[?1006l"    # 关 SGR 鼠标
+        "\x1b[<u"        # 关 kitty 键盘协议
+        "\x1b[?1049l"    # 退出备用屏
+        "\x1b[?25h"      # 显示光标
+        "\x1b[?1004l"    # 关 FocusIn/FocusOut
+        "\x1b[?2004l"    # 关 bracketed paste
+    )
+    try:
+        out.write(seq)
+        out.flush()
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 深度兜底：stty sane（无 tty 或 stty 缺失则跳过）
+    try:
+        import subprocess
+
+        subprocess.run(
+            ["stty", "sane"],
+            stdin=out,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run(store: NoteStore, cwd: str = ".", config=None,
         config_path=None) -> int:
-    """启动 TUI。"""
-    PDMApp(store, cwd=cwd, config=config, config_path=config_path).run()
+    """启动 TUI；保证任何退出路径都恢复终端。
+
+    Ctrl+C（KeyboardInterrupt）视为正常退出，返回 130；
+    其余异常照常传播（finally 仍会恢复终端）。
+    """
+    try:
+        PDMApp(store, cwd=cwd, config=config,
+               config_path=config_path).run()
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        # 正常退出时 Textual 已恢复，这里重复写一次是无害的（幂等）；
+        # Ctrl+C / 异常时这一句才是关键。
+        _restore_terminal()
     return 0
