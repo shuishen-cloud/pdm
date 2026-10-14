@@ -50,19 +50,35 @@ Feat(
     api=[...], logs=[...], fallbacks=[...],   # 三栏规格
     commits=[...],               # 关联的 commit
     notes=[...], discovered=[...],
-    stage="close",               # 阶段提交游标（doc→test→feat→fix→close）
+    stage="close",               # 阶段提交游标
+                                 # doc→test→script→feat→fix→close
+    stage_reviews={...},         # 阶段级审核位（键=阶段名）
+    comments={...},              # 条目级人工评论（键=可审项）
 )
 ```
 
-**两个独立的"阶段"概念，别混淆：**
+**两个独立的“阶段”概念，别混淆：**
 
 | 维度 | 字段 | 取值 | 谁推进 |
 |------|------|------|--------|
 | 流程状态 | `status` | draft/testing/integrated/fixing/closed | `pdm feat set` |
-| 提交阶段 | `stage` | doc/test/feat/fix/close | `pdm feat commit` |
+| 提交阶段 | `stage` | doc/test/script/feat/fix/close | `pdm feat commit` |
 
 `status` 是粗粒度里程碑（单向），`stage` 是提交前缀游标（由 `feat commit`
 强制顺序）。二者协作：`close` 阶段可用 `--close` 同时置 `status=closed`。
+
+`script` 是**可选**阶段（`OPTIONAL_STAGES`）：`test` 可跳过它直达 `feat`。
+
+### 审查数据（两级，互相独立）
+
+| 维度 | 字段 | 内容 | 命令 |
+|------|------|------|------|
+| 条目级 | `reviews` | 每项 `[审]`/`[测]` 两勾选位 | `pdm feat review` |
+| 条目级 | `comments` | 每项人写的评论（可空） | `pdm feat comment` |
+| 阶段级 | `stage_reviews` | 每个阶段的审核（`by`/`at`/`note`） | `pdm feat stage-review` |
+
+可审项（`review_items`）= `api`/`logs`/`fallbacks`/`data_model`/`samples`/
+`changes` 的每一条。`design_note`/`impl_note` 是整块文本，**不**进可审项。
 
 ## Issue（流程）
 

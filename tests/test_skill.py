@@ -84,8 +84,11 @@ def test_scripts_pdm_executable():
 
 
 def test_body_mentions_pipeline(skill_text):
-    """核心指令必须写出阶段流水线。"""
-    assert "doc → test → feat → fix → close" in skill_text
+    """核心指令必须写出阶段流水线（从代码派生，避免再次漂移）。"""
+    from pdev.stage import STAGE_SEQUENCE
+
+    seq = "→".join(STAGE_SEQUENCE)
+    assert seq in skill_text.replace(" ", ""), f"缺流水线 {seq}"
 
 
 def test_body_warns_against_git_commit(skill_text):

@@ -90,12 +90,36 @@ pdm note add abc123 -k pitfall -t "token 刷新有竞态" \
 
 ### `pdm feat new <slug> --title T [--doc PATH] [--api SIG] [--log TEXT] [--fallback TEXT]`
 
-登记一条 feat。`--api`/`--log`/`--fallback` 均可重复，应写成能直接照着
-实现的真实内容。
+登记一条 feat。**五项设计字段必填**（缺一报错，退出码 2）；`--api`/`--log`/
+`--fallback` 均可重复，应写成能直接照着实现的真实内容。
+
+| 参数 | 必填 | 说明 |
+|------|:---:|------|
+| `-t, --title` | ✔ | 一句话标题 |
+| `-k, --kind` | | `feat`/`fix`/`refactor`/`doc`/`test`（默认 `feat`） |
+| `--doc PATH` | | 设计正文路径（如 `feat/token-cache.md`） |
+| `--design-note TEXT` | ✔ | 设计思路（为什么这么做） |
+| `--impl-note TEXT` | ✔ | 实现方式（怎么落地） |
+| `--data-model TEXT` | ✔ | 核心数据结构（可重复） |
+| `--sample TEXT` | ✔ | 样例数据＝结构的实例，**非用法**（可重复） |
+| `--change TEXT` | ✔ | 对既有代码的改动，`文件::符号 —— 说明`（可重复） |
+| `--api SIG` | | 接口签名（可重复） |
+| `--log TEXT` | | 会打什么日志（可重复） |
+| `--fallback TEXT` | | 异常兜底（可重复） |
+
+- 五项必填**允许填“无”，但必须说明**：`--sample "无：纯计算无外部数据"`。
+- `samples` 语义：`data_model` 记类型（`Cache: dict[str,int]`），
+  `samples` 记实例（`{"k": 1}`）；**不是**命令行用法。
+- `changes` 每条应定位到符号：`pdev/feat.py::Feat.comments —— 新增字段`。
 
 ```bash
 pdm feat new token-cache --title "token 缓存层" \
     --doc feat/token-cache.md \
+    --design-note "缓存层隔离后端抖动，避免调用方写重试" \
+    --impl-note "dict + 过期时间戳，读时懒过期" \
+    --data-model "TokenCache: dict[str, tuple[str, float]] —— key→(值, 过期时刻)" \
+    --sample '{"t1": ("abc", 1730000000.0)}' \
+    --change "pdev/auth.py::TokenCache —— 新增类" \
     --api "TokenCache.get(key) -> Optional[str]" \
     --api "TokenCache.put(key, val, ttl) -> None" \
     --log "缓存命中/未命中时记录 key" \
@@ -121,9 +145,11 @@ pdm feat new token-cache --title "token 缓存层" \
 
 由 pdm 创建 commit，强制顺序。**首选这个，不要用 git commit。**
 
+流水线：`doc → test → script → feat → fix → close`（`script` 可选，可跳过）。
+
 | 参数 | 说明 |
 |------|------|
-| `<stage>` | `doc`/`test`/`feat`/`fix`/`close` 之一 |
+| `<stage>` | `doc`/`test`/`script`/`feat`/`fix`/`close` 之一 |
 | `-m, --message` | **必填**，自动加 `<prefix>(<slug>): ` 前缀 |
 | `--body` | 提交正文 |
 | `--files PATH` | 只提交这些路径，可重复；新文件自动 `git add` |
@@ -134,11 +160,12 @@ pdm feat new token-cache --title "token 缓存层" \
 阶段与生成的前缀：
 
 ```
-doc   → doc(<slug>): ...
-test  → test(<slug>): ...
-feat  → feat(<slug>): ...
-fix   → fix(<slug>): ...
-close → doc(<slug>): ...   # 收尾 doc，前缀仍是 doc(
+doc    → doc(<slug>): ...
+test   → test(<slug>): ...
+script → script(<slug>): ...   # 可选：可跳过直达 feat
+feat   → feat(<slug>): ...
+fix    → fix(<slug>): ...
+close  → doc(<slug>): ...   # 收尾 doc，前缀仍是 doc(
 ```
 
 顺序非法（如 feat 后 test）直接拒绝并返回退出码 2，**不产生 commit**。
@@ -156,12 +183,19 @@ close → doc(<slug>): ...   # 收尾 doc，前缀仍是 doc(
 | `discovered-not-closed` | warning | 有异常但未 closed |
 | `commit-conflict` | error | 同一 commit 被多个 feat 认领 |
 | `commit-missing` | error | commit 在 git 中不存在 |
+| `status-skipped` | error | 状态推进跳跃（非线性） |
 | `orphan-commit` | warning | git 里有 commit 未被任何 feat 认领 |
-| `stage-prefix` | warning | commit 前缀不是 doc/test/feat/fix |
+| `stage-prefix` | warning | commit 前缀不是 doc/test/script/feat/fix |
 | `stage-order` | warning | 阶段倒退（如 feat 后 test） |
-| `missing-stage` | warning | closed 的 feat 缺 test/fix |
+| `missing-stage` | warning | closed 的 feat 缺 test/fix（**不查 script**） |
 | `commit-no-note` | warning | feat/fix 提交无笔记 |
 | `note-no-verify` | warning | 笔记均未绑定验证 |
+| `review-none` | warning | 完全无人工审查记录 |
+| `review-low` | warning | 人工审查覆盖率过低 |
+| `missing-fields` | warning | 五项必填字段有缺（历史豁免） |
+| `vague-change` | warning | `changes` 没定位到符号（无 `::`） |
+| `empty-sample` | warning | `samples` 过于敷衍（短/占位词） |
+| `stage-unreviewed` | warning | 进入下一阶段但上一阶段未审 |
 
 退出码：有 error → 1；`--strict` 时 warning 也 → 1。
 
@@ -169,9 +203,71 @@ close → doc(<slug>): ...   # 收尾 doc，前缀仍是 doc(
 
 记录 fix 阶段发现的异常。
 
+### `pdm feat review <slug> [--item KEY] [--all] [--by WHO] [--cmd CMD] [--status S]`
+
+逐项人工审查 / 测试勾选（`[审][测]` 双勾选位，**可独立**）。可审项 =
+`api`/`logs`/`fallbacks`/`data_model`/`samples`/`changes` 的每一条。
+
+| 参数 | 说明 |
+|------|------|
+| `--item KEY` | 可审项键：`api:0` / `logs:1` / `doc`，或字段前缀 `api`（匹配整片） |
+| `--all` | 作用于该 feat 全部可审项 |
+| `--by WHO` | 审查者（默认取配置 `default_author`） |
+| `--cmd CMD` | `--test` 时登记实际执行的命令 |
+| `--status` | `--test` 时结果：`passed`/`failed`/`error`（默认 `passed`） |
+| 动作（四选一） | `--review` 置 [审] / `--unreview` 清 [审] / `--test` 置 [测] / `--untest` 清 [测] |
+
+```bash
+pdm feat review token-cache                       # 列出可审项与 [审][测] 状态
+pdm feat review token-cache --item api:0 --review --by human:lwy
+pdm feat review token-cache --item api:0 --test --cmd "pytest tests/test_token.py"
+pdm feat review token-cache --all --review        # 整条一次勾完
+```
+
+### `pdm feat comment <slug> --on KEY [-m TEXT | --clear]`
+
+条目级人工评论（人手写，可留空）。`--on` 指定对象（`api:0` / `logs:1` /
+`doc`）。**缺 `-m` 则查看**，空串则清除；`--clear` 显式清除（与 `-m` 互斥）。
+
+```bash
+pdm feat comment token-cache --on api:0 -m "接口保持最小，不做泛化"
+pdm feat comment token-cache --on api:0            # 只看该条评论
+```
+
+### `pdm feat stage-review <slug> [stage] [--by WHO] [--note TEXT] [--clear] [--list]`
+
+阶段级人工审核：进入下一阶段前要求**上一阶段已审**。
+
+| 参数 | 说明 |
+|------|------|
+| `<stage>` | 要标记已审的阶段（`doc`/`test`/`script`/`feat`/`fix`/`close`） |
+| `--by WHO` | 审核人（**必须 `human:` 前缀**，否则拒绝） |
+| `--note TEXT` | 审核备注 |
+| `--clear` | 撤销该阶段的审核 |
+| `--list` | 列出各阶段审核状态 |
+
+- 门禁默认**只告警**（`check` 报 `stage-unreviewed`）；
+  开 `config.stage_review.enabled=true` 后 `feat commit` **硬阻断**。
+- 只查**上一个**阶段，不回溯全部前序。
+- 历史 feat（`created_at` 早于 `FIELDS_SINCE`）豁免。
+
+```bash
+pdm feat stage-review token-cache doc --by human:lwy
+pdm feat stage-review token-cache --list
+```
+
 ---
 
 ## pdm ui / pdm theme
 
 - `pdm ui [store]` —— 仿 lazygit 的 TUI。
 - `pdm theme [name]` —— 查看/设置主题（写入用户配置）。
+
+## pdm review —— 掌握程度
+
+汇总全部 feat 的可审项，算「项目代码掌握程度」，覆盖率过低告警（退出码 1）。
+
+| 参数 | 说明 |
+|------|------|
+| `--unreviewed` | 只列未人工审查的可审项 |
+| `--untested` | 只列未测试通过的可审项（与 `--unreviewed` 同给取交集） |
