@@ -32,7 +32,8 @@ python3 -m venv .venv
 
 | 文件 | 内容 |
 |------|------|
-| [doc/使用方法以及效果.md](doc/使用方法以及效果.md) | CLI 全部命令与实测输出 |
+| [doc/使用方法以及效果.md](doc/使用方法以及效果.md) | 全流程使用说明（Feat 生命周期 + 审查 + 笔记/查询/验证） |
+| [doc/feat/](doc/feat/) | 各 Feat 的设计文档（每功能一份） |
 | [doc/TUI使用说明.md](doc/TUI使用说明.md) | lazygit 风格界面、快捷键 |
 | [doc/配置文件说明.md](doc/配置文件说明.md) | `.pdm.json`、环境变量、优先级 |
 | [doc/DATA_MODEL.md](doc/DATA_MODEL.md) | 数据结构定义 |
