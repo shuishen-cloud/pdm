@@ -166,3 +166,74 @@ expected=纯函数测试通过；真实终端退出后无乱码
 
 「退出无乱码」的实测沿用 `tui-signal-restore` 的教训：**必须确证进程真的
 结束**（而非等超时），且退出后终端可正常输入。
+
+## 实现与校验结果（收尾）
+
+实现于 `50c2ce4f`（`pdev/tui_curses.py` + `pdm ui --curses`），
+清理与补测于 `97452328`。
+
+### 交付物
+
+| 文件 | 内容 |
+|------|------|
+| `pdev/tui_curses.py` | 新模块，~390 行；零第三方依赖 |
+| `pdev/cli/parser.py` | `pdm ui --curses` 开关 |
+| `pdev/cli/commands.py` | `cmd_ui` 分派到 curses 版 |
+| `tests/test_tui_curses.py` | 16 例（纯函数 + 兜底 + 两个真实 PTY） |
+
+### 分层落地情况
+
+```
+run()              唯一碰终端；curses.wrapper 保证 endwin
+  ↑
+render_view()      纯函数：视图 → 每行字符串
+  ↑
+build_view()       纯函数：store/git → 视图
+```
+
+- `curses` 为**延迟导入**（`_load_curses`），模块在无 curses 平台也能 import。
+- 测试用 `inspect.getsource` 断言四个纯函数源码内**不出现 curses**。
+
+### 稳定性对照（本 feat 的核心目标）
+
+| 历史 bug | 在 curses 版是否存在 | 原因 |
+|----------|:---:|------|
+| 点击崩（消息名冲突） | **不存在** | 无消息系统、无鼠标事件 |
+| 弹窗 `q` 连带退出 | **不存在** | 无全局 Binding，键在主循环显式分发 |
+| Ctrl+C 终端乱码 | **由 wrapper 兜底** | `curses.wrapper` 自带 `finally: endwin()` |
+| hash 前缀匹配 | **未处理（超出范围）** | 复用 `store.by_commit` 既有前缀匹配 |
+
+### 验证
+
+| 项 | 结果 |
+|----|------|
+| 纯函数单测（build_view/render_view） | ✅ 14 例 |
+| 过小终端（5x30） | ✅ 单行提示，不崩 |
+| 非 tty 启动 | ✅ 返回 2 + stderr 提示 |
+| curses 不可用 | ✅ 返回 2 + 提示 |
+| 真实 PTY：启动→`q`→退出 | ✅ 退出码 0，含恢复序列 `1049l`/`25h` |
+| 真实 PTY：Ctrl+C | ✅ 进程结束且尝试恢复终端 |
+| 全仓库回归 | ✅ `.venv/bin/pytest` 全绿 |
+
+实测渲染（真实数据，110 列）：三栏对齐正确，CJK 按 2 列计宽，无溢出。
+
+### 如何自己试
+
+```bash
+.venv/bin/pdm ui --curses          # 或 ./run.sh ui --curses
+# q 退出，j/k 移动，Tab 或 1/2/3 切栏，h/l 左右
+```
+
+### 本次发现的异常
+
+1. **`Actor` 是 `.raw` 不是 `.value`**：同一数据结构里混用枚举与 dataclass，
+   凭直觉写属性名会错。已由测试在跑通前捕获。
+2. **键位分发初版写错**：`_move` 与末尾的 `keep=True` 分支互相抵消，
+   上下移动失效。教训：curses 没有框架替你管状态，控制流必须线性可读。
+
+### 已知限制（有意不做）
+
+- 只读：不能筛选、不能跑验证、不能写笔记。
+- 不支持 Windows（标准库 curses 缺失）。
+- 详情栏不做语法高亮（Textual 版有）。
+- 未做水平滚动，超长行按栏宽截断。
