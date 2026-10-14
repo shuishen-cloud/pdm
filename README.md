@@ -157,14 +157,24 @@ cd demo-project
 
 ## 故障排查
 
+### 退出 TUI 的按键
+
+- **`q`**：主界面直接退出。
+- **`Ctrl+C`**：弹出 “Do you want to quit?” 确认框，需再按 **`Ctrl+Q`**
+  确认才会退出（Textual 的默认行为，不是卡死）。
+- 弹窗内：`Esc` / `q` 关闭弹窗（不会退出应用）。
+
 ### TUI 退出后终端乱码、只能关闭终端
 
-**现象**：`pdm ui` 运行中按 `Ctrl+C`（或异常退出）后，终端出现乱码、
-光标消失，只能关闭终端窗口。
+**现象**：`pdm ui` 异常退出后，终端出现乱码、光标消失，只能关闭终端窗口。
 
 **预期**：TUI 无论正常结束、异常还是收到信号，都应恢复终端（退出备用屏、
 显示光标、关闭鼠标与 bracketed paste）。
 
 **临时缓解**：在乱码终端执行 `stty sane` 或 `reset` 后按回车。
+
+**根因**：Ctrl+C / 信号触发时，`asyncio.run` 硬中断事件循环，跳过了
+Textual 的 `stop_application_mode()`，导致终端未恢复。修复在 `PDMApp.run()`
+的 `finally` 与信号处理器中无条件调用 `_restore_terminal()` 兜底。
 
 该问题的根因与修复见 `pdm feat show tui-signal-restore`。
