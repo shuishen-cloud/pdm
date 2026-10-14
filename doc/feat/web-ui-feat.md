@@ -158,3 +158,65 @@ cmd=.venv/bin/pdm ui --web
 manual=切到 Feat 视图，点一条 feat，看规格与正文；筛选框输入 slug
 expected=规格分区完整；正文渲染；未知 slug 不影响页面
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 `a28e279a`（`build_feats` / `build_feat_detail` / `/api/feat/<slug>` +
+前端 Feat 视图），修 XSS 与补运行时测试于 `5b9fa1f3`。
+
+### 交付物
+
+| 文件 | 内容 |
+|------|------|
+| `pdev/webui.py` | `+build_feats` / `+build_feat_detail`；`make_handler` 增路由；PAGE 增 Feat 视图 |
+| `pdev/cli/commands.py` | `--web` 分支构造 `FeatStore` 并传入 |
+| `tests/test_webui_feat.py` | 20 例（纯函数 + 路由 + 前端契约 + node 运行时） |
+
+**零新增依赖**：`pyproject.toml` 仍未改。
+
+### 接口落地
+
+| 路径 | 行为 |
+|------|------|
+| `GET /api/data` | 增 `"feats": [...]`（不含正文） |
+| `GET /api/feat/<slug>` | 单条全量（含 `doc_body`、`notes`、`notes_by_kind`、`stage_reviews`）；未知 → 404 JSON |
+
+### 复用而非重造
+
+- 关联笔记走 `featview.notes_for_feat`（含 ≥6 位前缀匹配）；
+- 设计正文走 `featview.read_doc_body`；分组走 `group_notes_by_kind`。
+- 测试用 `inspect` + 剔注释断言 `build_feat_detail` **无自写 `startswith`**
+  且确实调用了 `notes_for_feat`——防止后人重蹈短串误匹配。
+
+### 验证
+
+| 项 | 结果 |
+|----|------|
+| 纯函数 + 路由 + 前端契约 | ✅ 20 例（含 node 运行时） |
+| 真起服务 `/api/data` | ✅ **38 条 feat** |
+| 真起服务 `/api/feat/web-ui` | ✅ 正文 4572 字符、关联提交 5、笔记 3 |
+| 未知 slug | ✅ 404 |
+| XSS（title 含 `<注入>`） | ✅ 转义为实体 |
+| 空 Feat | ✅ 显示"暂无 Feat" |
+| JS 语法 / 无外链 | ✅ `node --check` + 正则断言 |
+| 非 TUI 全量回归 | ✅ 全绿 |
+
+### 本次发现的异常
+
+1. **Feat 列表漏转义 title，且根本没渲染 title**（bug，high，安全）：
+   既信息缺失又埋 XSS。已修，并由 **node + DOM 替身的运行时测试**钉住
+   （断言 `<注入>` 不原样出现、`&lt;注入&gt;` 出现）。
+2. **`review_counts()` 返回三元组 `(total, reviewed, tested)`**，
+   直觉按 `(reviewed, total)` 解包导致 `ValueError`。已修正。
+
+### 新增的测试手法（值得沿用）
+
+`test_js_feat_render_runtime`：用 `node` + 最小 DOM 替身**真跑内嵌 JS**，
+断言列表渲染、HTML 转义、Markdown 渲染、空数据兜底。这比"字符串是否存在"
+强得多——能抓到运行时异常与 XSS 遗漏。无 `node` 时自动跳过。
+
+### 已知限制（有意不做）
+
+- 只读：审查勾选/评论/写操作不做。
+- Markdown 只渲染标题/列表/代码块/段落，不引库。
+- 无 URL 深链接（视图状态在内存里）。
