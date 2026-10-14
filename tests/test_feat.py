@@ -771,3 +771,103 @@ def test_set_reviews_writes_once(store, monkeypatch):
                         lambda f: (calls.append(1), orig(f))[1])
     store.set_reviews("a", ["api:0", "api:1", "logs:0"], reviewed=True)
     assert len(calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# 五项设计字段（feat-fields）
+# ---------------------------------------------------------------------------
+
+
+def _full_feat_kwargs():
+    return dict(
+        slug="a", title="A", doc="d.md",
+        design_note="为什么这么设计", impl_note="怎么实现的",
+        data_model=["Feat.x: int —— 计数"],
+        samples=['{"k": 1}'],
+        changes=["pdev/feat.py::Feat.x —— 新增字段"],
+    )
+
+
+def test_new_fields_default_empty():
+    f = Feat(slug="a", title="A")
+    assert f.design_note == ""
+    assert f.impl_note == ""
+    assert f.data_model == []
+    assert f.samples == []
+    assert f.changes == []
+
+
+def test_new_fields_roundtrip_via_store(store):
+    store.add(Feat(**_full_feat_kwargs()))
+    got = FeatStore(store.root).get("a")
+    assert got.design_note == "为什么这么设计"
+    assert got.impl_note == "怎么实现的"
+    assert got.data_model == ["Feat.x: int —— 计数"]
+    assert got.samples == ['{"k": 1}']
+    assert got.changes == ["pdev/feat.py::Feat.x —— 新增字段"]
+
+
+def test_list_fields_are_reviewable():
+    """data_model / samples / changes 并入可审项。"""
+    f = Feat(**_full_feat_kwargs())
+    keys = [k for k, _ in f.review_items()]
+    assert "data_model:0" in keys
+    assert "samples:0" in keys
+    assert "changes:0" in keys
+
+
+def test_text_fields_not_reviewable():
+    f = Feat(**_full_feat_kwargs())
+    keys = [k for k, _ in f.review_items()]
+    assert not any(k.startswith("design_note") for k in keys)
+    assert not any(k.startswith("impl_note") for k in keys)
+
+
+def test_missing_required_fields_detects_all():
+    f = Feat(slug="a", title="A")
+    missing = f.missing_required_fields()
+    assert len(missing) == 5
+    assert any("设计思路" in m for m in missing)
+    assert any("样例数据" in m for m in missing)
+    assert any("改动" in m for m in missing)
+
+
+def test_missing_required_fields_empty_when_complete():
+    assert Feat(**_full_feat_kwargs()).missing_required_fields() == []
+
+
+def test_missing_required_fields_partial():
+    """只缺样例数据时只报一项。"""
+    kw = _full_feat_kwargs()
+    kw["samples"] = []
+    missing = Feat(**kw).missing_required_fields()
+    assert len(missing) == 1
+    assert "样例数据" in missing[0]
+
+
+def test_text_fields_keep_newlines(store):
+    kw = _full_feat_kwargs()
+    kw["design_note"] = "第一行\n第二行"
+    store.add(Feat(**kw))
+    assert FeatStore(store.root).get("a").design_note == "第一行\n第二行"
+
+
+def test_legacy_json_without_new_fields(tmp_path):
+    root = tmp_path / "feats"
+    d = root / "by-id"
+    d.mkdir(parents=True)
+    (d / "old.json").write_text(json.dumps({
+        "slug": "old", "title": "旧", "api": ["f()"],
+    }), encoding="utf-8")
+    feat = FeatStore(root).get("old")
+    assert feat.design_note == ""
+    assert feat.samples == []
+    assert feat.changes == []
+
+
+def test_new_fields_in_json(store):
+    store.add(Feat(**_full_feat_kwargs()))
+    data = json.loads((store.root / "by-id" / "a.json").read_text("utf-8"))
+    assert data["design_note"] == "为什么这么设计"
+    assert data["samples"] == ['{"k": 1}']
+    assert data["changes"] == ["pdev/feat.py::Feat.x —— 新增字段"]

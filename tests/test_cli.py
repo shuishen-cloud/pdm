@@ -1695,3 +1695,71 @@ def test_review_item_exact_doc(capsys):
     main(["feat", "review", "a", "--item", "doc", "--review"])
     out = capsys.readouterr().out
     assert "1/5" in out                    # 只勾了 doc 一项
+
+
+# ---------------------------------------------------------------------------
+# 五项设计字段（feat-fields）—— CLI
+# ---------------------------------------------------------------------------
+
+
+_FIELD_ARGS = [
+    "--design-note", "为什么这么设计",
+    "--impl-note", "怎么实现的",
+    "--data-model", "Feat.x: int —— 计数",
+    "--sample", '{"k": 1}',
+    "--change", "pdev/feat.py::Feat.x —— 新增字段",
+]
+
+
+def test_feat_new_requires_all_fields(capsys):
+    """缺任一必填 → 退出码 2，不落盘。"""
+    code = main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+                 "--api", "f()", "--fallback", "x",
+                 "--design-note", "思路", "--impl-note", "方式",
+                 "--data-model", "X: int", "--sample", "{}"])
+    # 缺 changes
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "改动" in err
+
+
+def test_feat_new_with_all_fields(capsys):
+    code = main(["feat", "new", "a", "-t", "A", "--doc", "d.md", *_FIELD_ARGS])
+    assert code == 0
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    f = FeatStore(tmp_path / ".pdm" / "feats").get("a")
+    assert f.design_note == "为什么这么设计"
+    assert f.samples == ['{"k": 1}']
+    assert f.missing_required_fields() == []
+
+
+def test_feat_show_displays_new_fields(capsys):
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md", *_FIELD_ARGS])
+    capsys.readouterr()
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    for head in ("设计思路", "实现方式", "核心数据结构", "样例数据",
+                 "对既有代码的改动"):
+        assert head in out
+    assert "为什么这么设计" in out
+    assert "pdev/feat.py::Feat.x" in out
+
+
+def test_feat_new_multiline_note(capsys):
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+          "--design-note", "第一行\n第二行", "--impl-note", "i",
+          "--data-model", "X", "--sample", "s", "--change", "f.py::X —— n"])
+    capsys.readouterr()
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    assert "第一行" in out and "第二行" in out
+
+
+def test_feat_new_json_has_new_fields(capsys):
+    main(["feat", "new", "a", "-t", "A", "--doc", "d.md", *_FIELD_ARGS])
+    capsys.readouterr()
+    main(["--json", "feat", "show", "a"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["design_note"] == "为什么这么设计"
+    assert data["changes"] == ["pdev/feat.py::Feat.x —— 新增字段"]
