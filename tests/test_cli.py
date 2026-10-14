@@ -1463,3 +1463,14 @@ def test_review_no_filter_keeps_summary(capsys):
     out = capsys.readouterr().out
     assert "掌握程度" in out
     assert "未审查：" not in out
+
+
+def test_review_unreviewed_json_empty(capsys):
+    """无 feat 时 --json 输出空清单，退出码 0。"""
+    code = main(["--json", "review", "--unreviewed"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert code == 0
+    assert data["total"] == 0
+    assert data["count"] == 0
+    assert data["feats"] == []
