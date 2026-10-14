@@ -871,3 +871,86 @@ def test_new_fields_in_json(store):
     assert data["design_note"] == "为什么这么设计"
     assert data["samples"] == ['{"k": 1}']
     assert data["changes"] == ["pdev/feat.py::Feat.x —— 新增字段"]
+
+
+def test_legacy_feat_missing_new_fields_but_loadable(tmp_path):
+    """历史 feat 缺新字段仍可加载，只是 missing 非空（check 层豁免）。"""
+    root = tmp_path / "feats"
+    d = root / "by-id"
+    d.mkdir(parents=True)
+    (d / "old.json").write_text(json.dumps({
+        "slug": "old", "title": "旧", "api": ["f()"],
+    }), encoding="utf-8")
+    feat = FeatStore(root).get("old")
+    assert len(feat.missing_required_fields()) == 5
+    assert feat.review_items()                 # 旧字段仍可审
+
+
+# ---------------------------------------------------------------------------
+# 阶段级审核（stage-review）
+# ---------------------------------------------------------------------------
+
+
+def test_review_stage_roundtrip(store):
+    store.add(Feat(slug="a", title="A", api=["f()"]))
+    store.review_stage("a", "doc", "human:lwy")
+    got = FeatStore(store.root).get("a")
+    assert got.stage_reviewed("doc")
+    assert got.stage_reviews["doc"].by == "human:lwy"
+    assert got.stage_reviews["doc"].at is not None
+
+
+def test_unreview_stage(store):
+    store.add(Feat(slug="a", title="A"))
+    store.review_stage("a", "doc", "human:lwy")
+    store.unreview_stage("a", "doc")
+    assert not store.get("a").stage_reviewed("doc")
+    assert "doc" not in store.get("a").stage_reviews
+
+
+def test_review_stage_rejects_bad_stage(store):
+    store.add(Feat(slug="a", title="A"))
+    with pytest.raises(FeatError):
+        store.review_stage("a", "nope", "human:lwy")
+
+
+def test_review_stage_overwrites():
+    f = Feat(slug="a", title="A")
+    f.review_stage("doc", "human:lwy")
+    f.review_stage("doc", "human:bob", note="再审一次")
+    assert f.stage_reviews["doc"].by == "human:bob"
+    assert f.stage_reviews["doc"].note == "再审一次"
+
+
+def test_pending_stage_review():
+    f = Feat(slug="a", title="A")
+    assert f.pending_stage_review("doc") is None      # 首阶段无需前序
+    assert f.pending_stage_review("test") == "doc"
+    f.review_stage("doc", "human:lwy")
+    assert f.pending_stage_review("test") is None
+    assert f.pending_stage_review("feat") == "test"
+
+
+def test_stage_reviews_serialized(store):
+    store.add(Feat(slug="a", title="A"))
+    store.review_stage("a", "doc", "human:lwy")
+    data = json.loads((store.root / "by-id" / "a.json").read_text("utf-8"))
+    assert data["stage_reviews"]["doc"]["by"] == "human:lwy"
+    assert data["stage_reviews"]["doc"]["at"]
+
+
+def test_legacy_json_without_stage_reviews(tmp_path):
+    root = tmp_path / "feats"
+    d = root / "by-id"
+    d.mkdir(parents=True)
+    (d / "old.json").write_text(json.dumps({
+        "slug": "old", "title": "旧", "api": ["f()"],
+    }), encoding="utf-8")
+    assert FeatStore(root).get("old").stage_reviews == {}
+
+
+def test_untouched_stages_absent_from_json(store):
+    store.add(Feat(slug="a", title="A"))
+    store.review_stage("a", "doc", "human:lwy")
+    data = json.loads((store.root / "by-id" / "a.json").read_text("utf-8"))
+    assert set(data["stage_reviews"]) == {"doc"}

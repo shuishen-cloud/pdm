@@ -237,3 +237,25 @@ def test_commit_no_verify(repo, store):
         "demo", "doc", "设计", cwd=str(repo), git=git, no_verify=True,
     )
     assert h
+
+
+# ---------------------------------------------------------------------------
+# previous_stage（stage-review）
+# ---------------------------------------------------------------------------
+
+
+def test_previous_stage():
+    from pdev.stage import previous_stage
+
+    assert previous_stage("doc") is None
+    assert previous_stage("test") == "doc"
+    assert previous_stage("feat") == "test"
+    assert previous_stage("fix") == "feat"
+    assert previous_stage("close") == "fix"
+
+
+def test_previous_stage_bad():
+    from pdev.stage import StageError, previous_stage
+
+    with pytest.raises(StageError):
+        previous_stage("nope")

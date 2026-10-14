@@ -1803,3 +1803,51 @@ def test_feat_show_duplicate_labels_use_distinct_keys(capsys):
     assert len(lines) == 2
     assert lines[0].strip().startswith("[ ][ ]")
     assert lines[1].strip().startswith("[x][ ]")
+
+
+# ---------------------------------------------------------------------------
+# feat stage-review（见 doc/feat/stage-review.md）
+# ---------------------------------------------------------------------------
+
+
+def test_stage_review_and_list(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "stage-review", "a", "doc", "--by", "human:lwy"])
+    assert code == 0
+    capsys.readouterr()
+    code = main(["feat", "stage-review", "a", "--list"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "doc" in out and "human:lwy" in out
+    assert "test" in out
+
+
+def test_stage_review_rejects_non_human(capsys):
+    """require_human 默认真 → ai: 前缀被拒。"""
+    _make_feat(capsys)
+    code = main(["feat", "stage-review", "a", "doc", "--by", "ai:claude"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "human" in err.lower() or "人工" in err
+
+
+def test_stage_review_clear(capsys):
+    _make_feat(capsys)
+    main(["feat", "stage-review", "a", "doc", "--by", "human:lwy"])
+    capsys.readouterr()
+    code = main(["feat", "stage-review", "a", "doc", "--clear"])
+    assert code == 0
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    assert not FeatStore(tmp_path / ".pdm" / "feats").get("a").stage_reviewed("doc")
+
+
+def test_stage_review_bad_stage(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "stage-review", "a", "nope", "--by", "human:lwy"])
+    assert code == 2
+
+
+def test_stage_review_missing_slug(capsys):
+    code = main(["feat", "stage-review", "nope", "doc", "--by", "human:x"])
+    assert code == 2

@@ -779,3 +779,33 @@ def test_vague_change_ignores_file_extension_dot(store):
 def test_vague_change_accepts_class_member(store):
     store.add(_fielded(changes=["Feat.set_comment 新增方法"]))
     assert "vague-change" not in codes(check_one(store, "a"))
+
+
+# ---------------------------------------------------------------------------
+# stage-unreviewed（见 doc/feat/stage-review.md）
+# ---------------------------------------------------------------------------
+
+
+def test_stage_unreviewed_reported(store):
+    """有阶段 commit 但未审 → 报 stage-unreviewed。"""
+    f = _fielded()
+    f.stage = "feat"
+    f.commits = ["aaa"]
+    store.add(f)
+    got = codes(check_one(store, "a"))
+    assert "stage-unreviewed" in got
+
+
+def test_stage_unreviewed_gone_after_review(store):
+    f = _fielded()
+    f.stage = "feat"
+    store.add(f)
+    store.review_stage("a", "test", "human:lwy")
+    store.review_stage("a", "feat", "human:lwy")
+    assert "stage-unreviewed" not in codes(check_one(store, "a"))
+
+
+def test_stage_unreviewed_registered():
+    from pdev.check import CODES
+
+    assert "stage-unreviewed" in CODES
