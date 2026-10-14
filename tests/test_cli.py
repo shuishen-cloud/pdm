@@ -1831,7 +1831,7 @@ def test_stage_review_rejects_non_human(capsys):
     assert "human" in err.lower() or "人工" in err
 
 
-def test_stage_review_clear(capsys):
+def test_stage_review_clear(capsys, tmp_path):
     _make_feat(capsys)
     main(["feat", "stage-review", "a", "doc", "--by", "human:lwy"])
     capsys.readouterr()
@@ -1843,9 +1843,10 @@ def test_stage_review_clear(capsys):
 
 
 def test_stage_review_bad_stage(capsys):
+    """非法阶段名由 argparse 的 choices 直接拒绝。"""
     _make_feat(capsys)
-    code = main(["feat", "stage-review", "a", "nope", "--by", "human:lwy"])
-    assert code == 2
+    with pytest.raises(SystemExit):
+        main(["feat", "stage-review", "a", "nope", "--by", "human:lwy"])
 
 
 def test_stage_review_missing_slug(capsys):

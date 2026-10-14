@@ -34,6 +34,7 @@ __all__ = [
     "FeatConfig",
     "FeatViewConfig",
     "ReviewConfig",
+    "StageReviewConfig",
     "UIConfig",
     "GitHubConfig",
     "load_config",
@@ -154,6 +155,14 @@ class ReviewConfig:
 
 
 @dataclass
+class StageReviewConfig:
+    """阶段级人工审核门禁（见 doc/feat/stage-review.md）。"""
+
+    enabled: bool = False         # 为真时提交前硬阻断
+    require_human: bool = True    # 审核人必须是 human: 前缀
+
+
+@dataclass
 class UIConfig:
     """TUI 外观与交互设置。
 
@@ -196,6 +205,8 @@ class Config:
     doc: DocConfig = field(default_factory=DocConfig)
     feat: FeatConfig = field(default_factory=FeatConfig)
     review: ReviewConfig = field(default_factory=ReviewConfig)
+    stage_review: StageReviewConfig = field(
+        default_factory=StageReviewConfig)
     ui: UIConfig = field(default_factory=UIConfig)
     github: GitHubConfig = field(default_factory=GitHubConfig)
 
@@ -224,6 +235,7 @@ _SEGMENTS = {
     "doc": DocConfig,
     "feat": FeatConfig,
     "review": ReviewConfig,
+    "stage_review": StageReviewConfig,
     "ui": UIConfig,
     "github": GitHubConfig,
 }
@@ -287,7 +299,7 @@ _BOOL_KEYS = {
     "color", "json_output", "auto_commit", "require_detail", "auto_push",
     "show_footer",
     "doc_body", "notes_detail", "verify", "specs", "notes_grouped",
-    "warn_no_review", "warn_untested",
+    "warn_no_review", "warn_untested", "require_human", "enabled",
 }
 _INT_KEYS = {"default_limit", "commit_width", "doc_max_lines"}
 _FLOAT_KEYS = {"min_coverage"}

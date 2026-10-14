@@ -378,6 +378,23 @@ def build_parser() -> argparse.ArgumentParser:
                           default=argparse.SUPPRESS)
     fcomment.set_defaults(func=commands.cmd_feat_comment)
 
+    fsrev = feat_sub.add_parser(
+        "stage-review", help="阶段级人工审核（进入下一阶段前需上一阶段已审）")
+    fsrev.add_argument("slug")
+    fsrev.add_argument("stage", nargs="?",
+                       choices=["doc", "test", "feat", "fix", "close"],
+                       help="要标记已审的阶段")
+    fsrev.add_argument("--by", metavar="WHO",
+                       help="审核人（默认取配置 default_author）")
+    fsrev.add_argument("--note", default="", help="审核备注")
+    fsrev.add_argument("--clear", action="store_true",
+                       help="撤销该阶段的审核")
+    fsrev.add_argument("--list", action="store_true",
+                       help="列出各阶段审核状态")
+    fsrev.add_argument("--json", action="store_true",
+                       default=argparse.SUPPRESS)
+    fsrev.set_defaults(func=commands.cmd_feat_stage_review)
+
     # --- review ---
     review = sub.add_parser("review", help="项目代码掌握程度与告警")
     review.add_argument("--unreviewed", action="store_true",

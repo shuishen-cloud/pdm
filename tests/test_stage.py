@@ -259,3 +259,53 @@ def test_previous_stage_bad():
 
     with pytest.raises(StageError):
         previous_stage("nope")
+
+
+# ---------------------------------------------------------------------------
+# 阶段审核门禁（stage-review）
+# ---------------------------------------------------------------------------
+
+
+def test_commit_blocked_when_prev_stage_unreviewed(tmp_path):
+    from pdev.feat import FeatStore
+    from pdev.stage import StageError
+
+    store = FeatStore(tmp_path / "feats")
+    store.add(Feat(slug="a", title="A", api=["f()"], stage="doc"))
+    with pytest.raises(StageError, match="尚未人工审核"):
+        store.commit_stage("a", "test", "t", cwd=str(tmp_path),
+                           dry_run=True, require_stage_review=True)
+
+
+def test_commit_passes_after_prev_reviewed(tmp_path):
+    from pdev.feat import FeatStore
+
+    store = FeatStore(tmp_path / "feats")
+    store.add(Feat(slug="a", title="A", api=["f()"], stage="doc"))
+    store.review_stage("a", "doc", "human:lwy")
+    # 不应抛
+    store.commit_stage("a", "test", "t", cwd=str(tmp_path),
+                       dry_run=True, require_stage_review=True)
+
+
+def test_commit_no_gate_when_disabled(tmp_path):
+    from pdev.feat import FeatStore
+
+    store = FeatStore(tmp_path / "feats")
+    store.add(Feat(slug="a", title="A", api=["f()"], stage="doc"))
+    store.commit_stage("a", "test", "t", cwd=str(tmp_path),
+                       dry_run=True, require_stage_review=False)
+
+
+def test_commit_no_gate_for_legacy_feat(tmp_path):
+    """历史 feat（早于强制起点）免门禁。"""
+    from datetime import datetime
+
+    from pdev.feat import FeatStore
+
+    store = FeatStore(tmp_path / "feats")
+    store.add(Feat(slug="old", title="旧", api=["f()"], stage="doc",
+                   created_at=datetime.fromisoformat(
+                       "2026-01-01T00:00:00+00:00")))
+    store.commit_stage("old", "test", "t", cwd=str(tmp_path),
+                       dry_run=True, require_stage_review=True)

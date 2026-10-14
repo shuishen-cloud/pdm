@@ -800,8 +800,8 @@ def test_stage_unreviewed_gone_after_review(store):
     f = _fielded()
     f.stage = "feat"
     store.add(f)
-    store.review_stage("a", "test", "human:lwy")
-    store.review_stage("a", "feat", "human:lwy")
+    for st in ("doc", "test", "feat"):
+        store.review_stage("a", st, "human:lwy")
     assert "stage-unreviewed" not in codes(check_one(store, "a"))
 
 

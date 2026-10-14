@@ -17,6 +17,7 @@ __all__ = [
     "STAGE_SEQUENCE",
     "STAGE_PREFIX",
     "next_stages",
+    "previous_stage",
     "infer_stage",
     "format_subject",
     "run_commit",
@@ -69,6 +70,12 @@ def next_stages(current: Optional[str]) -> List[str]:
     if i + 1 < len(STAGE_SEQUENCE):
         allowed.append(STAGE_SEQUENCE[i + 1])
     return allowed
+
+
+def previous_stage(stage: str) -> Optional[str]:
+    """``STAGE_SEQUENCE`` 中 stage 的前一个；首阶段返回 ``None``。"""
+    i = _index(stage)
+    return STAGE_SEQUENCE[i - 1] if i > 0 else None
 
 
 def assert_allowed(current: Optional[str], stage: str) -> str:

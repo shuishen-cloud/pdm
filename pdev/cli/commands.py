@@ -46,6 +46,7 @@ __all__ = [
     "cmd_feat_commit",
     "cmd_feat_review",
     "cmd_feat_comment",
+    "cmd_feat_stage_review",
     "cmd_review",
     "render_review_marks",
     "cmd_stats",
@@ -744,6 +745,8 @@ def cmd_feat_commit(ctx: AppContext, args) -> int:
             dry_run=args.dry_run,
             git=git,
             close=args.close,
+            require_stage_review=getattr(
+                getattr(ctx.config, "stage_review", None), "enabled", False),
         )
     except (StageError, FeatError) as e:
         print(f"错误：{e}", file=sys.stderr)
@@ -857,6 +860,78 @@ def _review_snapshot(feat) -> dict:
     total, reviewed, tested = feat.review_counts()
     return {"slug": feat.slug, "items": items, "total": total,
             "reviewed": reviewed, "tested": tested}
+
+
+def cmd_feat_stage_review(ctx: AppContext, args) -> int:
+    """阶段级人工审核：标记 / 撤销 / 列出（stage-review）。"""
+    from ..feat import FeatError
+    from ..stage import STAGE_SEQUENCE
+
+    store = _feat_store(ctx)
+    feat = store.get(args.slug)
+    if feat is None:
+        print(f"错误：找不到 feat：{args.slug}", file=sys.stderr)
+        return 2
+
+    srev_cfg = getattr(ctx.config, "stage_review", None)
+    require_human = getattr(srev_cfg, "require_human", True)
+    stage = getattr(args, "stage", None)
+    as_json = getattr(args, "json", False)
+
+    # 列出
+    if getattr(args, "list", False) or (stage is None
+                                        and not getattr(args, "clear", False)):
+        return _print_stage_reviews(ctx, feat, as_json)
+
+    # 撤销
+    if getattr(args, "clear", False):
+        store.unreview_stage(args.slug, stage)
+        print(f"{args.slug}  {stage}  已撤销审核")
+        return 0
+
+    # 标记已审
+    by = getattr(args, "by", None) or ctx.config.default_author
+    if require_human and not str(by).startswith("human:"):
+        print(f"错误：审核人必须是 human:<名字>，收到 {by!r}"
+              "（阶段审核须由人完成）", file=sys.stderr)
+        return 2
+    try:
+        store.review_stage(args.slug, stage, by,
+                           note=getattr(args, "note", "") or "")
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+    print(f"{args.slug}  {stage}  已人工审核（{by}）")
+    return 0
+
+
+def _print_stage_reviews(ctx: AppContext, feat, as_json: bool) -> int:
+    """列出各阶段审核状态。"""
+    from ..stage import STAGE_SEQUENCE
+
+    rows = []
+    for s in STAGE_SEQUENCE:
+        rec = feat.stage_reviews.get(s)
+        rows.append({
+            "stage": s,
+            "reviewed": rec is not None,
+            "by": rec.by if rec else "",
+            "at": rec.at.isoformat() if rec and rec.at else "",
+            "note": rec.note if rec else "",
+        })
+    if as_json or ctx.config.json_output:
+        print(json.dumps({"slug": feat.slug, "stages": rows},
+                         ensure_ascii=False, indent=2))
+        return 0
+    for r in rows:
+        if r["reviewed"]:
+            when = r["at"].replace("T", " ")[:19]
+            print(f"  ✓ {r['stage']:<6} {r['by']}  {when}")
+            if r["note"]:
+                print(f"           {r['note']}")
+        else:
+            print(f"  · {r['stage']:<6} （未审）")
+    return 0
 
 
 def cmd_feat_comment(ctx: AppContext, args) -> int:

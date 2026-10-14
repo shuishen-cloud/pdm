@@ -29,6 +29,7 @@ __all__ = [
     "FeatError",
     "FeatStore",
     "ReviewItem",
+    "StageReview",
     "valid_slug",
     "VALID_SLUG_CHARS",
 ]
@@ -118,6 +119,15 @@ class ReviewItem:
         return not (self.reviewed or self.tested)
 
 
+@dataclass
+class StageReview:
+    """一个**阶段**的人工审核记录（见 doc/feat/stage-review.md）。"""
+
+    by: str = ""
+    at: Optional[datetime] = None
+    note: str = ""
+
+
 # 可审项的字段顺序（review_items 据此展开）
 _REVIEW_FIELDS = ("api", "logs", "fallbacks",
                   "data_model", "samples", "changes")
@@ -174,6 +184,9 @@ class Feat:
 
     # 条目级人工评论：{key: 文本}，key 同上（见 doc/feat/feat-comment.md）
     comments: dict = field(default_factory=dict)
+
+    # 阶段级人工审核：{stage: StageReview}（见 doc/feat/stage-review.md）
+    stage_reviews: dict = field(default_factory=dict)
 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -342,6 +355,46 @@ class Feat:
                 out.append((key, label, text))
         return out
 
+    # --- 阶段级审核（stage-review）---
+
+    def review_stage(self, stage: str, by: str,
+                     note: str = "") -> StageReview:
+        """标记某阶段已人工审核；非法阶段名抛 ``FeatError``。"""
+        from .stage import STAGE_SEQUENCE
+
+        stage = (stage or "").strip().lower()
+        if stage not in STAGE_SEQUENCE:
+            raise FeatError(
+                f"非法阶段：{stage!r}（可选 {'/'.join(STAGE_SEQUENCE)}）"
+            )
+        rec = StageReview(by=by, at=_now(), note=note)
+        self.stage_reviews[stage] = rec
+        self.touch()
+        return rec
+
+    def unreview_stage(self, stage: str) -> None:
+        """撤销某阶段的审核（未审过则静默无变化）。"""
+        self.stage_reviews.pop((stage or "").strip().lower(), None)
+        self.touch()
+
+    def stage_reviewed(self, stage: str) -> bool:
+        return (stage or "").strip().lower() in self.stage_reviews
+
+    def pending_stage_review(self, target: str) -> Optional[str]:
+        """进入 ``target`` 前还差哪个阶段未审；无需审时返回 ``None``。
+
+        只查**上一阶段**（不查全部前序），避免历史 feat 被全拦。
+        """
+        from .stage import previous_stage, STAGE_SEQUENCE
+
+        target = (target or "").strip().lower()
+        if target not in STAGE_SEQUENCE:
+            return None
+        prev = previous_stage(target)
+        if prev is None:
+            return None
+        return None if self.stage_reviewed(prev) else prev
+
 
 class FeatStore:
     """Feat 的读写。
@@ -444,16 +497,18 @@ class FeatStore:
     def commit_stage(self, slug: str, stage: str, message: str,
                      *, cwd: str, files=None, body: str = "",
                      no_verify: bool = False, dry_run: bool = False,
-                     git=None, close: bool = False) -> tuple:
-        """阶段提交：校验顺序 → git commit → link → 推进游标。
+                     git=None, close: bool = False,
+                     require_stage_review: bool = False) -> tuple:
+        """阶段提交：校验顺序 → 门禁 → git commit → link → 推进游标。
 
         :param git: 用于推断当前游标的 :class:`pdev.git.GitRepo`。
         :param close: 为真且阶段为 ``close`` 时，同时把状态置为 closed。
+        :param require_stage_review: 为真时要求上一阶段已人工审核（门禁）。
         :returns: ``(feat, hash, old_stage, new_stage)``。
-        :raises StageError: 顺序非法、提交失败。
+        :raises StageError: 顺序非法、门禁未过、提交失败。
         """
         from .stage import assert_allowed, format_subject, infer_stage, \
-            run_commit
+            run_commit, StageError
 
         feat = self._require(slug)
 
@@ -463,6 +518,17 @@ class FeatStore:
             current = infer_stage(feat.commits, git)
 
         assert_allowed(current, stage)
+
+        # 阶段级人工审核门禁（见 doc/feat/stage-review.md）
+        if require_stage_review and _stage_review_enforced(feat):
+            pending = feat.pending_stage_review(stage)
+            if pending:
+                raise StageError(
+                    f"上一阶段 [{pending}] 尚未人工审核；"
+                    f"先跑：pdm feat stage-review {slug} {pending} "
+                    f"--by <human:名字>"
+                )
+
         subject = format_subject(stage, slug, message)
 
         commit_hash = run_commit(
@@ -516,6 +582,21 @@ class FeatStore:
         """写/清某条目的评论并落盘。"""
         feat = self._require(slug)
         feat.set_comment(key, text)
+        self.update(feat)
+        return feat
+
+    def review_stage(self, slug: str, stage: str, by: str,
+                     note: str = "") -> Feat:
+        """标记某阶段已人工审核并落盘。"""
+        feat = self._require(slug)
+        feat.review_stage(stage, by, note=note)
+        self.update(feat)
+        return feat
+
+    def unreview_stage(self, slug: str, stage: str) -> Feat:
+        """撤销某阶段的审核并落盘。"""
+        feat = self._require(slug)
+        feat.unreview_stage(stage)
         self.update(feat)
         return feat
 
@@ -585,6 +666,31 @@ class FeatStore:
 
 
 # ---------------------------------------------------------------------------
+# 五项必填字段 / 阶段审核的强制起点（共用）
+# ---------------------------------------------------------------------------
+
+# 此时间之后新建的 feat 才受「必填字段」「阶段审核」约束（历史豁免）。
+# 取 feat-fields 落地之后的那一刻。
+ENFORCE_SINCE = "2026-10-14T11:16:00+00:00"
+
+
+def _enforced_since(created_at) -> bool:
+    """created_at 是否在强制起点之后（None 视为不强制）。"""
+    if created_at is None:
+        return False
+    try:
+        since = datetime.fromisoformat(ENFORCE_SINCE)
+    except ValueError:
+        return False
+    return created_at >= since
+
+
+def _stage_review_enforced(feat: "Feat") -> bool:
+    """该 feat 是否受阶段审核门禁约束（历史豁免）。"""
+    return _enforced_since(getattr(feat, "created_at", None))
+
+
+# ---------------------------------------------------------------------------
 # 序列化
 # ---------------------------------------------------------------------------
 
@@ -610,6 +716,9 @@ def _to_dict(f: Feat) -> dict:
         "stage": f.stage,
         "reviews": {k: _review_to_dict(v) for k, v in f.reviews.items()},
         "comments": dict(f.comments),
+        "stage_reviews": {
+            k: _stage_review_to_dict(v) for k, v in f.stage_reviews.items()
+        },
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
     }
@@ -625,6 +734,26 @@ def _review_to_dict(r: ReviewItem) -> dict:
         "test_status": r.test_status,
         "tested_at": r.tested_at.isoformat() if r.tested_at else None,
     }
+
+
+def _stage_review_to_dict(r: StageReview) -> dict:
+    return {
+        "by": r.by,
+        "at": r.at.isoformat() if r.at else None,
+        "note": r.note,
+    }
+
+
+def _stage_review_from_dict(d: dict) -> StageReview:
+    at = None
+    raw = d.get("at")
+    if raw:
+        try:
+            at = datetime.fromisoformat(raw)
+        except (ValueError, TypeError):
+            at = None
+    return StageReview(by=d.get("by", "") or "", at=at,
+                       note=d.get("note", "") or "")
 
 
 def _review_from_dict(d: dict) -> ReviewItem:
@@ -678,6 +807,13 @@ def _from_dict(d: dict) -> Feat:
             if isinstance(val, str):
                 comments[key] = val
 
+    raw_stage = d.get("stage_reviews")
+    stage_reviews = {}
+    if isinstance(raw_stage, dict):
+        for key, val in raw_stage.items():
+            if isinstance(val, dict):
+                stage_reviews[key] = _stage_review_from_dict(val)
+
     return Feat(
         slug=d["slug"],
         title=d.get("title", ""),
@@ -698,6 +834,7 @@ def _from_dict(d: dict) -> Feat:
         stage=d.get("stage") or None,
         reviews=reviews,
         comments=comments,
+        stage_reviews=stage_reviews,
         created_at=dt("created_at"),
         updated_at=dt("updated_at"),
     )

@@ -51,6 +51,7 @@ CODES = (
     "missing-fields",
     "vague-change",
     "empty-sample",
+    "stage-unreviewed",
 )
 
 # 敷衍样例的占位词（光秃秃才算；带说明如「无：纯计算」不算）
@@ -245,6 +246,33 @@ def _check_feat(feat: Feat, git, note_store=None,
     # 五项设计字段（见 doc/feat/feat-fields-check.md）
     out.extend(_check_fields(feat))
 
+    # 阶段级审核（见 doc/feat/stage-review.md）
+    out.extend(_check_stage_reviews(feat))
+
+    return out
+
+
+def _check_stage_reviews(feat: Feat) -> List[CheckIssue]:
+    """阶段审核规则：``stage-unreviewed``（仅对新 feat）。"""
+    out: List[CheckIssue] = []
+    if not _fields_enforced(feat):
+        return out
+
+    from .stage import STAGE_SEQUENCE
+
+    done = feat.stage
+    if done is None:
+        return out
+    # 已走过的阶段里，哪些没审
+    idx = STAGE_SEQUENCE.index(done) if done in STAGE_SEQUENCE else -1
+    missing = [s for s in STAGE_SEQUENCE[:idx + 1]
+               if not feat.stage_reviewed(s)]
+    if missing:
+        out.append(CheckIssue(
+            feat.slug, "stage-unreviewed", "warning",
+            f"阶段未人工审核：{'、'.join(missing)}"
+            f"（pdm feat stage-review {feat.slug} <阶段> --by human:名字）",
+        ))
     return out
 
 
