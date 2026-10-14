@@ -116,6 +116,8 @@ pdm feat review review-cli --item api:0 --unreview
 pdm feat review review-cli --all --review           # 整条 feat 一次勾完
 pdm feat review review-cli --item api --review      # 只勾 api 一片（前缀匹配）
 pdm feat comment review-cli --on api:0 -m "接口保持最小，不做泛化"  # 条目级评论
+pdm feat stage-review review-cli doc --by human:lwy                     # 阶段级人工审核
+pdm feat stage-review review-cli --list                                 # 看各阶段审核状态
 pdm feat comment review-cli                      # 列出已写评论
 pdm review                                       # 全局掌握程度 + 告警（有告警退出码 1）
 pdm review --unreviewed                          # 列出全仓未人工审查的项
@@ -152,6 +154,7 @@ pdm review --json                                # 机器可读
 | 4.7 | `review-batch` | 批量勾选（`--all` / `--item` 前缀） | ✅ 已完成 |
 | 4.8 | `feat-fields` | 五项设计字段（设计思路/实现方式/数据结构/样例/既有改动） | ✅ 已完成 |
 | 4.9 | `feat-fields-check` | 五项字段校验 + samples 语义 | ✅ 已完成 |
+| 5.0 | `stage-review` | 阶段级人工审核门禁 | ✅ 已完成 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
 | 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
 

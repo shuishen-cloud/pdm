@@ -116,10 +116,18 @@ pdm feat stage-review a doc --clear               # 撤销
 
 ### 展示
 
-`pdm feat show` 头部「阶段」行，在已审阶段后加 `✓`：
+`pdm feat show` 新增一行**阶段审核摘要**：
 
 ```
-阶段  ●① 设计✓ ●② 测试 ○③ 实现 ○④ 修复 ○⑤ 收尾
+阶段审核  doc✓ test· feat· fix· close·   （pdm feat stage-review <slug> <阶段> --by human:名字）
+审查  审查 2/7  测试 0/7
+```
+
+`pdm feat stage-review <slug> --list` 列出每阶段详情：
+
+```
+  ✓ doc    human:lwy  2026-10-14 11:49:48
+  · test   （未审）
 ```
 
 ### 门禁接入点
@@ -150,4 +158,20 @@ if enabled and _fields_enforced(feat):
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`pdev/feat.py` 新增 `StageReview` / `Feat.stage_reviews` /
+  `review_stage` / `unreview_stage` / `stage_reviewed` / `pending_stage_review`
+  与序列化，`commit_stage` 加 `require_stage_review` 门禁；
+  `stage.previous_stage`；`config.StageReviewConfig`；`check` 的
+  `stage-unreviewed`；`pdm feat stage-review` 命令；`feat show` 阶段审核行。
+- **提交**：`doc` 5dafa71、`test` e5a4070、`feat` e9942fa、`fix` 49c9ec8。
+- **实测验证**（临时仓库开 `enabled=true`）：
+  - 未审 `doc` 就 `commit test` → 被拒（退出码 2）；
+  - `stage-review doc --by human:lwy` 后放行；
+  - `--by ai:claude` → 被拒（须 human）；
+  - `--list` 正确显示各阶段状态。
+- **发现的问题**：
+  1. 门禁分支用 `StageError` 但忘了 import（dry_run 路径不触发，真跑才暴露）。
+  2. 设计里写「`feat show` 头部阶段行加 ✓」，但 CLI 的 show **没有阶段行**
+     （那是 TUI 的 `stage_progress`），已改为新增一行独立摘要。
+- **结论**：设计成立。默认不阻断（`enabled=false`），`check` 对已走过阶段
+  报 `stage-unreviewed`；历史 feat（早于 `2026-10-14 11:16`）全部豁免。
