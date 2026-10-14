@@ -57,8 +57,8 @@ CODES = (
 # 敷衍样例的占位词（光秃秃才算；带说明如「无：纯计算」不算）
 _SAMPLE_PLACEHOLDERS = {"无", "none", "n/a", "na", "tbd", "-", "待定"}
 
-# 开发阶段 → commit 信息前缀（见 doc/feat/stage-prefix.md）
-STAGES = ("doc", "test", "feat", "fix")
+# 开发阶段 → commit 信息前缀（见 doc/feat/stage-prefix.md、script-stage.md）
+STAGES = ("doc", "test", "script", "feat", "fix")
 
 # 非流程性但仍合法的前缀：不告警（归为 other）
 NEUTRAL_PREFIXES = ("refactor", "init", "chore", "style", "perf",
@@ -258,15 +258,15 @@ def _check_stage_reviews(feat: Feat) -> List[CheckIssue]:
     if not _fields_enforced(feat):
         return out
 
-    from .stage import STAGE_SEQUENCE
+    from .stage import STAGE_SEQUENCE, OPTIONAL_STAGES
 
     done = feat.stage
     if done is None:
         return out
-    # 已走过的阶段里，哪些没审
+    # 已走过的阶段里，哪些没审（可选阶段不参与门禁）
     idx = STAGE_SEQUENCE.index(done) if done in STAGE_SEQUENCE else -1
     missing = [s for s in STAGE_SEQUENCE[:idx + 1]
-               if not feat.stage_reviewed(s)]
+               if s not in OPTIONAL_STAGES and not feat.stage_reviewed(s)]
     if missing:
         out.append(CheckIssue(
             feat.slug, "stage-unreviewed", "warning",
@@ -438,7 +438,7 @@ def check_stages(feat: Feat, git, exempt: bool = False) -> List[CheckIssue]:
 
 
 # 阶段在流水线中的序号；doc 既可首也可尾，按出现位置判定
-_PIPELINE = ("doc", "test", "feat", "fix")
+_PIPELINE = ("doc", "test", "script", "feat", "fix")
 
 
 def check_stage_order(feat: Feat, git) -> List[CheckIssue]:

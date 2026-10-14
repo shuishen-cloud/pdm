@@ -16,6 +16,7 @@ __all__ = [
     "StageError",
     "STAGE_SEQUENCE",
     "STAGE_PREFIX",
+    "OPTIONAL_STAGES",
     "next_stages",
     "previous_stage",
     "infer_stage",
@@ -24,12 +25,17 @@ __all__ = [
 ]
 
 # 单向流水线：收尾 doc 用 "close" 区分于首阶段 doc
-STAGE_SEQUENCE = ("doc", "test", "feat", "fix", "close")
+# script 为**可选**阶段：test 可直接跳到 feat（见 doc/feat/script-stage.md）
+STAGE_SEQUENCE = ("doc", "test", "script", "feat", "fix", "close")
+
+# 可跳过的阶段：进入前一步时，允许多放行一跳
+OPTIONAL_STAGES = frozenset({"script"})
 
 # 阶段 → commit 信息前缀
 STAGE_PREFIX = {
     "doc": "doc",
     "test": "test",
+    "script": "script",
     "feat": "feat",
     "fix": "fix",
     "close": "doc",       # 收尾 doc 仍是 doc( 前缀
@@ -39,6 +45,7 @@ STAGE_PREFIX = {
 _PREFIX_TO_STAGE = {
     "doc": "doc",
     "test": "test",
+    "script": "script",
     "feat": "feat",
     "fix": "fix",
 }
@@ -61,14 +68,22 @@ def next_stages(current: Optional[str]) -> List[str]:
     """当前阶段下允许进入的下一阶段（含停留在当前）。
 
     :param current: 当前游标阶段；``None`` 表示尚未开始。
+
+    可选阶段（``OPTIONAL_STAGES``）会被**跨过**：例如 ``test`` 之后
+    既允许 ``script``，也允许直接 ``feat``。
     """
     if current is None:
         return ["doc"]
     i = _index(current)
-    # 允许停在原地（重复提交），以及前进一阶
+    # 允许停在原地（重复提交），以及前进
     allowed = [current]
-    if i + 1 < len(STAGE_SEQUENCE):
-        allowed.append(STAGE_SEQUENCE[i + 1])
+    j = i + 1
+    while j < len(STAGE_SEQUENCE):
+        nxt = STAGE_SEQUENCE[j]
+        allowed.append(nxt)
+        if nxt not in OPTIONAL_STAGES:
+            break                      # 遇到必经阶段就停（它本身已包含）
+        j += 1
     return allowed
 
 
@@ -91,7 +106,7 @@ def assert_allowed(current: Optional[str], stage: str) -> str:
         raise StageError(
             f"阶段顺序不允许：当前 [{cur}]，只能进入 "
             f"[{'/'.join(allowed)}]，但你请求 [{stage}]。"
-            f"流程是 doc→test→feat→fix→close，不能回退。"
+            f"流程是 {'→'.join(STAGE_SEQUENCE)}，不能回退。"
         )
     return stage
 
@@ -126,7 +141,7 @@ def _subject_prefix(subject: str) -> Optional[str]:
     if not subject:
         return None
     s = subject.strip().lower()
-    for prefix in ("doc", "test", "feat", "fix"):
+    for prefix in sorted(set(STAGE_PREFIX.values())):
         if s.startswith(f"{prefix}(") or s.startswith(f"{prefix}:"):
             return prefix
     return None

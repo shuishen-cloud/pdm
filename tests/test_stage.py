@@ -25,7 +25,7 @@ from pdev.stage import (
 
 
 def test_sequence_shape():
-    assert STAGE_SEQUENCE == ("doc", "test", "feat", "fix", "close")
+    assert STAGE_SEQUENCE == ("doc", "test", "script", "feat", "fix", "close")
 
 
 def test_next_stages_unstarted():
@@ -249,7 +249,8 @@ def test_previous_stage():
 
     assert previous_stage("doc") is None
     assert previous_stage("test") == "doc"
-    assert previous_stage("feat") == "test"
+    assert previous_stage("script") == "test"
+    assert previous_stage("feat") == "script"
     assert previous_stage("fix") == "feat"
     assert previous_stage("close") == "fix"
 

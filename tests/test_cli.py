@@ -1887,8 +1887,10 @@ def test_commit_script_stage_prefix(capsys, tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     subprocess.run(["git", "init", "-q"], cwd=str(tmp_path))
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
-                    "commit", "--allow-empty", "-qm", "init"], cwd=str(tmp_path))
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=str(tmp_path))
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path))
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "init"],
+                   cwd=str(tmp_path))
     (tmp_path / "doc").mkdir()
     (tmp_path / "doc" / "f.md").write_text("# d", encoding="utf-8")
 
@@ -1916,8 +1918,10 @@ def test_commit_test_can_skip_script(capsys, tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     subprocess.run(["git", "init", "-q"], cwd=str(tmp_path))
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
-                    "commit", "--allow-empty", "-qm", "init"], cwd=str(tmp_path))
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=str(tmp_path))
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path))
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "init"],
+                   cwd=str(tmp_path))
     (tmp_path / "doc").mkdir()
     (tmp_path / "doc" / "f.md").write_text("# d", encoding="utf-8")
     main(["feat", "new", "a", "-t", "A", "--doc", "f.md"])

@@ -383,17 +383,19 @@ class Feat:
     def pending_stage_review(self, target: str) -> Optional[str]:
         """进入 ``target`` 前还差哪个阶段未审；无需审时返回 ``None``。
 
-        只查**上一阶段**（不查全部前序），避免历史 feat 被全拦。
+        只查**上一个必经阶段**（跳过可选阶段），避免可选阶段把门禁卡死。
         """
-        from .stage import previous_stage, STAGE_SEQUENCE
+        from .stage import STAGE_SEQUENCE, OPTIONAL_STAGES
 
         target = (target or "").strip().lower()
         if target not in STAGE_SEQUENCE:
             return None
-        prev = previous_stage(target)
-        if prev is None:
-            return None
-        return None if self.stage_reviewed(prev) else prev
+        i = STAGE_SEQUENCE.index(target)
+        for s in reversed(STAGE_SEQUENCE[:i]):
+            if s in OPTIONAL_STAGES:
+                continue
+            return None if self.stage_reviewed(s) else s
+        return None
 
 
 class FeatStore:

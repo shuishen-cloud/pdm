@@ -11,6 +11,7 @@ import argparse
 from typing import Optional, Sequence
 
 from ..common import Actor
+from ..stage import STAGE_SEQUENCE
 from ..feat import FeatKind, FeatStatus
 from ..issue import Priority
 from ..note import (
@@ -307,7 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
     fcommit = feat_sub.add_parser(
         "commit", help="阶段提交（由 pdm 创建 commit，强制阶段顺序）")
     fcommit.add_argument("stage",
-                        choices=["doc", "test", "feat", "fix", "close"],
+                        choices=list(STAGE_SEQUENCE),
                         help="阶段；close 为收尾 doc")
     fcommit.add_argument("slug")
     fcommit.add_argument("-m", "--message", required=True,
@@ -382,7 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
         "stage-review", help="阶段级人工审核（进入下一阶段前需上一阶段已审）")
     fsrev.add_argument("slug")
     fsrev.add_argument("stage", nargs="?",
-                       choices=["doc", "test", "feat", "fix", "close"],
+                       choices=list(STAGE_SEQUENCE),
                        help="要标记已审的阶段")
     fsrev.add_argument("--by", metavar="WHO",
                        help="审核人（默认取配置 default_author）")
