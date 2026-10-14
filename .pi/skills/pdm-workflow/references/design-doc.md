@@ -6,7 +6,8 @@
 
 ## 为什么"doc 先行"
 
-阶段流水线 `doc → test → feat → fix → close` 的第一条就是 doc。先把设计
+阶段流水线 `doc → test → script → feat → fix → close` 的第一条就是 doc
+（`script` 可选）。先把设计
 规格定死，写测试和实现才有的放矢；`pdm feat check` 会检查 `empty-doc`。
 
 ## 模板
@@ -27,7 +28,7 @@
 
 明确的规则。若是流程/状态，画出流水线：
 
-    doc → test → feat → fix → close
+    doc → test → script → feat → fix → close
 
 若是数据/接口，给出字段表或类型。
 

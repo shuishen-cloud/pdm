@@ -15,6 +15,7 @@ SKILL_DIR = ROOT / ".pi" / "skills" / "pdm-workflow"
 SKILL = SKILL_DIR / "SKILL.md"
 COMMANDS = SKILL_DIR / "references" / "commands.md"
 DATA_MODEL = SKILL_DIR / "references" / "data-model.md"
+DESIGN_DOC = SKILL_DIR / "references" / "design-doc.md"
 
 
 def _skill_text() -> str:
@@ -76,6 +77,14 @@ def test_skill_stage_sequence_matches_code():
     seq = "→".join(STAGE_SEQUENCE)
     assert seq in _skill_text().replace(" ", ""), f"SKILL.md 缺流水线 {seq}"
     assert seq in _commands_text().replace(" ", ""), f"commands.md 缺流水线 {seq}"
+
+
+def test_no_reference_doc_has_stale_pipeline():
+    """任何参考文件都不得出现旧（缺 script）的流水线字符串。"""
+    stale = "doc → test → feat → fix → close"
+    for ref in (COMMANDS, DATA_MODEL, DESIGN_DOC):
+        text = ref.read_text(encoding="utf-8")
+        assert stale not in text, f"{ref.name} 残留旧流水线：{stale}"
 
 
 def test_skill_documents_script_optional():
