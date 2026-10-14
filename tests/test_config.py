@@ -44,7 +44,7 @@ def test_defaults(tmp_path):
     assert cfg.git.auto_commit is False
     assert cfg.note.default_status is NoteStatus.NOTED
     assert cfg.issue.store == "issues"
-    assert cfg.doc.dir == ".pdm/docs"
+    assert cfg.doc.dir == "doc"
     assert cfg.query.default_limit is None
 
 
@@ -379,14 +379,21 @@ def test_resolve_doc_path_legacy_passthrough(legacy):
 
 
 def test_resolve_doc_path_empty_dir_falls_back():
-    """doc.dir 为空 → 视作 .pdm/docs。"""
+    """doc.dir 为空 → 视作 doc。"""
     from pdev.config import resolve_doc_path
 
-    assert resolve_doc_path("", "feat/x.md") == ".pdm/docs/feat/x.md"
+    assert resolve_doc_path("", "feat/x.md") == "doc/feat/x.md"
+
+
+def test_resolve_doc_path_doc_prefix_passthrough():
+    """feat.doc 已以 doc/ 开头 → 原样返回。"""
+    from pdev.config import resolve_doc_path
+
+    assert resolve_doc_path("doc", "doc/feat/x.md") == "doc/feat/x.md"
 
 
 # ---------------------------------------------------------------------------
-# FeatViewConfig（见 .pdm/docs/feat/feat-inline-design.md）
+# FeatViewConfig（见 doc/feat/feat-inline-design.md）
 # ---------------------------------------------------------------------------
 
 
@@ -424,7 +431,7 @@ def test_feat_view_from_env(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# save_user_config（见 .pdm/docs/feat/ui-prefs-user-config.md）
+# save_user_config（见 doc/feat/ui-prefs-user-config.md）
 # ---------------------------------------------------------------------------
 
 

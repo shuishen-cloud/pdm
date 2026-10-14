@@ -496,7 +496,7 @@ class FeatScreen(ModalScreen):
     ]
 
     def __init__(self, store, git=None, note_store=None,
-                 doc_dir: str = ".pdm/docs", view=None) -> None:
+                 doc_dir: str = "doc", view=None) -> None:
         super().__init__()
         self.feat_store = store
         self.git = git
@@ -776,11 +776,11 @@ def group_notes_by_kind(notes) -> list:
 
 
 def _feat_detail(feat, issues, git=None, note_store=None,
-                 doc_dir: str = ".pdm/docs", view="spec", opts=None) -> Text:
+                 doc_dir: str = "doc", view="spec", opts=None) -> Text:
     """右侧详情：固定头部 + 按视图取内容。
 
     ``view`` ∈ {spec, doc, notes, verify}，一次只显示一个（互斥）。
-    见 .pdm/docs/feat/feat-view-switch.md。
+    见 doc/feat/feat-view-switch.md。
     """
     opts = opts or {}
     t = _feat_header(feat, git)

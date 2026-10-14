@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TUI 信号退出时恢复终端的测试（tui-signal-restore）。
 
-见 ``.pdm/docs/feat/tui-signal-restore.md``。
+见 ``doc/feat/tui-signal-restore.md``。
 """
 
 from __future__ import annotations

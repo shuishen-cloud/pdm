@@ -1625,7 +1625,7 @@ async def test_feat_screen_covers_main_footer(store, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Feat 详情内联设计（见 .pdm/docs/feat/feat-inline-design.md）
+# Feat 详情内联设计（见 doc/feat/feat-inline-design.md）
 # ---------------------------------------------------------------------------
 
 
@@ -1777,7 +1777,7 @@ async def test_feat_screen_header_always_visible(store, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# NoteItem 按宽度截断（见 .pdm/docs/feat/note-item-width.md）
+# NoteItem 按宽度截断（见 doc/feat/note-item-width.md）
 # ---------------------------------------------------------------------------
 
 

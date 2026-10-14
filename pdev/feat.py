@@ -98,7 +98,7 @@ def valid_slug(slug: str) -> bool:
 
 @dataclass
 class ReviewItem:
-    """一个可审项的**双勾选位**记录（见 .pdm/docs/feat/review-model.md）。
+    """一个可审项的**双勾选位**记录（见 doc/feat/review-model.md）。
 
     ``reviewed`` 与 ``tested`` 是**独立**布尔位，互不蕴含：可以只审不测，
     也可以只测未审。只有被操作过的 key 才落盘。

@@ -81,7 +81,7 @@ CommitNote(
 
 ```bash
 pdm feat new demo --title "演示" --doc feat/demo.md
-pdm feat commit doc   demo -m "写设计"      # 自动生成 doc(demo): 写设计
+pdm feat commit doc   demo -m "写设计"      # 自动生成 doc(demo): 写设计（提交 doc/feat/demo.md）
 pdm feat commit test  demo -m "写测试"
 pdm feat commit feat  demo -m "实现" --files pdev/x.py
 pdm feat commit fix   demo -m "修 bug"
@@ -136,9 +136,9 @@ pdev/
 ├── cli/             CLI 层
 └── tui/             TUI 层（与 cli 平级，均依赖内核）
 
-tests/               289 个测试
+tests/               测试
 scripts/seed_demo.py 模拟数据生成
-doc/                 文档
+doc/                 项目文档 + feat 设计文档（doc/feat/<slug>.md，可跟踪）
 .pi/skills/           AI 代理技能（pdm-workflow）
 ```
 

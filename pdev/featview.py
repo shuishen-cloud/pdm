@@ -7,7 +7,7 @@ CLI 与 TUI 共享的纯函数，**不依赖 textual**，保证 CLI 零依赖。
 - :func:`notes_for_feat` 聚合某 feat 关联 commit 上的笔记
 - :func:`group_notes_by_kind` 笔记按 kind 分组
 
-设计见 ``.pdm/docs/feat/feat-cli-parity.md``。
+设计见 ``doc/feat/feat-cli-parity.md``。
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ __all__ = [
     "DEFAULT_DOC_DIR",
 ]
 
-DEFAULT_DOC_DIR = ".pdm/docs"
+DEFAULT_DOC_DIR = "doc"
 
 
 def read_doc_body(doc_dir: str, feat_doc: str, max_lines: int = 0) -> str:

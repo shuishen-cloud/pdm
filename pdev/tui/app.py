@@ -403,10 +403,10 @@ class PDMApp(App):
         cfg = getattr(self.config, "feat", None)
         if cfg is not None:
             root = getattr(cfg, "store", ".pdm/feats") or ".pdm/feats"
-        doc_dir = ".pdm/docs"
+        doc_dir = "doc"
         dcfg = getattr(self.config, "doc", None)
         if dcfg is not None:
-            doc_dir = getattr(dcfg, "dir", ".pdm/docs") or ".pdm/docs"
+            doc_dir = getattr(dcfg, "dir", "doc") or "doc"
         path = Path(root)
         if not path.is_absolute():
             path = Path(self.cwd) / path

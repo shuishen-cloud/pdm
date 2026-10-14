@@ -18,7 +18,7 @@
     "store": "issues"
   },
   "doc": {
-    "dir": ".pdm/docs"
+    "dir": "doc"
   },
   "feat": {
     "store": ".pdm/feats"

@@ -29,7 +29,7 @@ hash 记笔记、link 到 feat。
 doc → test → feat → fix → close
 ```
 
-- **doc**：先写设计规格（`.pdm/docs/feat/<slug>.md`），再动代码。
+- **doc**：先写设计规格（`doc/feat/<slug>.md`），再动代码。
 - **test**：按设计写测试。
 - **feat**：实现。
 - **fix**：Code Review / 修 Bug / 回填发现的异常。
@@ -55,10 +55,9 @@ doc → test → feat → fix → close
     --fallback "异常兜底策略"
 
 # 2. doc 阶段：先写设计文档正文，再提交
-#    写 .pdm/docs/feat/<SLUG>.md（见 references/design-doc.md）
-printf '...' > .pdm/docs/feat/<SLUG>.md   # 实际用编辑工具写
+#    写 doc/feat/<SLUG>.md（见 references/design-doc.md）
 .venv/bin/pdm feat commit doc <SLUG> -m "设计规格" \
-    --files .pdm/docs/feat/<SLUG>.md
+    --files doc/feat/<SLUG>.md
 
 # 3. test 阶段：写测试并提交
 .venv/bin/pdm feat commit test <SLUG> -m "按设计写测试" \
@@ -72,18 +71,19 @@ printf '...' > .pdm/docs/feat/<SLUG>.md   # 实际用编辑工具写
 .venv/bin/pdm feat commit fix <SLUG> -m "修复 <问题>" \
     --files pdev/<x>.py
 
-# 6. close 阶段：收尾文档，并置 closed
+# 6. close 阶段：在**本 feat 的设计文档**里补写收尾小节，并提交
+#    不是改 README——收尾闭环回到 doc/feat/<SLUG>.md 的「实现与校验结果」
 .venv/bin/pdm feat commit close <SLUG> -m "收尾文档" \
-    --files README.md --close
+    --files doc/feat/<SLUG>.md --close
 
 # 7. 自校验
 .venv/bin/pdm feat check <SLUG>
 ```
 
 **注意**：`--files` 每个路径写一次一个 `--files`（是 `action="append"`）；
-新文件会被自动 `git add`。`.pdm/` 默认被 gitignore，所以设计文档正文不会
-进入 commit——若 doc 阶段没有可提交的代码文件，可用 README 等有实际内容
-的文件，或先确认项目是否跟踪 `.pdm/`。
+新文件会被自动 `git add`。设计文档存于 `doc/feat/`（**可跟踪**，随代码走），
+所以各阶段都能直接提交设计正文；收尾文档也写回同一份文档（`doc.dir`
+控制根目录，默认 `doc`）。
 
 ## 记录笔记（贯穿各阶段）
 

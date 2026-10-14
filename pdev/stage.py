@@ -4,7 +4,7 @@
 把「doc → test → feat → fix → doc」的顺序从**事后审计**升级为
 **提交前强制**：commit 由 pdm 创建，顺序不对直接拒绝，不产生提交。
 
-设计见 ``.pdm/docs/feat/stage-commit.md``。
+设计见 ``doc/feat/stage-commit.md``。
 """
 
 from __future__ import annotations

@@ -55,23 +55,23 @@ class ConfigError(ValueError):
 
 
 # 旧格式 feat.doc 可能已含的根前缀：兼容读取时不再拼接
-_DOC_ROOT_PREFIXES = ("docs/", ".pdm/docs/")
+_DOC_ROOT_PREFIXES = ("doc/", "docs/", ".pdm/docs/")
 
 
 def resolve_doc_path(doc_dir: str, feat_doc: str) -> str:
     """把 ``feat.doc``（相对 ``doc.dir``）解析成项目内实际路径。
 
     - ``feat_doc`` 为空 → 返回 ``""``
-    - ``doc_dir`` 为空 → 回退到 ``.pdm/docs``
-    - ``feat_doc`` 已是旧格式（以 ``docs/`` 或 ``.pdm/docs/`` 开头）
-      → 原样返回，不再拼接（避免 ``.pdm/docs/docs/...``）
+    - ``doc_dir`` 为空 → 回退到 ``doc``
+    - ``feat_doc`` 已是旧格式（以 ``doc/`` / ``docs/`` / ``.pdm/docs/``
+      开头）→ 原样返回，不再拼接（避免 ``doc/doc/...``）
     - 否则 → 拼成 ``<doc_dir>/<feat_doc>``
     """
     if not feat_doc:
         return ""
     if feat_doc.startswith(_DOC_ROOT_PREFIXES):
         return feat_doc
-    root = doc_dir or ".pdm/docs"
+    root = doc_dir or "doc"
     return f"{root.rstrip('/')}/{feat_doc}"
 
 
@@ -114,16 +114,16 @@ class IssueConfig:
 class DocConfig:
     """文档相关。
 
-    ``dir`` 是 feat 设计文档的根目录。默认为 ``.pdm/docs``（不跟踪）；
-    用户可改到可跟踪目录（如 ``docs``）使文档随代码分发。
+    ``dir`` 是 feat 设计文档的根目录。默认为 ``doc``（可跟踪，随代码
+    分发）；用户可改回 ``.pdm/docs`` 等不跟踪目录。
     """
 
-    dir: str = ".pdm/docs"
+    dir: str = "doc"
 
 
 @dataclass
 class FeatViewConfig:
-    """Feat 面板详情展示开关（见 .pdm/docs/feat/feat-inline-design.md）。
+    """Feat 面板详情展示开关（见 doc/feat/feat-inline-design.md）。
 
     四个维度独立可控；TUI 里可用 d/n/v/s 临时切换，本配置是持久默认值。
     """
@@ -146,7 +146,7 @@ class FeatConfig:
 
 @dataclass
 class ReviewConfig:
-    """Feat 审查覆盖率告警阈值（见 .pdm/docs/feat/review-score.md）。"""
+    """Feat 审查覆盖率告警阈值（见 doc/feat/review-score.md）。"""
 
     min_coverage: float = 0.6     # 人工审核覆盖率下限
     warn_no_review: bool = True   # 完全不审查时告警

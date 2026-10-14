@@ -4,7 +4,7 @@
 扫描所有 Feat 及其关联的 commit，报告**状态与事实不符**、**覆盖缺口**、
 **关联冲突**等问题——让 pdev 从"记账本"变成"护栏"。
 
-设计见 ``.pdm/docs/feat/feat-check.md``。
+设计见 ``doc/feat/feat-check.md``。
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ CODES = (
     "note-no-verify",
 )
 
-# 开发阶段 → commit 信息前缀（见 .pdm/docs/feat/stage-prefix.md）
+# 开发阶段 → commit 信息前缀（见 doc/feat/stage-prefix.md）
 STAGES = ("doc", "test", "feat", "fix")
 
 # 非流程性但仍合法的前缀：不告警（归为 other）
@@ -222,7 +222,7 @@ def _check_feat(feat: Feat, git, note_store=None) -> List[CheckIssue]:
     if git is not None and getattr(git, "available", False):
         out.extend(check_stages(feat, git))
 
-    # 笔记与验证覆盖（见 .pdm/docs/feat/note-check.md）
+    # 笔记与验证覆盖（见 doc/feat/note-check.md）
     if (note_store is not None and git is not None
             and getattr(git, "available", False)):
         out.extend(check_notes(feat, git, note_store))
@@ -344,7 +344,7 @@ def _note_for(note_store, commit) -> list:
 def check_notes(feat: Feat, git, note_store) -> List[CheckIssue]:
     """检查 commit 是否有笔记、笔记是否绑定验证。
 
-    规则（见 .pdm/docs/feat/note-check.md）：
+    规则（见 doc/feat/note-check.md）：
 
     - ``commit-no-note``：``feat(`` / ``fix(`` 前缀的 commit 无笔记
     - ``note-no-verify``：该 commit 的笔记全部未绑定验证

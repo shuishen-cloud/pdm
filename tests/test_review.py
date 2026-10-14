@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """pdev.review 的测试：审查覆盖率评分与低覆盖告警。
 
-见 ``.pdm/docs/feat/review-score.md``。
+见 ``doc/feat/review-score.md``。
 """
 
 from __future__ import annotations
@@ -116,13 +116,13 @@ def test_multiple_feats_aggregate():
 
 def test_orphan_records_not_counted():
     """孤儿记录（规格项已删除）不计入分母。"""
-    f = _feat("a", api=["f()", "g()"])
+    f = _feat("a", api=["f()", "g()"], doc="")
     f.set_reviewed("api:0")
     f.set_reviewed("api:1")
     f.api = ["f()"]                  # api:1 成孤儿
     s = compute_review([f])
-    assert s.items == 3              # doc + api:0 ... 等等
-    assert s.reviewed == 1           # 只有 api:0 有效
+    assert s.items == 1              # 只剩 api:0
+    assert s.reviewed == 1
 
 
 # ---------------------------------------------------------------------------
@@ -130,22 +130,23 @@ def test_orphan_records_not_counted():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("reviewed_ratio,expected", [
-    (0.0, "poor"),
-    (0.2, "poor"),
-    (0.3, "fair"),
-    (0.5, "fair"),
-    (0.6, "good"),
-    (0.8, "good"),
-    (0.9, "excellent"),
-    (1.0, "excellent"),
+@pytest.mark.parametrize("reviewed_ratio,tested_ratio,expected", [
+    (0.0, 0.0, "poor"),
+    (0.2, 0.0, "poor"),          # score=0.12
+    (0.0, 0.75, "fair"),          # score=0.3
+    (0.5, 0.0, "fair"),           # score=0.3
+    (0.6, 0.6, "good"),           # score=0.6
+    (0.8, 0.8, "good"),           # score=0.8
+    (1.0, 0.75, "excellent"),     # score=0.9
+    (1.0, 1.0, "excellent"),
 ])
-def test_level_buckets(reviewed_ratio, expected):
-    n = 10
-    f = _feat("a", api=[f"f{i}()" for i in range(n)])
-    f.doc = ""                       # 只留 api 项，分母正好 n
+def test_level_buckets(reviewed_ratio, tested_ratio, expected):
+    n = 100
+    f = _feat("a", api=[f"f{i}()" for i in range(n)], doc="")
     for i in range(round(reviewed_ratio * n)):
         f.set_reviewed(f"api:{i}")
+    for i in range(round(tested_ratio * n)):
+        f.set_tested(f"api:{i}", status="passed")
     s = compute_review([f])
     assert s.level == expected
 
@@ -174,8 +175,7 @@ def test_untested_warning():
 
 
 def test_low_coverage_warning_with_custom_policy():
-    f = _feat("a", api=[f"f{i}()" for i in range(10)])
-    f.doc = ""
+    f = _feat("a", api=[f"f{i}()" for i in range(10)], doc="")
     for i in range(5):               # 覆盖率 0.5
         f.set_reviewed(f"api:{i}")
     s = compute_review([f], ReviewPolicy(min_coverage=0.6))

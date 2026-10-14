@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """审查覆盖率评分与低覆盖告警。
 
-基于每条 Feat 的双勾选位（见 ``.pdm/docs/feat/review-model.md``），跨全部
+基于每条 Feat 的双勾选位（见 ``doc/feat/review-model.md``），跨全部
 Feat 汇总出「项目代码掌握程度」，并对**人工审核覆盖率过低**的仓库告警。
 
-设计见 ``.pdm/docs/feat/review-score.md``。
+设计见 ``doc/feat/review-score.md``。
 
 纯函数，无 IO、无日志、不依赖 textual。
 """

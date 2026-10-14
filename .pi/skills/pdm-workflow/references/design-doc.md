@@ -1,7 +1,8 @@
 # 设计文档该写什么
 
-每条 feat 对应一份简短设计文档，路径由 `feat.doc` 指定（约定
-`.pdm/docs/feat/<slug>.md`）。**先于实现编写**，它是 feat 阶段的依据。
+每条 feat 对应一份简短设计文档，路径由 `feat.doc` 指定（根目录由
+`doc.dir` 控制，默认 `doc`，即 `doc/feat/<slug>.md`）。**先于实现编写**，
+它是 feat 阶段的依据。
 
 ## 为什么"doc 先行"
 
@@ -10,7 +11,7 @@
 
 ## 模板
 
-仓库内真实设计文档（如 `.pdm/docs/feat/stage-commit.md`）遵循以下结构。
+仓库内真实设计文档（如 `doc/feat/stage-commit.md`）遵循以下结构。
 照此写：
 
 ```markdown
@@ -78,7 +79,7 @@ close 阶段的文档更新要回答：**这个设计落地后，事实是否印
 
 ## 存放与跟踪
 
-- 设计正文放 `.pdm/docs/`（默认 gitignore，不进代码分发）。
-- 若项目希望文档随代码走，把 `doc.dir` 配到非 `.pdm` 路径即可。
+- 设计正文放 `doc/feat/`（**可跟踪**，随代码分发）。
+- `doc.dir` 控制根目录，默认 `doc`；改回 `.pdm/docs` 等不跟踪目录也可。
 - doc 阶段的 commit 若无可提交代码文件，可把 README / 索引文件的更新作为
   该阶段的实际内容，避免空提交。

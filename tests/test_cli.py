@@ -1067,7 +1067,7 @@ def test_note_list_finds_git_via_store_dir(capsys, tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# feat show --doc / --notes / --verify（见 .pdm/docs/feat/feat-cli-parity.md）
+# feat show --doc / --notes / --verify（见 doc/feat/feat-cli-parity.md）
 # ---------------------------------------------------------------------------
 
 
