@@ -549,3 +549,88 @@ def test_stage_order_ignores_neutral_prefix(store, tmp_path):
     add(store, {"slug": "a", "title": "A", "doc": "d", "api": ["f()"],
                 "fallbacks": ["x"], "commits": hashes})
     assert "stage-order" not in codes(check_feats(store, git=repo))
+
+
+# ---------------------------------------------------------------------------
+# 规则：review-none / review-low（见 doc/feat/review-check.md）
+# ---------------------------------------------------------------------------
+
+
+def _feat_with_items(slug="a", n_api=2):
+    return Feat(slug=slug, title=slug, doc="d.md",
+                api=[f"f{i}()" for i in range(n_api)],
+                logs=["l"], fallbacks=["fb"])
+
+
+def test_review_none_warning(store):
+    store.add(_feat_with_items())
+    issues = check_one(store, "a")
+    assert "review-none" in codes(issues)
+    assert all(i.level == "warning"
+               for i in issues if i.code == "review-none")
+
+
+def test_review_low_warning_when_partial(store):
+    f = _feat_with_items(n_api=10)
+    f.set_reviewed("api:0")                 # 13 项里审 1 项
+    store.add(f)
+    issues = check_one(store, "a")
+    got = codes(issues)
+    assert "review-low" in got
+    assert "review-none" not in got         # 已审过一项
+
+
+def test_review_clean_when_coverage_ok(store):
+    f = _feat_with_items(n_api=2)           # 4 项
+    for k, _ in f.review_items():
+        f.set_reviewed(k)
+    store.add(f)
+    got = codes(check_one(store, "a"))
+    assert "review-none" not in got
+    assert "review-low" not in got
+
+
+def test_review_skipped_when_no_items(store):
+    store.add(Feat(slug="bare", title="裸"))
+    got = codes(check_one(store, "bare"))
+    assert "review-none" not in got
+    assert "review-low" not in got
+
+
+def test_review_respects_min_coverage(store):
+    f = _feat_with_items(n_api=10)
+    for i in range(5):                      # 13 项里审 5 项 ≈ 38%
+        f.set_reviewed(f"api:{i}")
+    store.add(f)
+    assert "review-low" in codes(check_one(store, "a", min_coverage=0.6))
+    # 放宽阈值 → 不再报
+    assert "review-low" not in codes(check_one(store, "a", min_coverage=0.3))
+
+
+def test_review_works_without_git_or_notes(store):
+    """不依赖 git / note_store，无它们也生效。"""
+    store.add(_feat_with_items())
+    got = codes(check_one(store, "a", git=None, note_store=None))
+    assert "review-none" in got
+
+
+def test_review_closed_none_mentions_closed(store):
+    f = _feat_with_items()
+    f.status = FeatStatus.CLOSED
+    store.add(f)
+    issues = [i for i in check_one(store, "a") if i.code == "review-none"]
+    assert issues
+    assert "closed" in issues[0].message
+
+
+def test_review_rules_in_check_feats(store):
+    store.add(_feat_with_items())
+    got = codes(check_feats(store, git=None))
+    assert "review-none" in got
+
+
+def test_review_codes_registered():
+    from pdev.check import CODES
+
+    assert "review-none" in CODES
+    assert "review-low" in CODES
