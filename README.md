@@ -69,7 +69,7 @@ CommitNote(
 | `pdm note list` / `pdm query` | 组合查询 |
 | `pdm show <commit>` | 某次提交的全部笔记 |
 | `pdm verify list` / `show` / `run` | 验证的查看与执行 |
-| `pdm feat new/list/show/set/link/check` | 开发记录（设计→测试→实现） |
+| `pdm feat new/list/show/set/link/check` | 开发记录（设计→测试→实现）；`new` 必填设计思路/实现方式/数据结构/样例/既有改动 |
 | `pdm feat commit <stage> <slug>` | 阶段提交：由 pdm 创建 commit，强制 doc→test→feat→fix→close 顺序 |
 | `pdm feat review <slug>` | 逐项人工审查 / 测试勾选（`[审][测]` 双勾选位） |
 | `pdm feat comment <slug> --on <KEY> -m <TEXT>` | 给某条目写人工评论（可留空，多行） |
@@ -81,7 +81,11 @@ CommitNote(
 而不是事后由 `pdm feat check` 发现。
 
 ```bash
-pdm feat new demo --title "演示" --doc feat/demo.md
+pdm feat new demo --title "演示" --doc feat/demo.md \
+    --design-note "为什么这么设计" --impl-note "怎么落地" \
+    --data-model "Cache: dict[str,int] —— 计数" \
+    --sample '{"k": 1}' \
+    --change "pdev/x.py::Cache —— 新增类"   # 五项均必填（没有也要写明「无」）
 pdm feat commit doc   demo -m "写设计"      # 自动生成 doc(demo): 写设计（提交 doc/feat/demo.md）
 pdm feat commit test  demo -m "写测试"
 pdm feat commit feat  demo -m "实现" --files pdev/x.py
@@ -143,6 +147,7 @@ pdm review --json                                # 机器可读
 | 4.5 | `review-query` | `pdm review --unreviewed/--untested` 清单 | ✅ 已完成 |
 | 4.6 | `feat-comment` | 条目级人工评论（`pdm feat comment`） | ✅ 已完成 |
 | 4.7 | `review-batch` | 批量勾选（`--all` / `--item` 前缀） | ✅ 已完成 |
+| 4.8 | `feat-fields` | 五项设计字段（设计思路/实现方式/数据结构/样例/既有改动） | ✅ 已完成 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
 | 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
 

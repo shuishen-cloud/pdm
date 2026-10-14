@@ -119,4 +119,19 @@ def cmd_feat_new(ctx, args) -> int
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`pdev/feat.py` 新增 5 字段、`missing_required_fields()`、序列化，
+  并将 `_REVIEW_FIELDS` 扩为六项；`parser.py` 加 5 个 `feat new` 参数；
+  `cmd_feat_new` 校验必填；`cmd_feat_show` 新增五个分区（文本型逐行、
+  列表型带 `[审][测]`）。
+- **提交**：`doc` a5fbd45、`test` 8f2affb、`feat` ea8158f、`fix` 674eae7。
+- **代价**：必填一出，**67 个旧测试连带失败**（34 处 `feat new` 调用 +
+  后续断言）。修法是在测试层包一层 `main` 自动补必填（**不改生产代码**），
+  再把期望值从 5 项调到 8 项。
+- **实测抓出的问题**：
+  1. `feat show` 用 label 查勾选表，**内容相同的两条会互相覆盖**——
+     勾 `api:1` 会让 `api:0` 也显示 `[x]`；改为按字段+序号直出 key。
+  2. 旧 fixtures 里的 `data_model` 是「废弃字段」，本次复活为真实字段，
+     已从 `LEGACY_FIELDS` 移除。
+- **结论**：设计成立。列表型字段并入 `_REVIEW_FIELDS` 后，勾选/评论/批量/
+  评分全部自动生效，零额外代码；文本型字段独立展示。历史 feat 缺字段仍可
+  加载（`missing_required_fields` 非空），强制留给 `feat-fields-check`。
