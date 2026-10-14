@@ -911,26 +911,41 @@ def cmd_feat_review(ctx: AppContext, args) -> int:
         return 2
 
     key = getattr(args, "item", None)
+    all_items = getattr(args, "all", False)
     action = _review_action(args)
 
     if action is None:
         return _print_review_list(ctx, feat)
 
-    if not key:
-        print("错误：勾选需要 --item <KEY>", file=sys.stderr)
+    if all_items and key:
+        print("错误：--all 与 --item 互斥", file=sys.stderr)
+        return 2
+
+    if not all_items and not key:
+        print("错误：勾选需要 --item <KEY> 或 --all", file=sys.stderr)
         return 2
 
     try:
-        if action == "review":
-            store.set_reviewed(args.slug, key, True, by=args.by or "")
-        elif action == "unreview":
-            store.set_reviewed(args.slug, key, False)
-        elif action == "test":
-            store.set_tested(args.slug, key, True,
-                             command=args.cmd or "",
-                             status=args.status or "passed")
-        elif action == "untest":
-            store.set_tested(args.slug, key, False)
+        targets = store.resolve_keys(args.slug, item=key or "",
+                                     all_items=all_items)
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+
+    keys = [k for k, _ in targets]
+    kwargs = {}
+    if action == "review":
+        kwargs = {"reviewed": True, "by": args.by or ""}
+    elif action == "unreview":
+        kwargs = {"reviewed": False}
+    elif action == "test":
+        kwargs = {"tested": True, "command": args.cmd or "",
+                  "status": args.status or "passed"}
+    elif action == "untest":
+        kwargs = {"tested": False}
+
+    try:
+        store.set_reviews(args.slug, keys, **kwargs)
     except FeatError as e:
         print(f"错误：{e}", file=sys.stderr)
         return 2
@@ -939,8 +954,23 @@ def cmd_feat_review(ctx: AppContext, args) -> int:
     total, reviewed, tested = feat.review_counts()
     if action == "test" and not (args.cmd or ""):
         print("提示：建议用 --cmd 记录实际执行的验证命令", file=sys.stderr)
-    print(f"{args.slug}  {render_review_marks(feat, key)}{key}"
-          f"  （审查 {reviewed}/{total}，测试 {tested}/{total}）")
+
+    # 单条命中：沿用原输出（兼容既有调用方）
+    if len(keys) == 1:
+        print(f"{args.slug}  {render_review_marks(feat, keys[0])}{keys[0]}"
+              f"  （审查 {reviewed}/{total}，测试 {tested}/{total}）")
+        return 0
+
+    # 批量：逐行 + 汇总
+    label_of = dict(targets)
+    for k in keys:
+        print(f"{args.slug}  {render_review_marks(feat, k)}{k:<12}"
+              f" {label_of.get(k, '')}")
+    scope = "全部" if all_items else key
+    verb = {"review": "已审查", "unreview": "已取消审查",
+            "test": "已测试", "untest": "已取消测试"}[action]
+    print(f"{verb} {len(keys)} 项（{scope}）："
+          f"审查 {reviewed}/{total}，测试 {tested}/{total}")
     return 0
 
 

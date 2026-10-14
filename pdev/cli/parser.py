@@ -334,7 +334,9 @@ def build_parser() -> argparse.ArgumentParser:
         "review", help="逐项人工审查 / 测试勾选（[审][测] 双勾选位）")
     freview.add_argument("slug")
     freview.add_argument("--item", metavar="KEY",
-                         help="可审项键，如 api:0 / logs:1 / doc")
+                         help="可审项键（api:0 / logs:1 / doc）或字段前缀（api）")
+    freview.add_argument("--all", action="store_true",
+                         help="作用于该 feat 的全部可审项")
     freview.add_argument("--by", metavar="WHO",
                          help="审查者（默认取配置 default_author）")
     freview.add_argument("--cmd", metavar="CMD",

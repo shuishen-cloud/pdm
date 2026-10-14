@@ -493,6 +493,52 @@ class FeatStore:
         self.update(feat)
         return feat
 
+    def resolve_keys(self, slug: str, item: str = "",
+                     all_items: bool = False) -> List[tuple]:
+        """把 ``--item`` / ``--all`` 展开成 ``[(key, label), ...]``。
+
+        - ``all_items`` → 全部可审项；无可审项抛 ``FeatError``
+        - ``item`` 是精确 key → 该项
+        - ``item`` 是字段前缀（如 ``"api"``）→ 所有 ``"api:*"``
+        - 无匹配 → 抛 ``FeatError``
+        """
+        feat = self._require(slug)
+        items = feat.review_items()
+        if all_items:
+            if not items:
+                raise FeatError(f"feat {slug} 没有可审项")
+            return list(items)
+        if not item:
+            raise FeatError("需要 --item <KEY> 或 --all")
+        for key, label in items:
+            if key == item:
+                return [(key, label)]
+        prefix = f"{item}:"
+        matched = [(k, lbl) for k, lbl in items if k.startswith(prefix)]
+        if not matched:
+            avail = sorted(k for k, _ in items)
+            raise FeatError(
+                f"没有匹配的可审项：{item!r}（可选 {avail}）"
+            )
+        return matched
+
+    def set_reviews(self, slug: str, keys, *, reviewed=None, tested=None,
+                    by: str = "", command: str = "",
+                    status: str = "") -> Feat:
+        """批量置位（只落盘一次）。
+
+        :param reviewed: True/False/None（None 不动审查位）
+        :param tested: True/False/None（None 不动测试位）
+        """
+        feat = self._require(slug)
+        for key in keys:
+            if reviewed is not None:
+                feat.set_reviewed(key, reviewed, by=by)
+            if tested is not None:
+                feat.set_tested(key, tested, command=command, status=status)
+        self.update(feat)
+        return feat
+
     def set_status(self, slug: str, status: FeatStatus) -> Feat:
         feat = self._require(slug)
         feat.advance(status)
