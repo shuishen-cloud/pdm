@@ -44,6 +44,9 @@ __all__ = [
     "cmd_feat_found",
     "cmd_feat_check",
     "cmd_feat_commit",
+    "cmd_feat_review",
+    "cmd_review",
+    "render_review_marks",
     "cmd_stats",
     "print_notes",
     "format_note",
@@ -542,20 +545,40 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
 
     doc_path = resolve_doc_path(ctx.config.doc.dir, feat.doc)
     sections = [
-        ("设计文档", [doc_path] if doc_path else []),
-        ("交付接口", feat.api),
-        ("会打的日志", feat.logs),
-        ("异常兜底", feat.fallbacks),
-        ("关联 commit", feat.commits),
-        ("关联 note", feat.notes),
-        ("发现的异常", feat.discovered),
+        ("设计文档", [(doc_path, feat.doc)] if doc_path else []),
+        ("交付接口", [(x, x) for x in feat.api]),
+        ("会打的日志", [(x, x) for x in feat.logs]),
+        ("异常兜底", [(x, x) for x in feat.fallbacks]),
+        ("关联 commit", [(x, x) for x in feat.commits]),
+        ("关联 note", [(x, x) for x in feat.notes]),
+        ("发现的异常", [(x, x) for x in feat.discovered]),
     ]
-    for name, items in sections:
-        if not items:
+    # 可审项 → 行前带 [审][测] 标记（见 doc/feat/review-cli.md）
+    # 匹配用 feat.doc / 原文，显示用 (显示文本, 匹配文本)
+    _review_at = {}
+    for rkey, rlabel in feat.review_items():
+        field = rkey.split(":")[0]
+        _review_at[(field, rlabel)] = render_review_marks(feat, rkey)
+
+    def _mark_for(section: str, match_text: str) -> str:
+        field = {"设计文档": "doc", "交付接口": "api",
+                 "会打的日志": "logs", "异常兜底": "fallbacks"}.get(section)
+        if field is None:
+            return ""
+        return _review_at.get((field, match_text), "")
+
+    for name, pairs in sections:
+        if not pairs:
             continue
         print(f"\n{name}")
-        for x in items:
-            print(f"  · {x}")
+        for display, match in pairs:
+            print(f"  {_mark_for(name, match)}· {display}")
+
+    # 审查覆盖小结
+    if feat.review_items():
+        total, reviewed, tested = feat.review_counts()
+        print(f"\n审查  审查 {reviewed}/{total}  测试 {tested}/{total}"
+              f"   （pdm feat review {feat.slug}）")
 
     # 内联设计正文
     if show_doc and feat.doc:
@@ -745,6 +768,149 @@ def cmd_feat_check(ctx: AppContext, args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# 审查勾选（review-cli）
+# ---------------------------------------------------------------------------
+
+
+def render_review_marks(feat, key: str = "") -> str:
+    """生成 ``"[x][ ] "`` 前缀（供 show / 列表复用）。"""
+    item = feat.review_item(key) if key else None
+    r = "x" if item is not None and item.reviewed else " "
+    t = "x" if item is not None and item.tested else " "
+    return f"[{r}][{t}] "
+
+
+def _review_lines(feat) -> List[str]:
+    """把可审项渲染成 ``"[x][ ] api:0  f() -> int"`` 列表。"""
+    out = []
+    for key, label in feat.review_items():
+        out.append(f"{render_review_marks(feat, key)}{key:<12} {label}")
+    return out
+
+
+def _review_snapshot(feat) -> dict:
+    """可审项 + 勾选状态（供 ``--json``）。"""
+    items = []
+    for key, label in feat.review_items():
+        it = feat.review_item(key)
+        items.append({
+            "key": key,
+            "label": label,
+            "reviewed": bool(it and it.reviewed),
+            "tested": bool(it and it.tested),
+            "reviewed_by": it.reviewed_by if it else "",
+            "test_command": it.test_command if it else "",
+            "test_status": it.test_status if it else "",
+        })
+    total, reviewed, tested = feat.review_counts()
+    return {"slug": feat.slug, "items": items, "total": total,
+            "reviewed": reviewed, "tested": tested}
+
+
+def cmd_feat_review(ctx: AppContext, args) -> int:
+    """列出或勾选某 feat 的审查项。"""
+    from ..feat import FeatError
+
+    store = _feat_store(ctx)
+    feat = store.get(args.slug)
+    if feat is None:
+        print(f"错误：找不到 feat：{args.slug}", file=sys.stderr)
+        return 2
+
+    key = getattr(args, "item", None)
+    action = _review_action(args)
+
+    if action is None:
+        return _print_review_list(ctx, feat)
+
+    if not key:
+        print("错误：勾选需要 --item <KEY>", file=sys.stderr)
+        return 2
+
+    try:
+        if action == "review":
+            store.set_reviewed(args.slug, key, True, by=args.by or "")
+        elif action == "unreview":
+            store.set_reviewed(args.slug, key, False)
+        elif action == "test":
+            store.set_tested(args.slug, key, True,
+                             command=args.cmd or "",
+                             status=args.status or "passed")
+        elif action == "untest":
+            store.set_tested(args.slug, key, False)
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+
+    feat = store.get(args.slug)
+    total, reviewed, tested = feat.review_counts()
+    if action == "test" and not (args.cmd or ""):
+        print("提示：建议用 --cmd 记录实际执行的验证命令", file=sys.stderr)
+    print(f"{args.slug}  {render_review_marks(feat, key)}{key}"
+          f"  （审查 {reviewed}/{total}，测试 {tested}/{total}）")
+    return 0
+
+
+def _review_action(args) -> str:
+    """从互斥参数中取出动作名；无动作返回 None。"""
+    for name in ("review", "unreview", "test", "untest"):
+        if getattr(args, name, False):
+            return name
+    return None
+
+
+def _print_review_list(ctx: AppContext, feat) -> int:
+    """打印某 feat 的可审项与勾选状态。"""
+    if ctx.config.json_output:
+        print(json.dumps(_review_snapshot(feat), ensure_ascii=False, indent=2))
+        return 0
+
+    total, reviewed, tested = feat.review_counts()
+    print(f"{feat.slug}  审查 {reviewed}/{total}  测试 {tested}/{total}")
+    lines = _review_lines(feat)
+    if not lines:
+        print("  （无可审内容：doc/api/logs/fallbacks 均为空）")
+        return 0
+    for line in lines:
+        print(line)
+    return 0
+
+
+def cmd_review(ctx: AppContext, args) -> int:
+    """全仓掌握程度与告警；有告警返回 1。"""
+    from ..review import ReviewPolicy, compute_review, format_score
+
+    store = _feat_store(ctx)
+    cfg = getattr(ctx.config, "review", None)
+    policy = ReviewPolicy(
+        min_coverage=getattr(cfg, "min_coverage", 0.6),
+        warn_no_review=getattr(cfg, "warn_no_review", True),
+        warn_untested=getattr(cfg, "warn_untested", True),
+    )
+    score = compute_review(list(store.all()), policy)
+
+    if ctx.config.json_output or getattr(args, "json", False):
+        print(json.dumps({
+            "items": score.items,
+            "reviewed": score.reviewed,
+            "tested": score.tested,
+            "feats": score.feats,
+            "review_coverage": score.review_coverage,
+            "test_coverage": score.test_coverage,
+            "score": score.score,
+            "level": score.level,
+            "warnings": [
+                {"code": w.code, "level": w.level, "message": w.message}
+                for w in score.warnings
+            ],
+        }, ensure_ascii=False, indent=2))
+        return 1 if score.warnings else 0
+
+    print(format_score(score))
+    return 1 if score.warnings else 0
+
+
 def cmd_theme(ctx: AppContext, args) -> int:
     """查看 / 设置 TUI 主题。
 
@@ -913,8 +1079,30 @@ def cmd_show(ctx: AppContext, args) -> int:
 def cmd_stats(ctx: AppContext, args) -> int:
     """汇总统计。"""
     s = compute_note_stats(ctx.store)
+    from ..review import ReviewPolicy, compute_review, format_score
+
+    cfg = getattr(ctx.config, "review", None)
+    policy = ReviewPolicy(
+        min_coverage=getattr(cfg, "min_coverage", 0.6),
+        warn_no_review=getattr(cfg, "warn_no_review", True),
+        warn_untested=getattr(cfg, "warn_untested", True),
+    )
+    score = compute_review(list(_feat_store(ctx).all()), policy)
+
     if args.json:
-        print(json.dumps(s.__dict__, ensure_ascii=False, indent=2))
+        payload = dict(s.__dict__)
+        payload["review"] = {
+            "items": score.items,
+            "reviewed": score.reviewed,
+            "tested": score.tested,
+            "feats": score.feats,
+            "review_coverage": score.review_coverage,
+            "test_coverage": score.test_coverage,
+            "score": score.score,
+            "level": score.level,
+            "warnings": [w.code for w in score.warnings],
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
     print("笔记统计")
@@ -941,4 +1129,6 @@ def cmd_stats(ctx: AppContext, args) -> int:
         print("  按类型")
         for k, v in sorted(s.by_kind.items()):
             print(f"    {k:<22}{v}")
+    print()
+    print(format_score(score))
     return 0

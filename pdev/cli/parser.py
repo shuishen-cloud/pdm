@@ -330,6 +330,33 @@ def build_parser() -> argparse.ArgumentParser:
     fbug.add_argument("text")
     fbug.set_defaults(func=commands.cmd_feat_found)
 
+    freview = feat_sub.add_parser(
+        "review", help="逐项人工审查 / 测试勾选（[审][测] 双勾选位）")
+    freview.add_argument("slug")
+    freview.add_argument("--item", metavar="KEY",
+                         help="可审项键，如 api:0 / logs:1 / doc")
+    freview.add_argument("--by", metavar="WHO",
+                         help="审查者（默认取配置 default_author）")
+    freview.add_argument("--cmd", metavar="CMD",
+                         help="--test 时登记实际执行的命令")
+    freview.add_argument("--status", default="passed",
+                         choices=["passed", "failed", "error"],
+                         help="--test 时登记的执行结果（默认 passed）")
+    freview.add_argument("--json", action="store_true",
+                         default=argparse.SUPPRESS, help="以 JSON 输出")
+    act = freview.add_mutually_exclusive_group()
+    act.add_argument("--review", action="store_true", help="置 [审]")
+    act.add_argument("--unreview", action="store_true", help="清 [审]")
+    act.add_argument("--test", action="store_true", help="置 [测]")
+    act.add_argument("--untest", action="store_true", help="清 [测]")
+    freview.set_defaults(func=commands.cmd_feat_review)
+
+    # --- review ---
+    review = sub.add_parser("review", help="项目代码掌握程度与告警")
+    review.add_argument("--json", action="store_true",
+                        default=argparse.SUPPRESS)
+    review.set_defaults(func=commands.cmd_review)
+
     # --- theme ---
     theme = sub.add_parser("theme", help="查看 / 设置 TUI 主题")
     theme.add_argument("name", nargs="?", metavar="NAME",

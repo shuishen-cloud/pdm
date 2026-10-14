@@ -1223,7 +1223,8 @@ def test_feat_review_unreview(capsys, tmp_path):
     assert code == 0
     capsys.readouterr()
     from pdev.feat import FeatStore
-    assert FeatStore(tmp_path / '.pdm' / 'feats').get("a").review_item("api:0").reviewed is False
+    item = FeatStore(tmp_path / '.pdm' / 'feats').get("a").review_item("api:0")
+    assert item is None or item.reviewed is False
 
 
 def test_feat_review_test_records_command(capsys, tmp_path):
@@ -1277,9 +1278,10 @@ def test_feat_review_json(capsys):
 
 def test_pdm_review_shows_score(capsys):
     _make_feat(capsys)
-    main(["feat", "review", "a", "--item", "api:0", "--review",
-          "--item", "api:1", "--review", "--item", "logs:0", "--review",
-          "--item", "fallbacks:0", "--review", "--item", "doc", "--review"])
+    for key in ("api:0", "api:1", "logs:0", "fallbacks:0", "doc"):
+        main(["feat", "review", "a", "--item", key, "--review"])
+        main(["feat", "review", "a", "--item", key, "--test",
+              "--cmd", "pytest x"])
     capsys.readouterr()
     code = main(["review"])
     out = capsys.readouterr().out
