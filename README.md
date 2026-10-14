@@ -101,16 +101,20 @@ pdm feat commit close demo -m "收尾文档" --close   # 收尾并置 closed
 独立勾选位**：`[审]` 人工审查、`[测]` 测试通过，逐项勾选；再由全部 Feat
 的审查结果算出「项目代码掌握程度」，**人工审核覆盖率过低**时告警。
 
+掌握程度：`score = 0.6 × 人工审核覆盖率 + 0.4 × 测试通过覆盖率`，
+分档 `none / poor / fair / good / excellent`；告警只在**过低**时发出
+（`no-review`、`low-review`、`untested`）。
+
 分阶段落地（每条 Feat 独立走 doc→test→feat→fix→close）：
 
 | 顺序 | slug | 内容 | 状态 |
 |------|------|------|------|
 | 1 | `review-model` | 审查项数据模型（`ReviewItem` + 双勾选位存储） | ✅ 已完成 |
-| 2 | `review-score` | 覆盖率评分与低覆盖告警 | 规划中 |
+| 2 | `review-score` | 覆盖率评分与低覆盖告警 | 🚧 进行中 |
 | 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 | 规划中 |
 | 4 | `review-check` | `pdm feat check` 联动规则 | 规划中 |
-| 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | 规划中 |
-| 6 | `review-tui-toggle` | TUI 空格勾选 | 规划中 |
+| 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
+| 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
 
 ## 目录结构
 
