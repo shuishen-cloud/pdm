@@ -72,6 +72,7 @@ CommitNote(
 | `pdm feat new/list/show/set/link/check` | 开发记录（设计→测试→实现） |
 | `pdm feat commit <stage> <slug>` | 阶段提交：由 pdm 创建 commit，强制 doc→test→feat→fix→close 顺序 |
 | `pdm feat review <slug>` | 逐项人工审查 / 测试勾选（`[审][测]` 双勾选位）（规划中） |
+| `pdm review` | 项目代码掌握程度与低覆盖告警（规划中） |
 
 ### 阶段提交（推荐用法）
 
@@ -103,14 +104,15 @@ pdm feat commit close demo -m "收尾文档" --close   # 收尾并置 closed
 
 掌握程度：`score = 0.6 × 人工审核覆盖率 + 0.4 × 测试通过覆盖率`，
 分档 `none / poor / fair / good / excellent`；告警只在**过低**时发出
-（`no-review`、`low-review`、`untested`）。
+（`no-review`、`low-review`、`untested`）。阈值由 `review.min_coverage`
+（默认 `0.6`）控制。
 
 分阶段落地（每条 Feat 独立走 doc→test→feat→fix→close）：
 
 | 顺序 | slug | 内容 | 状态 |
 |------|------|------|------|
 | 1 | `review-model` | 审查项数据模型（`ReviewItem` + 双勾选位存储） | ✅ 已完成 |
-| 2 | `review-score` | 覆盖率评分与低覆盖告警 | 🚧 进行中 |
+| 2 | `review-score` | 覆盖率评分与低覆盖告警 | ✅ 已完成 |
 | 3 | `review-cli` | `pdm feat review` / `pdm review` 命令 | 规划中 |
 | 4 | `review-check` | `pdm feat check` 联动规则 | 规划中 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
