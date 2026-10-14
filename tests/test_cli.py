@@ -1157,3 +1157,187 @@ def test_cli_imports_without_textual():
     r = subprocess.run([sys.executable, "-c", code],
                        capture_output=True, text=True)
     assert r.stdout.strip() == "False", r.stderr
+
+
+# ---------------------------------------------------------------------------
+# feat review / pdm review（见 doc/feat/review-cli.md）
+# ---------------------------------------------------------------------------
+
+
+def _make_feat(capsys, slug="a", title="A"):
+    """建一条带规格字段的 feat，清空输出。"""
+    code = main(["feat", "new", slug, "-t", title,
+                 "--doc", "feat/x.md",
+                 "--api", "f() -> int", "--api", "g() -> str",
+                 "--log", "记录调用", "--fallback", "抛错"])
+    assert code == 0
+    capsys.readouterr()
+
+
+def test_feat_review_lists_items(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "review", "a"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "api:0" in out and "api:1" in out
+    assert "logs:0" in out and "fallbacks:0" in out and "doc" in out
+    assert "[ ]" in out                      # 未勾选
+
+
+def test_feat_review_missing_slug(capsys):
+    code = main(["feat", "review", "nope"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "找不到" in err
+
+
+def test_feat_review_check_reviewed(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "review", "a", "--item", "api:0", "--review"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "[x]" in out
+    # 再列出，应显示已勾
+    main(["feat", "review", "a"])
+    out = capsys.readouterr().out
+    assert "[x][ ]  api:0" in out or "[x][ ] api:0" in out
+
+
+def test_feat_review_records_author(capsys, tmp_path):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--review",
+          "--by", "human:lwy"])
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    fs = FeatStore(tmp_path / '.pdm' / 'feats')
+    item = fs.get("a").review_item("api:0")
+    assert item.reviewed is True
+    assert item.reviewed_by == "human:lwy"
+
+
+def test_feat_review_unreview(capsys, tmp_path):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--review"])
+    capsys.readouterr()
+    code = main(["feat", "review", "a", "--item", "api:0", "--unreview"])
+    assert code == 0
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    assert FeatStore(tmp_path / '.pdm' / 'feats').get("a").review_item("api:0").reviewed is False
+
+
+def test_feat_review_test_records_command(capsys, tmp_path):
+    _make_feat(capsys)
+    code = main(["feat", "review", "a", "--item", "api:0", "--test",
+                 "--cmd", "pytest tests/x.py::test_y", "--status", "passed"])
+    assert code == 0
+    capsys.readouterr()
+    from pdev.feat import FeatStore
+    item = FeatStore(tmp_path / '.pdm' / 'feats').get("a").review_item("api:0")
+    assert item.tested is True
+    assert item.test_command == "pytest tests/x.py::test_y"
+    assert item.test_status == "passed"
+
+
+def test_feat_review_test_without_cmd_warns(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "review", "a", "--item", "api:0", "--test"])
+    out = capsys.readouterr()
+    assert code == 0
+    assert "--cmd" in (out.out + out.err)      # 提示建议记录命令
+
+
+def test_feat_review_bad_item(capsys):
+    _make_feat(capsys)
+    code = main(["feat", "review", "a", "--item", "api:99", "--review"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "api:99" in err or "非法" in err
+
+
+def test_feat_review_actions_mutually_exclusive(capsys):
+    _make_feat(capsys)
+    with pytest.raises(SystemExit):
+        main(["feat", "review", "a", "--item", "api:0",
+              "--review", "--test"])
+
+
+def test_feat_review_json(capsys):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--review"])
+    capsys.readouterr()
+    main(["--json", "feat", "review", "a"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["slug"] == "a"
+    items = {i["key"]: i for i in data["items"]}
+    assert items["api:0"]["reviewed"] is True
+    assert items["api:1"]["reviewed"] is False
+
+
+def test_pdm_review_shows_score(capsys):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--review",
+          "--item", "api:1", "--review", "--item", "logs:0", "--review",
+          "--item", "fallbacks:0", "--review", "--item", "doc", "--review"])
+    capsys.readouterr()
+    code = main(["review"])
+    out = capsys.readouterr().out
+    assert "掌握程度" in out
+    assert "100%" in out
+    assert code == 0                              # 全覆盖无告警
+
+
+def test_pdm_review_warns_when_no_review(capsys):
+    _make_feat(capsys)
+    code = main(["review"])
+    out = capsys.readouterr().out
+    assert code == 1                              # 有告警 → 退出码 1
+    assert "no-review" in out or "完全不审查" in out
+
+
+def test_pdm_review_json(capsys):
+    _make_feat(capsys)
+    capsys.readouterr()
+    code = main(["--json", "review"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["items"] == 5
+    assert data["reviewed"] == 0
+    assert any(w["code"] == "no-review" for w in data["warnings"])
+    assert code == 1
+
+
+def test_pdm_review_empty(capsys):
+    code = main(["review"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "无可审内容" in out
+
+
+def test_feat_show_has_review_marks(capsys):
+    _make_feat(capsys)
+    main(["feat", "review", "a", "--item", "api:0", "--review"])
+    capsys.readouterr()
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    assert "[x]" in out and "[ ]" in out
+
+
+def test_stats_shows_review(capsys, store_dir):
+    _make_feat(capsys)
+    capsys.readouterr()
+    code = main(["stats"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "掌握程度" in out
+
+
+def test_stats_json_has_review(capsys, store_dir):
+    _make_feat(capsys)
+    capsys.readouterr()
+    main(["--json", "stats"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert "review" in data
+    assert data["review"]["items"] == 5
