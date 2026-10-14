@@ -1852,3 +1852,25 @@ def test_stage_review_bad_stage(capsys):
 def test_stage_review_missing_slug(capsys):
     code = main(["feat", "stage-review", "nope", "doc", "--by", "human:x"])
     assert code == 2
+
+
+def test_feat_show_stage_review_marks(capsys):
+    """feat show 显示阶段审核摘要。"""
+    _make_feat(capsys)
+    main(["feat", "stage-review", "a", "doc", "--by", "human:lwy"])
+    capsys.readouterr()
+    main(["feat", "show", "a"])
+    out = capsys.readouterr().out
+    assert "阶段审核" in out
+    assert "doc✓" in out
+    assert "test·" in out
+
+
+def test_stage_review_list_time_readable(capsys):
+    """列表时间不带 T，便于阅读。"""
+    _make_feat(capsys)
+    main(["feat", "stage-review", "a", "doc", "--by", "human:lwy"])
+    capsys.readouterr()
+    main(["feat", "stage-review", "a", "--list"])
+    out = capsys.readouterr().out
+    assert "T" not in out.split("human:lwy")[1][:12]

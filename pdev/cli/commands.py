@@ -621,10 +621,19 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
                     prefix = "    💬 " if i == 0 else "       "
                     print(f"{prefix}{line}")
 
+    # 阶段审核小结（见 doc/feat/stage-review.md）
+    from ..stage import STAGE_SEQUENCE
+
+    stage_marks = []
+    for s in STAGE_SEQUENCE:
+        stage_marks.append(f"{s}{'✓' if feat.stage_reviewed(s) else '·'}")
+    print(f"\n阶段审核  {' '.join(stage_marks)}"
+          f"   （pdm feat stage-review {feat.slug} <阶段> --by human:名字）")
+
     # 审查覆盖小结
     if feat.review_items():
         total, reviewed, tested = feat.review_counts()
-        print(f"\n审查  审查 {reviewed}/{total}  测试 {tested}/{total}"
+        print(f"审查  审查 {reviewed}/{total}  测试 {tested}/{total}"
               f"   （pdm feat review {feat.slug}）")
 
     # 内联设计正文
