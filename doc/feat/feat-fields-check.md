@@ -81,4 +81,18 @@ def _check_fields(feat) -> List[CheckIssue]
 
 ## 实现与校验结果（收尾）
 
-**在 close 阶段补写**。
+- **实现**：`pdev/check.py` 新增 `_check_fields` / `_is_lazy_sample` /
+  `_locates_symbol` 与 `FIELDS_SINCE`；`CODES` 增三码；
+  `cmd_feat_show` 的「样例数据」标题加语义提示。
+- **提交**：`doc` 90d1e61、`test` 2431fa2、`feat` 5d750a3、`fix` 0c6a659。
+- **实测抓出的问题**：
+  1. `vague-change` 最初判「含 :: 或含 .」，但 `改 pdev/feat.py` 里的 `.py`
+     被当成符号定位；改为排除常见扩展名后仍有点才算。
+  2. **豁免判据错**：用 `stage` 判历史——但走新流程的旧 feat 也有 stage，
+     一上线就误报 8 条；改为按 `created_at >= FIELDS_SINCE` 判定，且分界点
+     必须**晚于 feat-fields 的创建时刻**。
+- **结论**：设计成立。`doc/feat/feat-fields.md` 中 `samples` 的语义已明确为
+  「结构的真实实例，非用法」，并在 `feat show` 分区标题上提示。
+
+> 遗留：`FIELDS_SINCE` 是硬编码时间点，属权宜之计；若后续引入 feat 的
+> 「模式版本」字段，可改用它替代时间比较。

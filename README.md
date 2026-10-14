@@ -130,7 +130,9 @@ pdm review --json                                # 机器可读
 显示勾选状态与掌握程度。
 
 `pdm feat check` 同步联动：未审的 feat 会报 `review-none` / `review-low`
-（warning，不阻断），使「关了却没审」一眼可见。
+（warning，不阻断），使「关了却没审」一眼可见；五项设计字段缺失报
+`missing-fields`（仅对 `feat-fields` 之后新建的 feat），改动未定位到符号
+报 `vague-change`，样例敷衍报 `empty-sample`。
 
 另可用 `pdm feat comment <slug> --on <KEY> -m <文本>` 给每个条目写**人工评论**
 （人手动填，可留空，支持多行），记录「为什么这么定」。评论与 `[审][测]`
@@ -148,6 +150,7 @@ pdm review --json                                # 机器可读
 | 4.6 | `feat-comment` | 条目级人工评论（`pdm feat comment`） | ✅ 已完成 |
 | 4.7 | `review-batch` | 批量勾选（`--all` / `--item` 前缀） | ✅ 已完成 |
 | 4.8 | `feat-fields` | 五项设计字段（设计思路/实现方式/数据结构/样例/既有改动） | ✅ 已完成 |
+| 4.9 | `feat-fields-check` | 五项字段校验 + samples 语义 | ✅ 已完成 |
 | 5 | `review-tui-read` | TUI 只读显示 `[审][测]` | ⏸ 搁置（TUI 稳定性问题） |
 | 6 | `review-tui-toggle` | TUI 空格勾选 | ⏸ 搁置（TUI 稳定性问题） |
 
