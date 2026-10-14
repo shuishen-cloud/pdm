@@ -438,7 +438,8 @@ def cmd_ui(ctx: AppContext, args) -> int:
                        port=int(getattr(args, "port", 0) or 0),
                        open_browser=not getattr(args, "no_browser", False),
                        feat_store=feat_store, note_store=store,
-                       doc_dir=ctx.config.doc.dir)
+                       doc_dir=ctx.config.doc.dir,
+                       by=ctx.config.default_author)
     if getattr(args, "curses", False):
         from ..tui_curses import run as run_curses
 

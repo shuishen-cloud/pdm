@@ -22,6 +22,8 @@ __all__ = [
     "build_data",
     "build_feats",
     "build_feat_detail",
+    "build_review_items",
+    "apply_review",
     "make_handler",
     "run",
     "PAGE",
@@ -227,6 +229,7 @@ def build_feat_detail(feat_store, note_store, doc_dir: str,
         "doc_body": body,
         "doc_missing": bool(missing),
         "stage_reviews": _stage_reviews_dict(feat),
+        "review_items": build_review_items(feat),
         "notes": [_note_dict(n) for n in notes],
         "notes_by_kind": [
             [k, [_note_dict(n) for n in items]]
@@ -248,6 +251,107 @@ def _stage_reviews_dict(feat) -> Dict[str, Any]:
             "note": getattr(rec, "note", "") or "",
         }
     return out
+
+
+def _stage_reviews_dict(feat) -> Dict[str, Any]:
+    """阶段审核 → 可序列化 dict。"""
+    out: Dict[str, Any] = {}
+    for stage, rec in (getattr(feat, "stage_reviews", None) or {}).items():
+        by = getattr(rec, "by", "") or ""
+        at = getattr(rec, "at", None)
+        out[stage] = {
+            "by": by,
+            "at": at.isoformat(sep=" ", timespec="seconds") if at else "",
+            "note": getattr(rec, "note", "") or "",
+        }
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 审查勾选（唯一的写操作；见 doc/feat/web-ui-review.md）
+# ---------------------------------------------------------------------------
+
+_REVIEW_FIELDS = {"review": "reviewed", "test": "tested"}
+
+
+def build_review_items(feat) -> List[Dict[str, Any]]:
+    """可审项含勾选态与评论。**纯函数。**
+
+    返回 ``[{"key","label","reviewed","tested","comment"}, ...]``。
+    """
+    out: List[Dict[str, Any]] = []
+    try:
+        items = feat.review_items()
+    except Exception:  # noqa: BLE001
+        return out
+    for key, label in items:
+        rec = feat.review_item(key)
+        out.append({
+            "key": key,
+            "label": label or "",
+            "reviewed": bool(getattr(rec, "reviewed", False)),
+            "tested": bool(getattr(rec, "tested", False)),
+            "comment": (feat.comment(key) or ""),
+        })
+    return out
+
+
+def apply_review(feat_store, payload: dict, by: str = "") -> Dict[str, Any]:
+    """校验并写入一个勾选位。**唯一写入口，复用 FeatStore.set_reviews。**
+
+    返回响应 dict；错误时带 ``_status``（调用方据此设 HTTP 码）与
+    ``error``（**不含内部路径/堆栈**）。
+    """
+    def err(status: int, msg: str) -> Dict[str, Any]:
+        return {"ok": False, "_status": status, "error": msg}
+
+    if feat_store is None:
+        return err(403, "未配置 feat store")
+    if not isinstance(payload, dict):
+        return err(400, "invalid payload")
+
+    slug = payload.get("slug")
+    key = payload.get("key")
+    field = payload.get("field")
+    value = payload.get("value")
+
+    if not isinstance(slug, str) or not slug:
+        return err(400, "missing slug")
+    if not isinstance(key, str) or not key:
+        return err(400, "missing key")
+    if field not in _REVIEW_FIELDS:
+        return err(400, "field \u53ea\u80fd\u662f review/test")
+    if not isinstance(value, bool):
+        return err(400, "value \u5fc5\u987b\u662f\u5e03\u5c14")
+
+    feat = feat_store.get(slug)
+    if feat is None:
+        return err(404, "not found")
+
+    kwargs: Dict[str, Any] = {_REVIEW_FIELDS[field]: bool(value)}
+    if field == "review":
+        kwargs["by"] = by or ""          # 作者**只**由服务端决定
+
+    try:
+        # 复用 CLI 同一条写路径（含 key 校验、原子 update、_prune）
+        feat_store.set_reviews(slug, [key], **kwargs)
+    except Exception as e:  # noqa: BLE001 - 含 FeatError（非法 key）
+        msg = str(e) or "write failed"
+        # 非法 key 属客户端错误；其他归 500，且不泄漏内部细节
+        status = 400 if "key" in msg or "\u5ba1\u67e5\u9879" in msg else 500
+        return err(status, msg if status == 400 else "write failed")
+
+    feat = feat_store.get(slug)
+    total, reviewed, tested = feat.review_counts()
+    return {
+        "ok": True,
+        "slug": slug,
+        "key": key,
+        "reviewed": reviewed,
+        "tested": tested,
+        "total": total,
+        "items": build_review_items(feat),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +425,11 @@ PAGE = r"""<!DOCTYPE html>
   .badge { padding: 0 6px; border-radius: 3px; background: #313244;
            color: var(--fg); font-size: 11px; margin-right: 4px; }
   .badge.miss { background: #f38ba8; color: #111; }
+  .check { cursor: pointer; user-select: none; margin-right: 3px;
+           font-family: monospace; }
+  .check:hover { color: var(--acc); }
+  .rev-item { margin: 4px 0; display: flex; gap: 6px; align-items: baseline; }
+  .rev-item .lbl { flex: 1; word-break: break-word; }
   pre.body { white-space: pre-wrap; word-break: break-word; }
   .md-h { color: var(--acc); font-weight: 700; margin: 10px 0 4px; }
   .md-code { background: #181825; padding: 6px 8px; border-radius: 4px;
@@ -474,6 +583,8 @@ function renderFeatDetail(f) {
   h += `<div class="kv">状态 <b>${f.status}</b>　阶段 <b>${f.stage || "—"}</b>` +
        `　审查 <b>${f.review[0]}/${f.review[1]}</b>　提交 <b>${f.commit_count}</b></div>`;
   h += miss;
+  h += `<div class="spec-sec"><div class="h">审查项（点方框勾选）</div>` +
+       checkListHtml(f) + `</div>`;
   if (f.design_note) h += `<div class="spec-sec"><div class="h">设计思路</div>${escapeHtml(f.design_note)}</div>`;
   if (f.impl_note) h += `<div class="spec-sec"><div class="h">实现方式</div>${escapeHtml(f.impl_note)}</div>`;
   h += sec("接口", f.api);
@@ -536,6 +647,53 @@ async function loadFeat(slug) {
       `<div class="empty">加载失败：${escapeHtml(e.message)}</div>`;
   }
 }
+
+// 审查勾选：两个可点方框（[审][测]），点击 POST /api/review
+function checkListHtml(f) {
+  const items = f.review_items || [];
+  if (!items.length) return `<div class="empty">（无可审项）</div>`;
+  return items.map(it =>
+    `<div class="rev-item">` +
+    `<span class="check" data-key="${escapeHtml(it.key)}" ` +
+    `data-field="review" title="人工已审">${it.reviewed ? "■" : "□"}</span>` +
+    `<span class="check" data-key="${escapeHtml(it.key)}" ` +
+    `data-field="test" title="测试通过">[${it.tested ? "■" : "□"}]</span>` +
+    `<span class="lbl">${escapeHtml(it.key)}  ${escapeHtml(it.label)}` +
+    (it.comment ? `  <span class="kv">// ${escapeHtml(it.comment)}</span>` : "") +
+    `</span></div>`).join("");
+}
+
+async function toggleReview(key, field, span) {
+  if (!FEAT) return;
+  const it = (FEAT.review_items || []).find(x => x.key === key);
+  if (!it) return;
+  const cur = field === "review" ? it.reviewed : it.tested;
+  try {
+    const r = await fetch("/api/review", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({slug: FEAT.slug, key: key,
+                            field: field, value: !cur}),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) { alert("写入失败：" + (d.error || r.status)); return; }
+    // 用服务端返回的 items 局部刷新（不做乐观更新）
+    FEAT.review_items = d.items;
+    FEAT.review = [d.reviewed, d.total];
+    renderFeatDetail(FEAT);
+    // 同步列表里的审查计数
+    const fe = (DATA.feats || []).find(x => x.slug === FEAT.slug);
+    if (fe) { fe.review = [d.reviewed, d.total]; renderFeat(); }
+  } catch (e) {
+    alert("写入失败：" + e.message);
+  }
+}
+
+document.addEventListener("click", e => {
+  const sp = e.target.closest(".check");
+  if (!sp || VIEW !== "feats") return;
+  toggleReview(sp.dataset.key, sp.dataset.field, sp);
+});
 
 function setView(v) {
   VIEW = v;
@@ -637,10 +795,11 @@ load();
 
 
 def make_handler(data: Dict[str, Any], feat_store=None, note_store=None,
-                 doc_dir: str = "doc"):
+                 doc_dir: str = "doc", by: str = ""):
     """返回一个绑定好数据的 ``BaseHTTPRequestHandler`` 子类。
 
-    传了 ``feat_store`` 时启用 ``GET /api/feat/<slug>``；否则该路由 404。
+    传了 ``feat_store`` 时启用 ``GET /api/feat/<slug>``；
+    写操作**仅** ``POST /api/review``（其余 POST 仍 405）。
     """
     import http.server
 
@@ -693,7 +852,34 @@ def make_handler(data: Dict[str, Any], feat_store=None, note_store=None,
             self.do_GET()
 
         def do_POST(self):  # noqa: N802
-            self._send(405, b"read-only", "text/plain; charset=utf-8")
+            """唯一写路由：``/api/review``。其余一律 405（不扩大写面）。"""
+            path = self.path.split("?", 1)[0]
+            if path != "/api/review":
+                self._send(405, b"read-only", "text/plain; charset=utf-8")
+                return
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(length) if length > 0 else b"{}"
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:  # noqa: BLE001
+                self._send(400, b'{"error":"invalid json"}',
+                           "application/json; charset=utf-8")
+                return
+
+            try:
+                result = apply_review(feat_store, payload, by=by)
+            except Exception as e:  # noqa: BLE001 - 不泄漏堆栈
+                import sys
+                print(f"审查写入失败：{e}", file=sys.stderr)
+                result = {"ok": False, "_status": 500, "error": "write failed"}
+
+            status = 200 if result.get("ok") else int(
+                result.get("_status", 400))
+            body = {k: v for k, v in result.items() if not k.startswith("_")}
+            if not result.get("ok"):
+                body.setdefault("error", "failed")
+            self._send(status, json.dumps(body, ensure_ascii=False)
+                       .encode("utf-8"), "application/json; charset=utf-8")
 
         do_PUT = do_DELETE = do_PATCH = do_POST
 
@@ -708,7 +894,7 @@ def make_handler(data: Dict[str, Any], feat_store=None, note_store=None,
 def run(store: NoteStore, cwd: str = ".", port: int = 0,
         open_browser: bool = True, stdout=None,
         feat_store=None, note_store=None, doc_dir: str = "doc",
-        _serve_forever: bool = True) -> int:
+        by: str = "", _serve_forever: bool = True) -> int:
     """起本地 Web 服务；返回退出码。
 
     只绑 ``127.0.0.1``（不对外暴露）。``port=0`` 时由系统分配空闲端口。
@@ -724,7 +910,8 @@ def run(store: NoteStore, cwd: str = ".", port: int = 0,
     data = build_data(store, git, cwd=str(cwd))
     data["feats"] = build_feats(feat_store, note_store)
     handler = make_handler(data, feat_store=feat_store,
-                           note_store=note_store, doc_dir=doc_dir)
+                           note_store=note_store, doc_dir=doc_dir,
+                           by=by)
 
     import http.server
     import socketserver
@@ -744,6 +931,8 @@ def run(store: NoteStore, cwd: str = ".", port: int = 0,
     print(f"Web UI: {url}")
     print(f"store:  {data['store_root']}   ({len(data['commits'])} 提交)")
     print(f"feat:   {len(data.get('feats', []))} 条")
+    if feat_store is not None:
+        print(f"""审查写入：开启（作者 {by or '未设置'}）""")
     for w in data.get("warnings", []):
         print(f"警告: {w}", file=sys.stderr)
 
