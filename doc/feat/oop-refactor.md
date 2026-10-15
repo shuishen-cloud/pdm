@@ -82,6 +82,16 @@ def test_no_hardcoded_stage_sequence():
 - ❌ **删除 `Feat.notes` 死字段**——分单独 feat
 - ❌ **`webui.py` 的 `Dict[str, Any]` 全部类型化**——工作量大，分单独 feat
 
+### webui 的边界（fix 阶段补记）
+
+用户明确指示「不要管 webui」。但 `webui.py` **调用了被改的接口**，
+不改则会 `TypeError`。处理原则：
+
+- ✅ **只做机械适配**（3 处：解包 → 属性访问），**不改结构、不加功能**
+- ❌ **不重构 webui**、不修它的 `Dict[str, Any]`、不改它的前端
+
+即：**让它继续工作**，而不是**改造它**。若将来要动 webui，另开 feat。
+
 ### 兼容性要求
 
 1. **旧 JSON 必须全部可读**——新增类型只影响内存表示，落盘格式不变。
