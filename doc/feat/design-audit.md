@@ -60,3 +60,45 @@ cmd=.venv/bin/python scripts/check_no_fake_reviews.py
 manual=通读三份文档，确认观察有证据支撑
 expected=三份文档存在；检查脚本退出 0
 ```
+
+## 实现与校验结果（收尾）
+
+产出三份文档 + 一个脚本，提交于 `ad0e12ce`，补漏于 `c64b6da5`。
+
+### 交付物
+
+| 文件 | 行数 | 内容 |
+|------|-----:|------|
+| `doc/DATA_STRUCTURE_EXPORT.md` | 562 | 22 个数据结构的字段/取值/含义 |
+| `doc/INTERFACE_AUDIT.md` | 403 | 163 个接口的可读性分级（A~D） |
+| `doc/DESIGN_OBSERVATIONS.md` | 388 | 本会话 15 条观察 |
+| `scripts/check_no_fake_reviews.py` | — | 检测批量伪造审查 |
+| `tests/test_design_audit.py` | — | 文档与代码一致性（9 例） |
+
+**未改任何 `pdev/` 代码。**
+
+### 验证
+
+| 项 | 结果 |
+|----|------|
+| 文档存在且非空 | ✅ 3/3 |
+| Enum 取值全覆盖（防漂移） | ✅ |
+| 主要 dataclass 全覆盖 | ✅ |
+| 关键教训在文档中 | ✅ |
+| 防伪脚本可执行且当前通过 | ✅ |
+| **防伪脚本能识别人为植入** | ✅ 植入 5 条同秒记录 → 退出 1 |
+| 非 TUI 全量回归 | ✅ 全绿 |
+
+### 本次发现的异常
+
+1. **`ReviewItem` / `StageReview` 未在 `pdev` 顶层导出**——使用者读
+   `Feat.reviews: dict` 时看不出元素类型（字段标注只有 `dict`）。
+   已由测试钉住，并在观察文档中记录。
+2. **设计与观察大量只存在于对话中**——本会话 15 条观察，此前仅 11 条落盘。
+   这正是本 feat 的动机。
+
+### 已知限制
+
+- 三份文档描述的是**导出时刻**的现状，代码变更后可能过时
+  （由 `test_design_audit.py` 部分兜住：Enum/dataclass 覆盖会报错）。
+- 观察文档**不含建议**，判断留给重新设计时。
