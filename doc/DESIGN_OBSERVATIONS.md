@@ -126,6 +126,15 @@
 - `build_data() -> Dict[str, Any]`（整个 webui 模块）
 - `parse_target() -> tuple`
 
+**附加发现（导出时核实）**：`ReviewItem` 与 `StageReview` **未在 `pdev`
+顶层导出**（需 `from pdev.feat import ReviewItem`）。
+
+使用者读 `Feat.reviews: dict` 时，**看不出里面装的是 `ReviewItem`**——
+因为该类型不在顶层可见，且字段标注只有 `dict`。
+
+已由 `tests/test_design_audit.py::test_review_item_not_exported_at_top_level`
+钉住；若将来导出，该测试会失败，届时更新本条。
+
 ---
 
 ### 观察 14：测试能否看出接口如何使用？应否更细致分层
