@@ -252,7 +252,8 @@ def test_format_issue_marks_level():
 def test_clean_store_has_no_issues(store):
     """全审后的合规 feat 不产生任何问题（含审查规则）。"""
     f = add(store, GOOD_FEAT)
-    for key, _ in f.review_items():
+    for ref in f.review_items():
+        key = ref.key
         f.set_reviewed(key)
     store.update(f)
     assert check_feats(store) == []
@@ -595,7 +596,8 @@ def test_review_low_warning_when_partial(store):
 
 def test_review_clean_when_coverage_ok(store):
     f = _feat_with_items(n_api=2)           # 4 项
-    for k, _ in f.review_items():
+    for ref in f.review_items():
+        k = ref.key
         f.set_reviewed(k)
     store.add(f)
     got = codes(check_one(store, "a"))

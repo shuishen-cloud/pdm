@@ -661,10 +661,10 @@ class FeatScreen(ModalScreen):
             self._issues = []
         self._refresh_detail()
         stats = summarize(self._issues)
-        if stats["total"]:
+        if stats.total:
             self.notify(
-                f"{slug}：{stats['errors']} 错误，{stats['warnings']} 警告",
-                severity="error" if stats["errors"] else "warning",
+                f"{slug}：{stats.error} 错误，{stats.warning} 警告",
+                severity="error" if stats.error else "warning",
             )
         else:
             self.notify(f"{slug}：通过校验")

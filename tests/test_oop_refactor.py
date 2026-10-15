@@ -58,7 +58,7 @@ def test_review_counts_is_named_type(feat_store):
     c = feat_store.get("alpha").review_counts()
     assert isinstance(c, ReviewCounts)
     # 属性访问（不是解包）
-    assert c.total == 6          # doc + api:0/1 + logs + fallbacks + data_model + samples + changes
+    assert c.total == 8          # doc + api:0/1 + logs + fallbacks + data_model + samples + changes
     assert c.reviewed == 0
     assert c.tested == 0
     assert c.coverage == 0.0
@@ -112,10 +112,18 @@ def test_check_summary_named_type(feat_store, note_store):
 def test_parsed_target_named_type():
     from pdev.scripts import ParsedTarget, parse_target
 
-    p = parse_target("pytest tests/x.py -q")
+    p = parse_target("tests/x.py::test_y")
     assert isinstance(p, ParsedTarget)
-    assert p.command == "pytest"
-    assert "tests/x.py" in p.args
+    assert p.file == "tests/x.py"
+    assert p.nodes == ["test_y"]
+
+
+def test_parsed_target_empty():
+    from pdev.scripts import ParsedTarget, parse_target
+
+    p = parse_target("")
+    assert isinstance(p, ParsedTarget)
+    assert p.file == "" and p.nodes == []
 
 
 def test_feat_dict_fields_have_element_types():

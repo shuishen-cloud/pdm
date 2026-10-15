@@ -658,7 +658,8 @@ def cmd_feat_show(ctx: AppContext, args) -> int:
 
     # 审查覆盖小结
     if feat.review_items():
-        total, reviewed, tested = feat.review_counts()
+        c = feat.review_counts()
+        total, reviewed, tested = c.total, c.reviewed, c.tested
         print(f"审查  审查 {reviewed}/{total}  测试 {tested}/{total}"
               f"   （pdm feat review {feat.slug}）")
 
@@ -839,7 +840,9 @@ def cmd_feat_check(ctx: AppContext, args) -> int:
                  "message": i.message}
                 for i in issues
             ],
-            **stats,
+            "total": stats.total,
+            "errors": stats.error,
+            "warnings": stats.warning,
         }, ensure_ascii=False, indent=2))
     else:
         if not issues:
@@ -847,12 +850,12 @@ def cmd_feat_check(ctx: AppContext, args) -> int:
         else:
             for i in issues:
                 print(format_issue(i, color=ctx.color))
-            print(f"\n共 {stats['total']} 条："
-                  f"{stats['errors']} 错误，{stats['warnings']} 警告")
+            print(f"\n共 {stats.total} 条："
+                  f"{stats.error} 错误，{stats.warning} 警告")
 
-    if stats["errors"]:
+    if stats.error:
         return 1
-    if getattr(args, "strict", False) and stats["warnings"]:
+    if getattr(args, "strict", False) and stats.warning:
         return 1
     return 0
 
@@ -873,7 +876,8 @@ def render_review_marks(feat, key: str = "") -> str:
 def _review_lines(feat) -> List[str]:
     """把可审项渲染成 ``"[x][ ] api:0  f() -> int"`` 列表。"""
     out = []
-    for key, label in feat.review_items():
+    for ref in feat.review_items():
+        key, label = ref.key, ref.label
         out.append(f"{render_review_marks(feat, key)}{key:<12} {label}")
     return out
 
@@ -881,7 +885,8 @@ def _review_lines(feat) -> List[str]:
 def _review_snapshot(feat) -> dict:
     """可审项 + 勾选状态（供 ``--json``）。"""
     items = []
-    for key, label in feat.review_items():
+    for ref in feat.review_items():
+        key, label = ref.key, ref.label
         it = feat.review_item(key)
         items.append({
             "key": key,
@@ -892,7 +897,8 @@ def _review_snapshot(feat) -> dict:
             "test_command": it.test_command if it else "",
             "test_status": it.test_status if it else "",
         })
-    total, reviewed, tested = feat.review_counts()
+    c = feat.review_counts()
+    total, reviewed, tested = c.total, c.reviewed, c.tested
     return {"slug": feat.slug, "items": items, "total": total,
             "reviewed": reviewed, "tested": tested}
 
@@ -993,7 +999,7 @@ def cmd_feat_comment(ctx: AppContext, args) -> int:
             print(f"错误：{e}", file=sys.stderr)
             return 2
         feat = store.get(args.slug)
-        label = dict(feat.review_items()).get(key, "")
+        label = {r.key: r.label for r in feat.review_items()}.get(key, "")
         print(f"{args.slug}  {key}  "
               f"{'已写入评论' if new_text else '已清除评论'}")
         if label:
@@ -1011,7 +1017,7 @@ def cmd_feat_comment(ctx: AppContext, args) -> int:
 
     # 查看单项
     if key is not None:
-        if key not in dict(feat.review_items()):
+        if key not in {r.key for r in feat.review_items()}:
             print(f"错误：非法评论 key：{key!r}", file=sys.stderr)
             return 2
         text = feat.comment(key)
@@ -1033,9 +1039,9 @@ def cmd_feat_comment(ctx: AppContext, args) -> int:
     if not rows:
         print("（暂无评论）")
         return 0
-    for k, label, text in rows:
-        print(f"{k:<12} {label}")
-        for line in text.splitlines():
+    for ref in rows:
+        print(f"{ref.key:<12} {ref.label}")
+        for line in ref.comment.splitlines():
             print(f"  {line}")
     return 0
 
@@ -1072,7 +1078,7 @@ def cmd_feat_review(ctx: AppContext, args) -> int:
         print(f"错误：{e}", file=sys.stderr)
         return 2
 
-    keys = [k for k, _ in targets]
+    keys = [r.key for r in targets]
     kwargs = {}
     if action == "review":
         kwargs = {"reviewed": True, "by": args.by or ""}
@@ -1091,7 +1097,8 @@ def cmd_feat_review(ctx: AppContext, args) -> int:
         return 2
 
     feat = store.get(args.slug)
-    total, reviewed, tested = feat.review_counts()
+    c = feat.review_counts()
+    total, reviewed, tested = c.total, c.reviewed, c.tested
     if action == "test" and not (args.cmd or ""):
         print("提示：建议用 --cmd 记录实际执行的验证命令", file=sys.stderr)
 
@@ -1102,7 +1109,7 @@ def cmd_feat_review(ctx: AppContext, args) -> int:
         return 0
 
     # 批量为多条：逐行 + 汇总（或 JSON）
-    label_of = dict(targets)
+    label_of = {r.key: r.label for r in targets}
     if getattr(args, "json", False) or ctx.config.json_output:
         print(json.dumps({
             "slug": feat.slug,
@@ -1139,7 +1146,8 @@ def _print_review_list(ctx: AppContext, feat) -> int:
         print(json.dumps(_review_snapshot(feat), ensure_ascii=False, indent=2))
         return 0
 
-    total, reviewed, tested = feat.review_counts()
+    c = feat.review_counts()
+    total, reviewed, tested = c.total, c.reviewed, c.tested
     print(f"{feat.slug}  审查 {reviewed}/{total}  测试 {tested}/{total}")
     lines = _review_lines(feat)
     if not lines:

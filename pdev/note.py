@@ -48,6 +48,40 @@ class NoteStatus(str, Enum):
     NOTED = "noted"        # 只是记一笔，无需解决
 
 
+@dataclass(frozen=True)
+class KindSpec:
+    """一个 kind 的**完整身份**（见 doc/feat/oop-refactor.md）。
+
+    单一真相：颜色、缩写、别名、负债属性都从这里取，
+    展示层不再各自维护硬编码表。
+
+    ``color`` 是**语义色**（yellow/red/...），由各界面转译成
+    自己的表示（ANSI 码 / Textual 名 / CSS 变量）。
+    """
+
+    value: str                       # 存储值，如 "debug"
+    short: str                       # 屏幕显示缩写，如 "dbg"
+    color: str                       # 语义色：red/yellow/green/cyan/magenta
+    aliases: tuple = ()              # 输入别名，如 ("db",)
+    is_debt: bool = False            # 是否属于“负债”（需修复）
+
+
+# kind 的单一真相（新增 kind 只需改这里 + NoteKind 枚举）
+KIND_SPECS = {
+    "problem": KindSpec("problem", "pro", "red", ("p",)),
+    "difficulty": KindSpec("difficulty", "dif", "cyan", ("d", "diff")),
+    "pitfall": KindSpec("pitfall", "pit", "yellow", ("pit",)),
+    "controlled-exception": KindSpec(
+        "controlled-exception", "exc", "green", ("ce", "ctrl", "exc")),
+    "bug": KindSpec("bug", "bug", "red", ("b",), is_debt=True),
+}
+
+
+def kind_spec(value: str) -> "KindSpec":
+    """按值取 spec；未知值返回一个中性默认 spec（不抛异常）。"""
+    return KIND_SPECS.get(value, KindSpec(str(value), str(value)[:3], "white"))
+
+
 class VerificationKind(str, Enum):
     """验证方式。"""
 

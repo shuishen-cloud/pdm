@@ -23,6 +23,7 @@ __all__ = [
     "check_notes",
     "format_issue",
     "summarize",
+    "CheckSummary",
     "LEVEL_MARK",
     "STAGES",
 ]
@@ -57,8 +58,13 @@ CODES = (
 # 敷衍样例的占位词（光秃秃才算；带说明如「无：纯计算」不算）
 _SAMPLE_PLACEHOLDERS = {"无", "none", "n/a", "na", "tbd", "-", "待定"}
 
-# 开发阶段 → commit 信息前缀（见 doc/feat/stage-prefix.md、script-stage.md）
-STAGES = ("doc", "test", "script", "feat", "fix")
+# 开发阶段 → commit 信息前缀（**从 stage.STAGE_SEQUENCE 派生**，单一真相）
+# 见 doc/feat/stage-prefix.md、script-stage.md、oop-refactor.md
+from .review import DEFAULT_MIN_COVERAGE
+from .stage import STAGE_SEQUENCE as _STAGE_SEQUENCE
+
+# close 是收尾 doc，不算「开发阶段」，故去掉
+STAGES = tuple(s for s in _STAGE_SEQUENCE if s != "close")
 
 # 非流程性但仍合法的前缀：不告警（归为 other）
 NEUTRAL_PREFIXES = ("refactor", "init", "chore", "style", "perf",
@@ -120,7 +126,7 @@ def format_issue(issue: CheckIssue, color: bool = False) -> str:
 
 
 def check_one(store: FeatStore, slug: str, git=None,
-              note_store=None, min_coverage: float = 0.6) -> List[CheckIssue]:
+              note_store=None, min_coverage: float = DEFAULT_MIN_COVERAGE) -> List[CheckIssue]:
     """检查单个 feat。
 
     :param git: 可选的 :class:`pdev.git.GitRepo`；为 ``None`` 时跳过
@@ -138,7 +144,7 @@ def check_one(store: FeatStore, slug: str, git=None,
 def check_feats(store: FeatStore, git=None, *,
                 include_orphans: bool = True,
                 note_store=None,
-                min_coverage: float = 0.6) -> List[CheckIssue]:
+                min_coverage: float = DEFAULT_MIN_COVERAGE) -> List[CheckIssue]:
     """检查全部 feat（含跨 feat 的冲突与孤儿 commit）。
 
     :param git: 可选的 :class:`pdev.git.GitRepo`。
@@ -197,7 +203,7 @@ def check_feats(store: FeatStore, git=None, *,
 
 
 def _check_feat(feat: Feat, git, note_store=None,
-                min_coverage: float = 0.6) -> List[CheckIssue]:
+                min_coverage: float = DEFAULT_MIN_COVERAGE) -> List[CheckIssue]:
     out: List[CheckIssue] = []
 
     def add(code: str, level: str, message: str) -> None:
@@ -362,13 +368,14 @@ def _is_lazy_sample(s: str) -> bool:
     return text.lower() in _SAMPLE_PLACEHOLDERS
 
 
-def _check_review(feat: Feat, min_coverage: float = 0.6) -> List[CheckIssue]:
+def _check_review(feat: Feat, min_coverage: float = DEFAULT_MIN_COVERAGE) -> List[CheckIssue]:
     """人工审查覆盖率规则：``review-none`` / ``review-low``。
 
     不依赖 git / note_store；无可审项时不报。
     """
     out: List[CheckIssue] = []
-    items, reviewed, _tested = feat.review_counts()
+    counts = feat.review_counts()
+    items, reviewed = counts.total, counts.reviewed
     if items == 0:
         return out
 
@@ -438,7 +445,8 @@ def check_stages(feat: Feat, git, exempt: bool = False) -> List[CheckIssue]:
 
 
 # 阶段在流水线中的序号；doc 既可首也可尾，按出现位置判定
-_PIPELINE = ("doc", "test", "script", "feat", "fix")
+# 阶段顺序也派生自 STAGE_SEQUENCE（单一真相）
+_PIPELINE = STAGES
 
 
 def check_stage_order(feat: Feat, git) -> List[CheckIssue]:
@@ -538,11 +546,20 @@ def check_notes(feat: Feat, git, note_store) -> List[CheckIssue]:
     return out
 
 
-def summarize(issues: List[CheckIssue]) -> dict:
+@dataclass(frozen=True)
+class CheckSummary:
+    """校验结果汇总（替代裸 ``dict``，见 doc/feat/oop-refactor.md）。"""
+
+    error: int = 0
+    warning: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.error + self.warning
+
+
+def summarize(issues: List[CheckIssue]) -> CheckSummary:
     """统计 error / warning 数量。"""
     errors = sum(1 for i in issues if i.is_error)
-    return {
-        "total": len(issues),
-        "errors": errors,
-        "warnings": len(issues) - errors,
-    }
+    return CheckSummary(error=errors,
+                        warning=len(issues) - errors)

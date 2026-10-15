@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """TUI 的测试（用 textual 自带的 run_test 无头驱动）。
 
+**默认不跑**：用 ``@pytest.mark.tui`` 标记，``pyproject.toml`` 的 addopts
+设为 ``-m 'not tui'``。原因：每个用例都要启动完整 Textual app 事件循环，
+100 个用例耗时数十秒，且对时序敏感（不稳定）。
+
+需要时显式跑：``.venv/bin/pytest -m tui tests/test_tui.py``
+
 跳过条件：未安装 textual。
 """
 
@@ -13,6 +19,9 @@ import json
 import pytest
 
 pytest.importorskip("textual")
+
+# 整个模块标记为 tui（默认排除）
+pytestmark = pytest.mark.tui
 
 from textual.widgets import Input  # noqa: E402
 

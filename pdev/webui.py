@@ -155,7 +155,8 @@ def _feat_summary(f) -> Dict[str, Any]:
     """一条 feat 的摘要（列表项）。"""
     total, reviewed = 0, 0
     try:
-        total, reviewed, _tested = f.review_counts()
+        _rc = f.review_counts()
+        total, reviewed = _rc.total, _rc.reviewed
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -284,7 +285,8 @@ def build_review_items(feat) -> List[Dict[str, Any]]:
         items = feat.review_items()
     except Exception:  # noqa: BLE001
         return out
-    for key, label in items:
+    for ref in items:
+        key, label = ref.key, ref.label
         rec = feat.review_item(key)
         out.append({
             "key": key,
@@ -342,7 +344,8 @@ def apply_review(feat_store, payload: dict, by: str = "") -> Dict[str, Any]:
         return err(status, msg if status == 400 else "write failed")
 
     feat = feat_store.get(slug)
-    total, reviewed, tested = feat.review_counts()
+    _rc = feat.review_counts()
+    total, reviewed, tested = _rc.total, _rc.reviewed, _rc.tested
     return {
         "ok": True,
         "slug": slug,

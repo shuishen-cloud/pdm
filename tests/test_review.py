@@ -25,13 +25,15 @@ def _feat(slug: str, *, api=(), logs=(), fallbacks=(), doc="d.md") -> Feat:
 
 
 def _review_all(feat: Feat) -> Feat:
-    for key, _ in feat.review_items():
+    for ref in feat.review_items():
+        key = ref.key
         feat.set_reviewed(key, True, by="human:lwy")
     return feat
 
 
 def _test_all(feat: Feat) -> Feat:
-    for key, _ in feat.review_items():
+    for ref in feat.review_items():
+        key = ref.key
         feat.set_tested(key, True, command="pytest x", status="passed")
     return feat
 

@@ -1630,8 +1630,8 @@ def test_review_all_review(capsys, tmp_path):
     assert code == 0
     assert "8/8" in out
     from pdev.feat import FeatStore
-    assert FeatStore(tmp_path / ".pdm" / "feats").get("a").review_counts() \
-        == (8, 8, 0)
+    _rc = FeatStore(tmp_path / ".pdm" / "feats").get("a").review_counts()
+    assert (_rc.total, _rc.reviewed, _rc.tested) == (8, 8, 0)
 
 
 def test_review_prefix_review(capsys, tmp_path):
@@ -1654,7 +1654,8 @@ def test_review_all_test(capsys, tmp_path):
     capsys.readouterr()
     from pdev.feat import FeatStore
     f = FeatStore(tmp_path / ".pdm" / "feats").get("a")
-    assert f.review_counts() == (8, 0, 8)
+    _rc = f.review_counts()
+    assert (_rc.total, _rc.reviewed, _rc.tested) == (8, 0, 8)
     assert f.review_item("api:0").test_command == "pytest x"
 
 
@@ -1665,8 +1666,8 @@ def test_review_all_unreview(capsys, tmp_path):
     main(["feat", "review", "a", "--all", "--unreview"])
     capsys.readouterr()
     from pdev.feat import FeatStore
-    assert FeatStore(tmp_path / ".pdm" / "feats").get("a").review_counts() \
-        == (8, 0, 0)
+    _rc = FeatStore(tmp_path / ".pdm" / "feats").get("a").review_counts()
+    assert (_rc.total, _rc.reviewed, _rc.tested) == (8, 0, 0)
 
 
 def test_review_single_item_output_unchanged(capsys):

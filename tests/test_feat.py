@@ -352,11 +352,11 @@ def test_review_items_order_and_keys():
         fallbacks=["非法输入抛错"],
     )
     items = f.review_items()
-    assert [k for k, _ in items] == [
+    assert [r.key for r in items] == [
         "doc", "api:0", "api:1", "logs:0", "fallbacks:0",
     ]
     # label 是能直接显示的内容
-    labels = dict(items)
+    labels = {r.key: r.label for r in items}
     assert labels["doc"] == "feat/a.md"
     assert labels["api:0"] == "f() -> int"
     assert labels["logs:0"] == "创建时记录 slug"
@@ -365,16 +365,16 @@ def test_review_items_order_and_keys():
 def test_review_items_skip_empty_fields():
     """doc 为空 / 列表为空时不产生对应可审项。"""
     f = Feat(slug="a", title="A", api=["f()"], logs=[], fallbacks=[])
-    assert [k for k, _ in f.review_items()] == ["api:0"]
+    assert [r.key for r in f.review_items()] == ["api:0"]
     assert Feat(slug="b", title="B").review_items() == []
 
 
 def test_review_items_use_index_not_content():
     """key 由字段+序号构成，内容改动不改变 key。"""
     f = Feat(slug="a", title="A", api=["f() -> int"])
-    assert [k for k, _ in f.review_items()] == ["api:0"]
+    assert [r.key for r in f.review_items()] == ["api:0"]
     f.api = ["f() -> str"]        # 内容变了，key 不变
-    assert [k for k, _ in f.review_items()] == ["api:0"]
+    assert [r.key for r in f.review_items()] == ["api:0"]
 
 
 # ---------------------------------------------------------------------------
@@ -443,25 +443,26 @@ def test_review_item_lookup():
 def test_review_counts():
     f = Feat(slug="a", title="A", doc="d.md",
              api=["f()", "g()"], logs=["l"], fallbacks=["fb"])
-    assert f.review_counts() == (5, 0, 0)      # doc + api:0/1 + logs:0 + fb:0
+    _rc = f.review_counts(); assert (_rc.total, _rc.reviewed, _rc.tested) == (5, 0, 0)      # doc + api:0/1 + logs:0 + fb:0
     f.set_reviewed("doc")
     f.set_reviewed("api:0")
     f.set_tested("api:0", status="passed")
-    assert f.review_counts() == (5, 2, 1)
+    _rc = f.review_counts(); assert (_rc.total, _rc.reviewed, _rc.tested) == (5, 2, 1)
 
 
 def test_review_counts_ignore_orphans():
     """规格项被删除后，孤儿记录保留但不计入统计。"""
     f = Feat(slug="a", title="A", api=["f()", "g()"])
     f.set_reviewed("api:1")
-    assert f.review_counts() == (2, 1, 0)
+    _rc = f.review_counts(); assert (_rc.total, _rc.reviewed, _rc.tested) == (2, 1, 0)
     f.api = ["f()"]            # 删掉第二条，api:1 成孤儿
     assert "api:1" in f.reviews          # 记录保留
-    assert f.review_counts() == (1, 0, 0)  # 统计忽略
+    _rc = f.review_counts(); assert (_rc.total, _rc.reviewed, _rc.tested) == (1, 0, 0)  # 统计忽略
 
 
 def test_review_counts_empty_feat():
-    assert Feat(slug="a", title="A").review_counts() == (0, 0, 0)
+    _rc = Feat(slug="a", title="A").review_counts()
+    assert (_rc.total, _rc.reviewed, _rc.tested) == (0, 0, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +544,7 @@ def test_legacy_json_without_reviews(tmp_path):
     feat = FeatStore(root).get("old")
     assert feat is not None
     assert feat.reviews == {}
-    assert feat.review_counts() == (1, 0, 0)
+    _rc = feat.review_counts(); assert (_rc.total, _rc.reviewed, _rc.tested) == (1, 0, 0)
 
 
 def test_corrupt_review_time_becomes_none(tmp_path):
@@ -632,16 +633,16 @@ def test_commented_items_only_nonempty_in_order():
     f.set_comment("api:1", "对第二条")
     f.set_comment("logs:0", "对日志")
     rows = f.commented_items()
-    assert [k for k, _, _ in rows] == ["api:1", "logs:0"]
-    labels = {k: lbl for k, lbl, _ in rows}
+    assert [r.key for r in rows] == ["api:1", "logs:0"]
+    labels = {r.key: r.label for r in rows}
     assert labels["api:1"] == "g()"
-    assert rows[0][2] == "对第二条"
+    assert rows[0].comment == "对第二条"
 
 
 def test_comment_independent_of_review():
     f = Feat(slug="a", title="A", api=["f()"])
     f.set_comment("api:0", "写了评论")
-    assert f.review_counts() == (1, 0, 0)     # 不影响勾选统计
+    _rc = f.review_counts(); assert (_rc.total, _rc.reviewed, _rc.tested) == (1, 0, 0)     # 不影响勾选统计
     f.set_reviewed("api:0")
     assert f.comment("api:0") == "写了评论"    # 勾选不影响评论
 
@@ -709,20 +710,20 @@ def _items_feat():
 def test_resolve_keys_all(store):
     store.add(_items_feat())
     rows = store.resolve_keys("a", all_items=True)
-    assert [k for k, _ in rows] == ["doc", "api:0", "api:1", "logs:0",
+    assert [r.key for r in rows] == ["doc", "api:0", "api:1", "logs:0",
                                     "fallbacks:0"]
 
 
 def test_resolve_keys_prefix(store):
     store.add(_items_feat())
     rows = store.resolve_keys("a", item="api")
-    assert [k for k, _ in rows] == ["api:0", "api:1"]
+    assert [r.key for r in rows] == ["api:0", "api:1"]
 
 
 def test_resolve_keys_exact(store):
     store.add(_items_feat())
-    assert [k for k, _ in store.resolve_keys("a", item="api:0")] == ["api:0"]
-    assert [k for k, _ in store.resolve_keys("a", item="doc")] == ["doc"]
+    assert [r.key for r in store.resolve_keys("a", item="api:0")] == ["api:0"]
+    assert [r.key for r in store.resolve_keys("a", item="doc")] == ["doc"]
 
 
 def test_resolve_keys_no_match(store):
@@ -739,10 +740,10 @@ def test_resolve_keys_all_on_empty_feat(store):
 
 def test_set_reviews_batch_reviewed(store):
     store.add(_items_feat())
-    keys = [k for k, _ in store.resolve_keys("a", item="api")]
+    keys = [r.key for r in store.resolve_keys("a", item="api")]
     store.set_reviews("a", keys, reviewed=True, by="human:lwy")
     got = FeatStore(store.root).get("a")
-    assert got.review_counts() == (5, 2, 0)
+    _rc = got.review_counts(); assert (_rc.total, _rc.reviewed, _rc.tested) == (5, 2, 0)
     assert got.review_item("api:0").reviewed_by == "human:lwy"
 
 
@@ -750,7 +751,8 @@ def test_set_reviews_batch_unreview(store):
     store.add(_items_feat())
     store.set_reviews("a", ["api:0", "api:1"], reviewed=True)
     store.set_reviews("a", ["api:0", "api:1"], reviewed=False)
-    assert store.get("a").review_counts() == (5, 0, 0)
+    _rc = store.get("a").review_counts()
+    assert (_rc.total, _rc.reviewed, _rc.tested) == (5, 0, 0)
 
 
 def test_set_reviews_batch_tested(store):
@@ -758,7 +760,7 @@ def test_set_reviews_batch_tested(store):
     store.set_reviews("a", ["logs:0", "fallbacks:0"], tested=True,
                       command="pytest x", status="passed")
     got = store.get("a")
-    assert got.review_counts() == (5, 0, 2)
+    _rc = got.review_counts(); assert (_rc.total, _rc.reviewed, _rc.tested) == (5, 0, 2)
     assert got.review_item("logs:0").test_command == "pytest x"
 
 
@@ -810,7 +812,7 @@ def test_new_fields_roundtrip_via_store(store):
 def test_list_fields_are_reviewable():
     """data_model / samples / changes 并入可审项。"""
     f = Feat(**_full_feat_kwargs())
-    keys = [k for k, _ in f.review_items()]
+    keys = [r.key for r in f.review_items()]
     assert "data_model:0" in keys
     assert "samples:0" in keys
     assert "changes:0" in keys
@@ -818,7 +820,7 @@ def test_list_fields_are_reviewable():
 
 def test_text_fields_not_reviewable():
     f = Feat(**_full_feat_kwargs())
-    keys = [k for k, _ in f.review_items()]
+    keys = [r.key for r in f.review_items()]
     assert not any(k.startswith("design_note") for k in keys)
     assert not any(k.startswith("impl_note") for k in keys)
 

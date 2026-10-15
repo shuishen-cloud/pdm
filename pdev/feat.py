@@ -29,6 +29,8 @@ __all__ = [
     "FeatError",
     "FeatStore",
     "ReviewItem",
+    "ReviewCounts",
+    "ReviewItemRef",
     "StageReview",
     "valid_slug",
     "VALID_SLUG_CHARS",
@@ -128,6 +130,42 @@ class StageReview:
     note: str = ""
 
 
+@dataclass(frozen=True)
+class ReviewCounts:
+    """审查计数（替代裸 ``tuple``，见 doc/feat/oop-refactor.md）。
+
+    用属性访问（``counts.total``）而非解包，避免顺序记错。
+    """
+
+    total: int = 0
+    reviewed: int = 0
+    tested: int = 0
+
+    @property
+    def coverage(self) -> float:
+        """人工审查覆盖率；``total == 0`` 时返回 ``0.0``。"""
+        return self.reviewed / self.total if self.total else 0.0
+
+    @property
+    def test_coverage(self) -> float:
+        """测试覆盖率；``total == 0`` 时返回 ``0.0``。"""
+        return self.tested / self.total if self.total else 0.0
+
+
+@dataclass(frozen=True)
+class ReviewItemRef:
+    """一个可审项的描述（替代裸 ``(key, label)`` 元组）。
+
+    同时携带当前勾选态与评论，便于展示层一次性拿到所需信息。
+    """
+
+    key: str
+    label: str
+    comment: str = ""
+    reviewed: bool = False
+    tested: bool = False
+
+
 # 可审项的字段顺序（review_items 据此展开）
 _REVIEW_FIELDS = ("api", "logs", "fallbacks",
                   "data_model", "samples", "changes")
@@ -180,13 +218,13 @@ class Feat:
     stage: Optional[str] = None
 
     # 审查项：{key: ReviewItem}，key 形如 doc / api:0 / logs:1 / fallbacks:0
-    reviews: dict = field(default_factory=dict)
+    reviews: Dict[str, ReviewItem] = field(default_factory=dict)
 
     # 条目级人工评论：{key: 文本}，key 同上（见 doc/feat/feat-comment.md）
-    comments: dict = field(default_factory=dict)
+    comments: Dict[str, str] = field(default_factory=dict)
 
     # 阶段级人工审核：{stage: StageReview}（见 doc/feat/stage-review.md）
-    stage_reviews: dict = field(default_factory=dict)
+    stage_reviews: Dict[str, StageReview] = field(default_factory=dict)
 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -245,22 +283,23 @@ class Feat:
                 out.append(label)
         return out
 
-    def review_items(self) -> List[tuple]:
-        """展开可审项，返回 ``[(key, label), ...]``。
+    def review_items(self) -> List[ReviewItemRef]:
+        """展开可审项，返回 ``ReviewItemRef`` 列表。
 
-        顺序固定：``doc`` → ``api`` → ``logs`` → ``fallbacks``。
+        顺序固定：``doc`` → ``api`` → ``logs`` → ``fallbacks`` →
+        ``data_model`` → ``samples`` → ``changes``。
         ``doc`` 为空、或某个列表为空时，不产生对应项。
         """
-        out: List[tuple] = []
+        out: List[ReviewItemRef] = []
         if self.doc:
-            out.append(("doc", self.doc))
+            out.append(ReviewItemRef(key="doc", label=self.doc))
         for name in _REVIEW_FIELDS:
             for i, text in enumerate(getattr(self, name, []) or []):
-                out.append((f"{name}:{i}", text))
+                out.append(ReviewItemRef(key=f"{name}:{i}", label=text))
         return out
 
     def _review_keys(self) -> set:
-        return {k for k, _ in self.review_items()}
+        return {r.key for r in self.review_items()}
 
     def review_item(self, key: str) -> Optional[ReviewItem]:
         """取某 key 的勾选记录；未记录返回 ``None``。"""
@@ -310,8 +349,11 @@ class Feat:
         if item.is_empty:
             self.reviews.pop(key, None)
 
-    def review_counts(self) -> tuple:
-        """返回 ``(items, reviewed, tested)``，孤儿记录不计入。"""
+    def review_counts(self) -> ReviewCounts:
+        """审查/测试计数，孤儿记录不计入。
+
+        返回具名 :class:`ReviewCounts`，用属性访问而非解包。
+        """
         keys = self._review_keys()
         reviewed = tested = 0
         for k in keys:
@@ -322,7 +364,7 @@ class Feat:
                 reviewed += 1
             if item.tested:
                 tested += 1
-        return len(keys), reviewed, tested
+        return ReviewCounts(total=len(keys), reviewed=reviewed, tested=tested)
 
     # --- 条目级评论（feat-comment）---
 
@@ -343,16 +385,23 @@ class Feat:
             self.comments.pop(key, None)
         self.touch()
 
-    def commented_items(self) -> List[tuple]:
-        """返回 ``[(key, label, comment), ...]``，只含**非空**评论。
+    def commented_items(self) -> List[ReviewItemRef]:
+        """返回带非空评论的可审项（``comment`` 字段非空）。
 
-        按 `review_items()` 的项顺序；孤儿 key 不返回。
+        按 :meth:`review_items` 的项顺序；孤儿 key 不返回。
         """
-        out: List[tuple] = []
-        for key, label in self.review_items():
-            text = self.comments.get(key, "")
+        out: List[ReviewItemRef] = []
+        for ref in self.review_items():
+            text = self.comments.get(ref.key, "")
             if text:
-                out.append((key, label, text))
+                item = self.reviews.get(ref.key)
+                out.append(ReviewItemRef(
+                    key=ref.key,
+                    label=ref.label,
+                    comment=text,
+                    reviewed=bool(getattr(item, "reviewed", False)),
+                    tested=bool(getattr(item, "tested", False)),
+                ))
         return out
 
     # --- 阶段级审核（stage-review）---
@@ -603,8 +652,8 @@ class FeatStore:
         return feat
 
     def resolve_keys(self, slug: str, item: str = "",
-                     all_items: bool = False) -> List[tuple]:
-        """把 ``--item`` / ``--all`` 展开成 ``[(key, label), ...]``。
+                     all_items: bool = False) -> List[ReviewItemRef]:
+        """把 ``--item`` / ``--all`` 展开成 :class:`ReviewItemRef` 列表。
 
         - ``all_items`` → 全部可审项；无可审项抛 ``FeatError``
         - ``item`` 是精确 key → 该项
@@ -619,13 +668,13 @@ class FeatStore:
             return list(items)
         if not item:
             raise FeatError("需要 --item <KEY> 或 --all")
-        for key, label in items:
-            if key == item:
-                return [(key, label)]
+        for ref in items:
+            if ref.key == item:
+                return [ref]
         prefix = f"{item}:"
-        matched = [(k, lbl) for k, lbl in items if k.startswith(prefix)]
+        matched = [r for r in items if r.key.startswith(prefix)]
         if not matched:
-            avail = sorted(k for k, _ in items)
+            avail = sorted(r.key for r in items)
             raise FeatError(
                 f"没有匹配的可审项：{item!r}（可选 {avail}）"
             )

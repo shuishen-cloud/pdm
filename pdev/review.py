@@ -22,12 +22,16 @@ __all__ = [
     "format_score",
     "unreviewed_items",
     "LEVELS",
+    "DEFAULT_MIN_COVERAGE",
 ]
 
 # 分档下界：(level, score 下界)，从高到低匹配
+# **覆盖率默认阈值（单一真相）**——check 与 config 都从这里取
+DEFAULT_MIN_COVERAGE = 0.6
+
 LEVELS = (
     ("excellent", 0.9),
-    ("good", 0.6),
+    ("good", DEFAULT_MIN_COVERAGE),
     ("fair", 0.3),
     ("poor", 0.0),
 )
@@ -41,7 +45,7 @@ TEST_WEIGHT = 0.4
 class ReviewPolicy:
     """告警阈值与开关。"""
 
-    min_coverage: float = 0.6     # 人工审核覆盖率下限
+    min_coverage: float = DEFAULT_MIN_COVERAGE  # 人工审核覆盖率下限
     warn_no_review: bool = True   # 是否报 no-review
     warn_untested: bool = True    # 是否报 untested
 
@@ -97,15 +101,15 @@ def compute_review(feats: Optional[Iterable] = None,
     s = ReviewScore()
     for f in feats:
         try:
-            items, reviewed, tested = f.review_counts()
+            c = f.review_counts()
         except AttributeError:
             continue
-        if items == 0:
+        if c.total == 0:
             continue
         s.feats += 1
-        s.items += items
-        s.reviewed += reviewed
-        s.tested += tested
+        s.items += c.total
+        s.reviewed += c.reviewed
+        s.tested += c.tested
 
     if s.items:
         s.review_coverage = s.reviewed / s.items
@@ -153,7 +157,8 @@ def unreviewed_items(feats: Optional[Iterable], *,
     """
     out: List[tuple] = []
     for f in (list(feats) if feats else []):
-        for key, label in f.review_items():
+        for ref in f.review_items():
+            key, label = ref.key, ref.label
             item = f.review_item(key)
             reviewed = bool(item and item.reviewed)
             was_tested = bool(item and item.tested)

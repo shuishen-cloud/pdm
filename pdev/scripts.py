@@ -10,10 +10,22 @@ from __future__ import annotations
 
 import ast
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
-__all__ = ["parse_target", "extract_script", "ScriptResult"]
+__all__ = ["parse_target", "extract_script", "ScriptResult", "ParsedTarget"]
+
+
+@dataclass(frozen=True)
+class ParsedTarget:
+    """一个测试目标的解析结果（替代裸 ``tuple``）。
+
+    ``file`` 为 ``tests/x.py``，``nodes`` 为 ``["test_y"]``（可为空）。
+    """
+
+    file: str = ""
+    nodes: List[str] = field(default_factory=list)
 
 # target 形如 tests/x.py::test_y 或 tests/x.py::Class::test_y
 _TARGET_RE = re.compile(
@@ -44,25 +56,27 @@ class ScriptResult:
         return f"ScriptResult(ok={self.ok}, source={self.source!r})"
 
 
-def parse_target(target: str) -> tuple[str, list[str]]:
-    """把 ``tests/x.py::test_y`` 拆成 ``("tests/x.py", ["test_y"])``。
+def parse_target(target: str) -> ParsedTarget:
+    """把 ``tests/x.py::test_y`` 拆成 :class:`ParsedTarget`。
 
     无 ``::`` 时节点列表为空。非 ``.py`` 目标返回空文件。
     """
     target = target.strip()
     if not target or "::" not in target and not target.endswith(".py"):
-        return "", []
+        return ParsedTarget(file="", nodes=[])
     m = _TARGET_RE.match(target)
     if not m:
         # 退而求其次：按 :: 手工切
         if "::" in target:
             file, _, rest = target.partition("::")
-            return file, [n for n in rest.split("::") if n]
-        return target, []
+            return ParsedTarget(
+                file=file, nodes=[n for n in rest.split("::") if n]
+            )
+        return ParsedTarget(file=target, nodes=[])
     file = m.group("file")
     nodes_raw = m.group("nodes") or ""
     nodes = [n for n in nodes_raw.split("::") if n]
-    return file, nodes
+    return ParsedTarget(file=file, nodes=nodes)
 
 
 def extract_script(
@@ -77,7 +91,8 @@ def extract_script(
     :param root: 解析相对路径的起点，默认当前目录。
     :param max_lines: 最多抽取的行数（防止整个大文件）。
     """
-    file, nodes = parse_target(target)
+    parsed = parse_target(target)
+    file, nodes = parsed.file, parsed.nodes
     if not file:
         return ScriptResult(error="target 不是 Python 测试节点")
 

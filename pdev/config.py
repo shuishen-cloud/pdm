@@ -145,11 +145,14 @@ class FeatConfig:
     view: FeatViewConfig = field(default_factory=FeatViewConfig)
 
 
+from .review import DEFAULT_MIN_COVERAGE as _DEFAULT_MIN_COVERAGE
+
+
 @dataclass
 class ReviewConfig:
     """Feat 审查覆盖率告警阈值（见 doc/feat/review-score.md）。"""
 
-    min_coverage: float = 0.6     # 人工审核覆盖率下限
+    min_coverage: float = _DEFAULT_MIN_COVERAGE  # 见 review.DEFAULT_MIN_COVERAGE
     warn_no_review: bool = True   # 完全不审查时告警
     warn_untested: bool = True    # 完全无测试通过记录时告警
 

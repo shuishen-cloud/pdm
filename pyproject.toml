@@ -22,5 +22,8 @@ include = ["pdev*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -m 'not tui'"
 asyncio_mode = "auto"
+markers = [
+    "tui: Textual TUI 测试（慢，默认不跑；需要时 pytest -m tui）",
+]

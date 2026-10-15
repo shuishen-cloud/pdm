@@ -25,7 +25,8 @@ from pdev.scripts import extract_script, parse_target
     ],
 )
 def test_parse_target(target, file, nodes):
-    f, n = parse_target(target)
+    _p = parse_target(target)
+    f, n = _p.file, _p.nodes
     assert f == file
     assert n == nodes
 
