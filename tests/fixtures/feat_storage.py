@@ -44,6 +44,7 @@ LEGACY_FIELDS = ["design", "fixtures", "touches",
 # --- feat-check 的 Mock 数据 ---
 
 # 合规的 feat：closed、有 commit、字段齐全
+# （含 feat-edit-fields 新增的三个必填：测试方式/影响面/重要性）
 GOOD_FEAT = {
     "slug": "good-feat", "title": "合规", "status": "closed",
     "doc": "docs/feat/good.md", "api": ["f() -> None"],
@@ -51,6 +52,9 @@ GOOD_FEAT = {
     "design_note": "这么设计的原因", "impl_note": "这么实现的",
     "data_model": ["X: int —— 计数"], "samples": ["X=1"],
     "changes": ["pdev/x.py::X —— 新增"],
+    "test_note": "pytest tests/test_x.py::test_y",
+    "impact": "新增字段，旧 JSON 靠默认值兼容",
+    "importance": "medium",
 }
 
 # draft 却已有 commit（draft-has-commit）

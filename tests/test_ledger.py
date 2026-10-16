@@ -270,7 +270,16 @@ def test_usage_verify_flow(ledger):
 
 
 def test_no_kernel_signature_changed():
-    """本 feat 不动内核：关键签名保持原样。"""
+    """关键内核签名台账（变更时同步更新，以防意外破坏）。
+
+    原为 ``ledger-complete`` 立的“本 feat 不动内核”防线；
+    后续 feat 有意变更 API 时，**同步更新本台账**并说明原因。
+
+    变更记录：
+
+    - ``check_one`` / ``check_feats`` 新增 ``loose_history``
+      （feat-edit-fields：历史 feat 的字段豁免改为由开关决定）。
+    """
     import inspect
 
     from pdev.check import check_feats, check_one
@@ -278,9 +287,10 @@ def test_no_kernel_signature_changed():
     from pdev.stats import compute_note_stats
 
     sigs = {
-        check_one: ["store", "slug", "git", "note_store", "min_coverage"],
+        check_one: ["store", "slug", "git", "note_store", "min_coverage",
+                    "loose_history"],
         check_feats: ["store", "git", "include_orphans", "note_store",
-                      "min_coverage"],
+                      "min_coverage", "loose_history"],
         compute_review: ["feats", "policy"],
         compute_note_stats: ["store"],
     }

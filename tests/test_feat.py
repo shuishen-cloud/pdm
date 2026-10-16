@@ -11,6 +11,7 @@ import pytest
 from pdev.feat import (
     Feat,
     FeatError,
+    FeatImportance,
     FeatKind,
     FeatStatus,
     FeatStore,
@@ -781,12 +782,16 @@ def test_set_reviews_writes_once(store, monkeypatch):
 
 
 def _full_feat_kwargs():
+    """一份**必填字段齐全**的 feat 参数（含 feat-edit-fields 新增项）。"""
     return dict(
         slug="a", title="A", doc="d.md",
         design_note="为什么这么设计", impl_note="怎么实现的",
         data_model=["Feat.x: int —— 计数"],
         samples=['{"k": 1}'],
         changes=["pdev/feat.py::Feat.x —— 新增字段"],
+        test_note="pytest tests/test_feat.py 覆盖字段读写",
+        impact="新增字段，旧 JSON 靠默认值兼容",
+        importance=FeatImportance.MEDIUM,
     )
 
 
@@ -797,6 +802,10 @@ def test_new_fields_default_empty():
     assert f.data_model == []
     assert f.samples == []
     assert f.changes == []
+    # feat-edit-fields 新增的五项默认值
+    assert f.test_note == "" and f.debug_note == ""
+    assert f.extend_note == "" and f.impact == ""
+    assert f.importance is None
 
 
 def test_new_fields_roundtrip_via_store(store):
@@ -818,20 +827,29 @@ def test_list_fields_are_reviewable():
     assert "changes:0" in keys
 
 
-def test_text_fields_not_reviewable():
+def test_text_fields_are_reviewable():
+    """整块文本字段现在是可审项（feat-edit-fields 的行为变更）。
+
+    原测试名 ``test_text_fields_not_reviewable``：feat-fields 当初
+    刻意把 design_note/impl_note 排除在可审项外，本 feat 改为纳入，
+    使 Review 页能对设计内容逐项勾审。
+    """
     f = Feat(**_full_feat_kwargs())
     keys = [r.key for r in f.review_items()]
-    assert not any(k.startswith("design_note") for k in keys)
-    assert not any(k.startswith("impl_note") for k in keys)
+    assert "design_note" in keys
+    assert "impl_note" in keys
 
 
 def test_missing_required_fields_detects_all():
     f = Feat(slug="a", title="A")
     missing = f.missing_required_fields()
-    assert len(missing) == 5
+    assert len(missing) == 8          # 原 5 项 + 测试方式/影响面/重要性
     assert any("设计思路" in m for m in missing)
     assert any("样例数据" in m for m in missing)
     assert any("改动" in m for m in missing)
+    assert any("测试方式" in m for m in missing)
+    assert any("影响" in m for m in missing)
+    assert any("重要性" in m for m in missing)
 
 
 def test_missing_required_fields_empty_when_complete():
@@ -876,7 +894,7 @@ def test_new_fields_in_json(store):
 
 
 def test_legacy_feat_missing_new_fields_but_loadable(tmp_path):
-    """历史 feat 缺新字段仍可加载，只是 missing 非空（check 层豁免）。"""
+    """历史 feat 缺新字段仍可加载，只是 missing 非空（是否告警由开关决定）。"""
     root = tmp_path / "feats"
     d = root / "by-id"
     d.mkdir(parents=True)
@@ -884,7 +902,7 @@ def test_legacy_feat_missing_new_fields_but_loadable(tmp_path):
         "slug": "old", "title": "旧", "api": ["f()"],
     }), encoding="utf-8")
     feat = FeatStore(root).get("old")
-    assert len(feat.missing_required_fields()) == 5
+    assert len(feat.missing_required_fields()) == 8   # 含新增三项
     assert feat.review_items()                 # 旧字段仍可审
 
 

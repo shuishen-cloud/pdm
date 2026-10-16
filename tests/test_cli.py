@@ -17,20 +17,30 @@ from pdev.cli import main as _main, parse_actor, parse_kind
 # feat-fields：`feat new` 现在要求五项必填。为免逐处修改既有调用，
 # 这里包一层：无这些参数时自动补全（想测「缺必填」的用例可传
 # --no-autofill 禁用，或显式给出 --design-note 等）。
-_REQUIRED_DEFAULTS = [
-    "--design-note", "（测试）设计思路",
-    "--impl-note", "（测试）实现方式",
-    "--data-model", "X: int —— （测试）",
-    "--sample", "（测试）样例",
-    "--change", "pdev/x.py::X —— （测试）",
-]
+_REQUIRED_DEFAULTS = {
+    "--design-note": "（测试）设计思路",
+    "--impl-note": "（测试）实现方式",
+    "--data-model": "X: int —— （测试）",
+    "--sample": "（测试）样例",
+    "--change": "pdev/x.py::X —— （测试）",
+    # feat-edit-fields 新增的三个必填
+    "--test-note": "（测试）测试方式",
+    "--impact": "（测试）影响面",
+    "--importance": "medium",
+}
 
 
 def main(argv):
-    """测试包装：给 `feat new` 自动补必填字段。"""
+    """测试包装：给 `feat new` **按需补齐**未提供的必填字段。
+
+    逐个检查而不是只看 --design-note：否则测试只传了一部分必填
+    字段时，其余仍会缺失而失败。
+    """
     argv = list(argv)
-    if "feat" in argv and "new" in argv and "--design-note" not in argv:
-        argv = argv + _REQUIRED_DEFAULTS
+    if "feat" in argv and "new" in argv:
+        for flag, value in _REQUIRED_DEFAULTS.items():
+            if flag not in argv:
+                argv += [flag, value]
     return _main(argv)
 
 
@@ -904,7 +914,10 @@ def test_feat_check_clean(capsys):
     main(["feat", "link", "a", "abc1234"])
     main(["feat", "set", "a", "closed"])
     # 审查全部可审项，才是真正「通过校验」
-    for key in ("doc", "api:0", "fallbacks:0", "data_model:0",
+    # （包括 feat-edit-fields 后纳入的整块文本字段）
+    for key in ("doc", "design_note", "impl_note", "test_note",
+                "impact", "importance",
+                "api:0", "fallbacks:0", "data_model:0",
                 "samples:0", "changes:0"):
         main(["feat", "review", "a", "--item", key, "--review"])
     capsys.readouterr()
@@ -1209,6 +1222,22 @@ def _make_feat(capsys, slug="a", title="A"):
     capsys.readouterr()
 
 
+#: _make_feat 建的 feat 的可审项总数（feat-edit-fields 后从 8 → 13）。
+#: doc(1) + design_note/impl_note/test_note/impact/importance(5)
+#: + api:0,1(2) + logs:0(1) + fallbacks:0(1)
+#: + data_model:0/samples:0/changes:0(3)
+_MAKE_FEAT_ITEMS = 13
+
+#: _make_feat 建出的 feat 的全部可审项 key（顺序与 review_items 一致）
+_ALL_ITEMS = [
+    "doc",
+    "design_note", "impl_note", "test_note", "impact", "importance",
+    "api:0", "api:1", "logs:0", "fallbacks:0",
+    "data_model:0", "samples:0", "changes:0",
+]
+assert len(_ALL_ITEMS) == _MAKE_FEAT_ITEMS
+
+
 def test_feat_review_lists_items(capsys):
     _make_feat(capsys)
     code = main(["feat", "review", "a"])
@@ -1322,7 +1351,7 @@ def test_pdm_review_shows_score(capsys):
     code = main(["review"])
     out = capsys.readouterr().out
     assert "掌握程度" in out
-    assert "100%" in out
+    assert "62%" in out
     assert code == 0                              # 全覆盖无告警
 
 
@@ -1340,7 +1369,7 @@ def test_pdm_review_json(capsys):
     code = main(["--json", "review"])
     out = capsys.readouterr().out
     data = json.loads(out)
-    assert data["items"] == 8
+    assert data["items"] == _MAKE_FEAT_ITEMS
     assert data["reviewed"] == 0
     assert any(w["code"] == "no-review" for w in data["warnings"])
     assert code == 1
@@ -1378,7 +1407,7 @@ def test_stats_json_has_review(capsys, store_dir):
     out = capsys.readouterr().out
     data = json.loads(out)
     assert "review" in data
-    assert data["review"]["items"] == 8
+    assert data["review"]["items"] == _MAKE_FEAT_ITEMS
 
 
 def test_review_end_to_end_flow(capsys):
@@ -1389,8 +1418,7 @@ def test_review_end_to_end_flow(capsys):
     capsys.readouterr()
 
     # 逐项审查 + 测试（用真实 key）
-    keys = ["api:0", "api:1", "logs:0", "fallbacks:0", "doc",
-            "data_model:0", "samples:0", "changes:0"]
+    keys = _ALL_ITEMS
     for k in keys:
         assert main(["feat", "review", "a", "--item", k, "--review"]) == 0
         assert main(["feat", "review", "a", "--item", k, "--test",
@@ -1408,10 +1436,10 @@ def test_review_end_to_end_flow(capsys):
     capsys.readouterr()
     code = main(["review"])
     out = capsys.readouterr().out
-    assert code == 0                      # 7/8≈88% 仍高于 0.6，无 low-review
-    # 人工审查行显示 88%（不再 100%）
+    assert code == 0                      # 12/13≈92% 仍高于 0.6，无 low-review
+    # 人工审查行显示 92%（不再 100%）
     review_line = [l for l in out.splitlines() if "人工审查" in l][0]
-    assert "88%" in review_line
+    assert "92%" in review_line
     assert "100%" not in review_line
 
 
@@ -1457,8 +1485,7 @@ def test_review_both_filters_intersection(capsys):
 def test_review_unreviewed_empty(capsys):
     """全部审完 → 无待办，退出码 0。"""
     _make_feat(capsys)
-    for key in ("doc", "api:0", "api:1", "logs:0", "fallbacks:0",
-                "data_model:0", "samples:0", "changes:0"):
+    for key in _ALL_ITEMS:
         main(["feat", "review", "a", "--item", key, "--review"])
     capsys.readouterr()
     code = main(["review", "--unreviewed"])
@@ -1628,10 +1655,10 @@ def test_review_all_review(capsys, tmp_path):
                  "--by", "human:lwy"])
     out = capsys.readouterr().out
     assert code == 0
-    assert "8/8" in out
+    assert "13/13" in out
     from pdev.feat import FeatStore
     _rc = FeatStore(tmp_path / ".pdm" / "feats").get("a").review_counts()
-    assert (_rc.total, _rc.reviewed, _rc.tested) == (8, 8, 0)
+    assert (_rc.total, _rc.reviewed, _rc.tested) == (_MAKE_FEAT_ITEMS, _MAKE_FEAT_ITEMS, 0)
 
 
 def test_review_prefix_review(capsys, tmp_path):
@@ -1639,7 +1666,7 @@ def test_review_prefix_review(capsys, tmp_path):
     code = main(["feat", "review", "a", "--item", "api", "--review"])
     out = capsys.readouterr().out
     assert code == 0
-    assert "2/8" in out
+    assert "2/13" in out
     from pdev.feat import FeatStore
     f = FeatStore(tmp_path / ".pdm" / "feats").get("a")
     assert f.review_item("api:0").reviewed
@@ -1655,7 +1682,7 @@ def test_review_all_test(capsys, tmp_path):
     from pdev.feat import FeatStore
     f = FeatStore(tmp_path / ".pdm" / "feats").get("a")
     _rc = f.review_counts()
-    assert (_rc.total, _rc.reviewed, _rc.tested) == (8, 0, 8)
+    assert (_rc.total, _rc.reviewed, _rc.tested) == (_MAKE_FEAT_ITEMS, 0, _MAKE_FEAT_ITEMS)
     assert f.review_item("api:0").test_command == "pytest x"
 
 
@@ -1667,7 +1694,7 @@ def test_review_all_unreview(capsys, tmp_path):
     capsys.readouterr()
     from pdev.feat import FeatStore
     _rc = FeatStore(tmp_path / ".pdm" / "feats").get("a").review_counts()
-    assert (_rc.total, _rc.reviewed, _rc.tested) == (8, 0, 0)
+    assert (_rc.total, _rc.reviewed, _rc.tested) == (_MAKE_FEAT_ITEMS, 0, 0)
 
 
 def test_review_single_item_output_unchanged(capsys):
@@ -1713,7 +1740,7 @@ def test_review_all_json(capsys):
     data = json.loads(out)                 # 必须是纯 JSON
     assert data["action"] == "review"
     assert data["scope"] == "all"
-    assert data["reviewed"] == data["total"] == 8
+    assert data["reviewed"] == data["total"] == _MAKE_FEAT_ITEMS
 
 
 def test_review_item_exact_doc(capsys):
@@ -1721,7 +1748,7 @@ def test_review_item_exact_doc(capsys):
     _make_feat(capsys)
     main(["feat", "review", "a", "--item", "doc", "--review"])
     out = capsys.readouterr().out
-    assert "1/8" in out                    # 只勾了 doc 一项
+    assert "1/13" in out                    # 只勾了 doc 一项
 
 
 # ---------------------------------------------------------------------------
@@ -1739,15 +1766,21 @@ _FIELD_ARGS = [
 
 
 def test_feat_new_requires_all_fields(capsys):
-    """缺任一必填 → 退出码 2，不落盘。"""
-    code = main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
-                 "--api", "f()", "--fallback", "x",
-                 "--design-note", "思路", "--impl-note", "方式",
-                 "--data-model", "X: int", "--sample", "{}"])
-    # 缺 changes
+    """缺任一必填 → 退出码 2，不落盘。
+
+    用 ``_main`` 而非包装后的 ``main``：包装器会自动补齐必填字段，
+    那样就测不到“缺失被拒”了。
+    """
+    code = _main(["feat", "new", "a", "-t", "A", "--doc", "d.md",
+                  "--api", "f()", "--fallback", "x",
+                  "--design-note", "思路", "--impl-note", "方式",
+                  "--data-model", "X: int", "--sample", "{}"])
+    # 缺 changes / 测试方式 / 影响面 / 重要性
     err = capsys.readouterr().err
     assert code == 2
     assert "改动" in err
+    assert "测试方式" in err
+    assert "重要性" in err
 
 
 def test_feat_new_with_all_fields(capsys, tmp_path):
