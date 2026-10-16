@@ -70,6 +70,16 @@ def make_app(store) -> PDMApp:
     return PDMApp(store, cwd=str(Path(store.root).parent))
 
 
+def _config_with_feat(feat_root):
+    """造一个最小 config：只带 feat.store 与 default_author。"""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        feat=SimpleNamespace(store=str(feat_root)),
+        default_author="human:test-author",
+    )
+
+
 # --- 会话 1：启动 + 导航（一条会话覆盖全部渲染断言） -------------------------
 
 
@@ -101,12 +111,39 @@ async def test_boot_and_navigate(store):
         assert app.errors == []
 
 
-# --- 会话 2：代表性键位不炸 -------------------------------------------------
+# --- 会话 2：代表性键位不炸 + Feat 面板（同一个 app） ---------------------------
 
 
-async def test_keys_keep_app_alive(store):
-    """只选**纯导航**键（不含 R：刷新会重建全部面板，贵）。"""
+@pytest.fixture
+def feat_root(tmp_path):
+    """隔离的 feat 目录，内含一个 demo。避免碰到仓库里的真 feat。"""
+    from pdev.feat import Feat, FeatStore
+
+    root = tmp_path / "feats"
+    s = FeatStore(root)
+    s.update(Feat(slug="demo", title="演示", api=["run() -> int"]))
+    return root
+
+
+def _reload_feat(root, slug="demo"):
+    """从磁盘**重新**读一份 feat（模拟 CLI 复核，不听内存缓存）。"""
+    from pdev.feat import FeatStore
+
+    return FeatStore(root).get(slug)
+
+
+async def test_keys_keep_app_alive_and_feat_panel(store, feat_root):
+    """纯导航键不炸；且 ``f`` 能打开 Feat 面板、``空格`` 能勾审查并落盘。
+
+    两件事共用一个 app 会话：``run_test`` 很贵，能合并就合并。
+    写盘一律用 ``_reload_feat`` 复查（新建 store 从磁盘读），
+    与 ``web-ui-review`` 的「CLI 复核」同一思路。
+    """
+    from pdev.tui_new_to_fix.screens import FeatScreen
+    from textual.widgets import ListView
+
     app = make_app(store)
+    app.config = _config_with_feat(feat_root)
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         for key in ["2", "3", "tab"]:
@@ -114,6 +151,42 @@ async def test_keys_keep_app_alive(store):
             await pilot.pause()
             assert app.is_running, f"{key} 让 app 退出了"
             assert app.errors == [], f"{key} 产生了异常：{app.errors}"
+
+        # --- f 打开面板，能看到列表 ---
+        await pilot.press("f")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, FeatScreen)
+        assert len(screen.query_one("#feat-list", ListView).children) == 1
+
+        # --- 空格勾 [审]，必须真的落盘（从磁盘复查） ---
+        await pilot.press("space")
+        await pilot.pause()
+        assert app.errors == []
+        item = _reload_feat(feat_root).review_item("api:0")
+        assert item.reviewed is True
+        assert item.reviewed_by == "human:test-author"   # by 来自 config
+
+        # 再按一次 = 取消（两个位都清空时记录会被 _prune 掉，
+        # 因此 review_item 返回 None——同样表示“未勾选”）
+        await pilot.press("space")
+        await pilot.pause()
+        item = _reload_feat(feat_root).review_item("api:0")
+        assert getattr(item, "reviewed", False) is False
+
+        # --- t 勾 [测]，且不得顺带改 [审] ---
+        await pilot.press("t")
+        await pilot.pause()
+        assert app.errors == []
+        item = _reload_feat(feat_root).review_item("api:0")
+        assert item.tested is True
+        assert item.reviewed is False
+
+        # --- Esc 关闭后 app 仍在跑 ---
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.is_running
+        assert not isinstance(app.screen, FeatScreen)
 
 
 # --- 会话 3：异常兜底（本 feat 的核心契约） ---------------------------------
