@@ -185,6 +185,42 @@ def test_comment_rows_survives_broken_feat():
     assert feat_core.comment_rows(Broken()) == []
 
 
+# --- comment_header ---------------------------------------------------------
+
+
+def test_comment_header_has_item_details():
+    """编辑框顶部要能看到正在编辑的条目：feat / 条目 / 内容 / 状态。"""
+    f = _feat()
+    f.set_reviewed("api:0", True, by="human:lwy")
+    head = dict(feat_core.comment_header(f, "api:0"))
+    assert head["feat"] == "demo"
+    assert head["条目"] == "api:0"
+    assert head["内容"] == "run() -> int"       # 条目详细信息
+    assert "■" in head["状态"]                  # [审] 已勾
+    assert head["状态"].count("□") == 1          # [测] 未勾
+
+
+def test_comment_header_shows_untested_state():
+    head = dict(feat_core.comment_header(_feat(), "api:0"))
+    assert head["状态"].count("□") == 2
+
+
+def test_comment_header_unknown_key_keeps_context():
+    """key 不在可审项里也要能显上下文（不报错，不编造内容）。"""
+    head = dict(feat_core.comment_header(_feat(), "nope:9"))
+    assert head["feat"] == "demo"
+    assert head["条目"] == "nope:9"
+    assert "内容" not in head
+
+
+def test_comment_header_survives_broken_feat():
+    class Broken:
+        slug = "b"
+
+    head = dict(feat_core.comment_header(Broken(), "api:0"))
+    assert head["feat"] == "b"
+
+
 # --- 时间预算 ---------------------------------------------------------------
 
 

@@ -80,6 +80,7 @@ class FeatList(ListView):
 class CommentScreen(ModalScreen):
     """条目评论编辑弹窗（**多行**，所以用 TextArea）。
 
+    - 顶部显示**正在编辑的条目详细信息**（feat / 标题 / 条目 / 内容 / 状态）。
     - ``Ctrl+S`` 保存，``Esc`` 取消。
     - ``dismiss`` 返回 ``str``（保存，空串 = 清除）或 ``None``（取消）。
     - 独立弹窗的意义：文本框的字母/回车不会污染 FeatScreen 的
@@ -95,7 +96,7 @@ class CommentScreen(ModalScreen):
         border: thick $accent;
         background: $surface;
     }
-    #comment-title { height: 1; color: $text-muted; }
+    #comment-title { height: auto; }
     #comment-text { height: 1fr; }
     #comment-hint { height: 1; color: $text-muted; }
     """
@@ -105,20 +106,37 @@ class CommentScreen(ModalScreen):
         Binding("escape", "cancel", "取消"),
     ]
 
-    def __init__(self, initial: str = "", title: str = "") -> None:
+    def __init__(self, initial: str = "", header=None) -> None:
+        """
+        :param initial: 已有评论（空串表示新建）
+        :param header: ``[(字段名, 值), ...]``，由 ``feat_core.comment_header`` 生成
+        """
         super().__init__()
         self._initial = initial or ""
-        self._title = title or "评论"
+        self._header = list(header or [])
+
+    def _header_text(self) -> Text:
+        """顶部信息块（无 header 时退回一行提示）。"""
+        t = Text()
+        if not self._header:
+            t.append("编辑评论", style="bold")
+            return t
+        for i, (name, value) in enumerate(self._header):
+            if i:
+                t.append("\n")
+            t.append(f"{name}  ", style="dim")
+            style = "bold yellow" if name in ("feat", "条目") else ""
+            t.append(value, style=style)
+        return t
 
     def compose(self) -> ComposeResult:
         from textual.widgets import TextArea
 
         with Vertical(id="comment-box"):
-            yield Static(
-                f"{self._title}   Ctrl+S 保存 · Esc 取消 · 留空=清除",
-                id="comment-title")
+            yield Static(self._header_text(), id="comment-title")
             yield TextArea(self._initial, id="comment-text")
-            yield Static("（多行可粘贴；回车换行）", id="comment-hint")
+            yield Static("Ctrl+S 保存 · Esc 取消 · 留空=清除 · 回车换行",
+                         id="comment-hint")
 
     @guard
     def on_mount(self) -> None:
@@ -427,8 +445,10 @@ class FeatScreen(ModalScreen):
             self._refresh_detail()
             self.notify(f"{key} 评论已{'清除' if not text else '保存'}")
 
-        self.app.push_screen(CommentScreen(initial, title=f"{slug} · {key}"),
-                             after)
+        self.app.push_screen(
+            CommentScreen(initial,
+                          header=feat_core.comment_header(feat, key)),
+            after)
 
     def _toggle(self, field: str) -> None:
         """切换一个勾选位并落盘（唯一写路径）。"""

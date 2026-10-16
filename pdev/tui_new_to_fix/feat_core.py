@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 __all__ = ["review_rows", "plan_toggle", "plan_comment", "comment_rows",
-           "feat_line", "feat_line_text", "REVIEW_FIELDS"]
+           "comment_header", "feat_line", "feat_line_text", "REVIEW_FIELDS"]
 
 #: 允许切换的字段（白名单，与 web-ui-review 一致）。
 REVIEW_FIELDS = ("review", "test")
@@ -67,6 +67,38 @@ def plan_comment(text) -> str:
         return ""
     stripped = text.strip()
     return stripped
+
+
+def comment_header(feat, key: str) -> List[Tuple[str, str]]:
+    """编辑框顶部要显示的条目详细信息：``[(字段名, 值), ...]``。
+
+    包含：feat slug / 标题 / 条目 key / 条目内容(label) / 勾选状态。
+    纯函数，不抛异常；缺什么就跳过什么。
+    """
+    out: List[Tuple[str, str]] = []
+
+    slug = getattr(feat, "slug", "")
+    if slug:
+        out.append(("feat", slug))
+    title = getattr(feat, "title", "")
+    if title:
+        out.append(("标题", title))
+    if key:
+        out.append(("条目", key))
+
+    # 条目内容 + 勾选状态从可审项表里取
+    label, reviewed, tested = "", False, False
+    for row_key, row_label, row_reviewed, row_tested in review_rows(feat):
+        if row_key == key:
+            label, reviewed, tested = row_label, row_reviewed, row_tested
+            break
+    if label:
+        out.append(("内容", label))
+    if key:
+        out.append(("状态",
+                    f"[审]{'■' if reviewed else '□'} "
+                    f"[测]{'■' if tested else '□'}"))
+    return out
 
 
 def comment_rows(feat) -> List[Tuple[str, str, str]]:

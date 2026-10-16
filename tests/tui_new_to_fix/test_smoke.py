@@ -141,6 +141,14 @@ def _reload_store(root):
     return FeatStore(root)
 
 
+def _header_text(screen) -> str:
+    """取 CommentScreen 顶部信息块的纯文本（用于断言）。"""
+    from textual.widgets import Static
+
+    content = screen.query_one("#comment-title", Static).content
+    return getattr(content, "plain", str(content))
+
+
 async def test_feat_panel_toggle_and_persist(store, feat_root):
     """``f`` 打开面板；``空格``/``t`` 能勾选并**真的落盘**。
 
@@ -253,10 +261,14 @@ async def test_feat_comment_roundtrip(store, feat_root):
         await pilot.pause()
         assert isinstance(app.screen, FeatScreen)
 
-        # --- c 打开评论弹窗 ---
+        # --- c 打开评论弹窗，顶部应显示条目详细信息 ---
         await pilot.press("c")
         await pilot.pause()
         assert isinstance(app.screen, CommentScreen), "c 没打开评论弹窗"
+        header = _header_text(app.screen)
+        assert "demo" in header          # feat
+        assert "api:0" in header         # 条目 key
+        assert "run() -> int" in header  # 条目内容（详细信息）
 
         # --- 输入（直接写 TextArea，避开逐字按键的开销）并 Ctrl+S 保存 ---
         app.screen.query_one("#comment-text", TextArea).text = "为何不泛化"
