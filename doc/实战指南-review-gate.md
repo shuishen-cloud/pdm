@@ -33,7 +33,65 @@ cd /home/lwy/project/ProjectDevelopManger
     ! [low-review] 人工审核覆盖率过低：2%（低于 60%）
 ```
 
-## 1. 登记 feat（`pdm feat new`）
+## 1. 改动地图：这个功能要改哪几处
+
+> **先看地图再登记**：`feat new` 的 `--change` 就是填写这份地图的地方，
+> 不先搞清楚要动哪几处，那条字段只能瞎写。
+
+### 功能拆成 4 处（按依赖顺序）
+
+| # | 文件 | 位置 | 职责 |
+|---|------|------|------|
+| 1 | `pdev/review.py` | `compute_review` 旁边 | **新增纯函数** `gate_decision(score, threshold)`：算是否放行 + 警告文案 |
+| 2 | `pdev/config.py` | `ReviewConfig`（约 155 行） | 新增 `gate_threshold: float = 0.10` |
+| 3 | `pdev/cli/parser.py` | `fnew.add_argument(...)`（约 251 行起） | 新增 `--ignore-gate` 开关 |
+| 4 | `pdev/cli/commands.py` | `cmd_feat_new`（约 508 行） | 创建 feat 前调用门禁，低覆盖率时 `print` 到 stderr |
+
+### 调用链（读代码的路径，不需要“调试”）
+
+```
+pdm feat new
+  → pdev/cli/parser.py        定义参数（251~287 行），
+                             第 287 行 fnew.set_defaults(func=commands.cmd_feat_new)
+  → pdev/cli/commands.py::cmd_feat_new（508 行）
+      → 构造 Feat(...)
+      → feat.missing_required_fields()   必填校验
+      → _feat_store(ctx).add(feat)        落盘
+  ← 返回 0（成）/ 2（参数错）
+```
+
+**要插入门禁的位置**：`missing_required_fields` 校验之后、`add(feat)` 之前。
+
+### 可参照的现成实现
+
+`pdev/cli/commands.py::cmd_review`（约 1596 行）已经在做
+“取全部 feat → `compute_review` → 格式化输出”，你要的只是把同样的
+逻辑搬到 `feat new` 里做一次检查：
+
+```bash
+# 看它怎么用 compute_review
+grep -n "compute_review" -B 3 -A 8 pdev/cli/commands.py | sed -n '/1596/,/1620/p'
+
+# 看你的目标函数长什么样
+grep -n "def compute_review" -A 12 pdev/review.py
+
+# 看 feat new 现有实现
+grep -n "def cmd_feat_new" -A 40 pdev/cli/commands.py
+```
+
+### 这份地图的归宿
+
+**写进 `--change`**（下一节的 `feat new` 命令里），之后随时可查：
+
+```bash
+.venv/bin/pdm feat show <slug>        # “对既有代码的改动”一节
+.venv/bin/pdm feat edit <slug>        # 预览全部字段
+```
+
+这就是“设计落到代码中”的载体——`changes` 字段要求
+`文件::符号 —— 说明` 格式，正是防止设计漂在文档里、找不到对应代码。
+
+## 2. 登记 feat（`pdm feat new`）
 
 **八项字段全必填**（缺一即报错退出码 2）：
 
@@ -68,7 +126,7 @@ cd /home/lwy/project/ProjectDevelopManger
 **踩坑点**：`--change` 每条必须带 `::` 或 `.`（定位到符号），否则
 `feat check` 会报 `vague-change`。
 
-## 2. doc 阶段：先写设计文档
+## 3. doc 阶段：先写设计文档
 
 写 `doc/feat/review-gate.md`，内容建议包含：
 
@@ -92,7 +150,7 @@ cd /home/lwy/project/ProjectDevelopManger
 下一步：按本 doc 编写测试（pdm feat set <slug> testing）
 ```
 
-## 3. test 阶段：先写测试
+## 4. test 阶段：先写测试
 
 新建 `tests/test_review_gate.py`。**先只写测试，实现可以是空**：
 
@@ -119,7 +177,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/python -m pytest tests/test_review_gate.py -q
 ```
 
-## 4. feat 阶段：实现
+## 5. feat 阶段：实现
 
 改 `pdev/review.py`、`pdev/cli/commands.py`、`pdev/config.py`、`pdev/cli/parser.py`。
 
@@ -148,9 +206,9 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
     --verify 'test=tests/test_review_gate.py::test_gate_blocks_below_threshold;method=怎么验证;expected=passed'
 ```
 
-## 5. fix 阶段：集成中发现的问题
+## 6. fix 阶段：集成中发现的问题
 
-手工实测（见第 7 节），有问题就在这一步修并提交：
+手工实测（见第 8 节），有问题就在这一步修并提交：
 
 ```bash
 .venv/bin/pdm feat commit fix review-gate -m "修复：<具体问题>" \
@@ -160,7 +218,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 **注意**：`feat` 之后**必须**经过 `fix` 才能 `close`（流程强制）。
 即使没有代码修复，也要提交一次回填文档。
 
-## 6. close 阶段：收尾
+## 7. close 阶段：收尾
 
 在本 feat 的设计文档 `doc/feat/review-gate.md` 末尾追加「实现与校验结果」小节：
 交付物、实测数据、发现的异常、已知限制。
@@ -177,7 +235,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
   review-gate → [closed]
 ```
 
-## 7. 手工验证
+## 8. 手工验证
 
 ```bash
 # 当前覆盖率 2%（低于 10%）→ 应该警告
@@ -187,7 +245,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/pdm feat new temp-demo2 --title "临时" ... --ignore-gate
 ```
 
-## 8. 自校验
+## 9. 自校验
 
 ```bash
 .venv/bin/pdm feat check review-gate
@@ -227,7 +285,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/pdm feat stage-review review-gate --list        # 看进度
 ```
 
-## 9. 常用排查命令
+## 10. 常用排查命令
 
 | 目的 | 命令 |
 |------|------|
@@ -240,7 +298,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 | 看流程是否合规 | `pdm feat check review-gate` |
 | 看某 commit 的笔记 | `pdm show <commit>` |
 
-## 10. 常见报错与处置
+## 11. 常见报错与处置
 
 | 报错 | 原因 | 处置 |
 |------|------|------|
@@ -269,7 +327,7 @@ json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False,indent=2)"
 .venv/bin/pdm feat check review-gate
 ```
 
-## 11. 完成后
+## 12. 完成后
 
 ```bash
 .venv/bin/pdm feat list | grep review-gate     # 应是 [closed]
