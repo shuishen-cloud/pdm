@@ -143,6 +143,9 @@ class FeatConfig:
 
     store: str = ".pdm/feats"
     view: FeatViewConfig = field(default_factory=FeatViewConfig)
+    #: 历史 feat 的缺字段/未审查是否放过（新 feat 永远严格）。
+    #: 默认 False = 严格。见 doc/feat/feat-edit-fields.md。
+    loose_history: bool = False
 
 
 from .review import DEFAULT_MIN_COVERAGE as _DEFAULT_MIN_COVERAGE

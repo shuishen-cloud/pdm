@@ -90,7 +90,7 @@ pdm note add abc123 -k pitfall -t "token 刷新有竞态" \
 
 ### `pdm feat new <slug> --title T [--doc PATH] [--api SIG] [--log TEXT] [--fallback TEXT]`
 
-登记一条 feat。**五项设计字段必填**（缺一报错，退出码 2）；`--api`/`--log`/
+登记一条 feat。**八项设计字段必填**（缺一报错，退出码 2）；`--api`/`--log`/
 `--fallback` 均可重复，应写成能直接照着实现的真实内容。
 
 | 参数 | 必填 | 说明 |
@@ -103,11 +103,17 @@ pdm note add abc123 -k pitfall -t "token 刷新有竞态" \
 | `--data-model TEXT` | ✔ | 核心数据结构（可重复） |
 | `--sample TEXT` | ✔ | 样例数据＝结构的实例，**非用法**（可重复） |
 | `--change TEXT` | ✔ | 对既有代码的改动，`文件::符号 —— 说明`（可重复） |
+| `--test-note TEXT` | ✔ | 测试方式（没有写「无：原因」） |
+| `--impact TEXT` | ✔ | 对现有系统的影响 |
+| `--importance S` | ✔ | `critical`/`high`/`medium`/`low` |
+| `--debug-note TEXT` | | 调试方式（选填） |
+| `--extend-note TEXT` | | 如何扩展（选填） |
 | `--api SIG` | | 接口签名（可重复） |
 | `--log TEXT` | | 会打什么日志（可重复） |
 | `--fallback TEXT` | | 异常兜底（可重复） |
 
-- 五项必填**允许填“无”，但必须说明**：`--sample "无：纯计算无外部数据"`。
+- 必填**允许填“无”，但必须说明**：`--sample "无：纯计算无外部数据"`。
+- 新建后可随时用 **`pdm feat edit`** 修改（唯一的字段修改入口）。
 - `samples` 语义：`data_model` 记类型（`Cache: dict[str,int]`），
   `samples` 记实例（`{"k": 1}`）；**不是**命令行用法。
 - `changes` 每条应定位到符号：`pdev/feat.py::Feat.comments —— 新增字段`。
@@ -123,7 +129,10 @@ pdm feat new token-cache --title "token 缓存层" \
     --api "TokenCache.get(key) -> Optional[str]" \
     --api "TokenCache.put(key, val, ttl) -> None" \
     --log "缓存命中/未命中时记录 key" \
-    --fallback "Redis 不可用降级为直连"
+    --fallback "Redis 不可用降级为直连" \
+    --test-note "pytest tests/test_auth.py::test_cache_hit" \
+    --impact "新增类，不改既有调用链" \
+    --importance high
 ```
 
 ### `pdm feat list [--status S] [--kind K] [--open]`
@@ -131,6 +140,29 @@ pdm feat new token-cache --title "token 缓存层" \
 ### `pdm feat show <slug> [--doc] [--notes] [--verify] [--json] [--debug]`
 
 看 feat 详情；`--doc` 打印设计正文，`--notes`/`--verify` 附关联笔记。
+
+### **`pdm feat edit <slug> [选项]`** —— 编辑字段（**唯一的修改入口**）
+
+不带任何修改参数时 = 预览当前字段值。
+
+| 形式 | 作用 |
+|------|------|
+| `--add-<f> VALUE` | 列表字段追加一条（`api`/`logs`/`fallbacks`/`data_model`/`samples`/`changes`） |
+| `--set-<f> VALUE` | 列表字段整体替换 |
+| `--remove-<f> IDX` | 删除第 IDX 条（**从 0 起**） |
+| `--<field> VALUE` | 单值字段覆盖（`title`/`doc`/`design_note`/`impl_note`/`test_note`/`debug_note`/`extend_note`/`impact`/`importance`） |
+
+```bash
+pdm feat edit token-cache --add-change "pdev/x.py::Cache —— 新增缓存类"
+pdm feat edit token-cache --remove-change 1
+pdm feat edit token-cache --importance high     # critical/high/medium/low
+```
+
+**改内容 = 撤销该条审查**：编辑可审项（如 `changes:0`）后，
+它的 `[审]` 位自动撤销（审查是对已定稿内容的确认）。
+
+**不允许改**：`status`（用 `feat set`）、`stage`（用 `feat commit`）、
+`slug`（是文件名）。
 
 ### `pdm feat set <slug> <status>`
 
@@ -249,7 +281,8 @@ pdm feat comment token-cache --on api:0            # 只看该条评论
 - 门禁默认**只告警**（`check` 报 `stage-unreviewed`）；
   开 `config.stage_review.enabled=true` 后 `feat commit` **硬阻断**。
 - 只查**上一个**阶段，不回溯全部前序。
-- 历史 feat（`created_at` 早于 `FIELDS_SINCE`）豁免。
+- 历史 feat（`created_at` 早于 `FIELDS_SINCE`）默认也报；
+  用 `--loose-history` 或配置 `feat.loose_history=true` 放过。
 
 ```bash
 pdm feat stage-review token-cache doc --by human:lwy

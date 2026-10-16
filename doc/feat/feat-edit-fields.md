@@ -157,6 +157,31 @@ missing-review   某可审项未被 [审] 勾选（warning）
 | `review-low` | 审查覆盖率低于阈值 | 已有，保留 |
 | `missing-review` | **逐个**列出未审的可审项 | **新增** |
 
+### 四、整块文本字段纳入可审项（行为变更）
+
+`doc/feat/feat-fields.md` 当初刻意把 `design_note` / `impl_note`
+排除在 `review_items()` 之外（理由：“整块文本，不进可审项”）。
+
+本 feat **改变这一决定**：把设计类整块文本改为**可审项**，
+使 Review 页能对它们逐项勾审（用户需求：“在 Review 页面添加
+对其的审核”）。
+
+| 字段 | key | 是否可审 |
+|------|-----|:---:|
+| `design_note` | `design_note` | ✅ 新纳入 |
+| `impl_note` | `impl_note` | ✅ 新纳入 |
+| `test_note` | `test_note` | ✅ |
+| `debug_note` | `debug_note` | ✅（非空时） |
+| `extend_note` | `extend_note` | ✅（非空时） |
+| `impact` | `impact` | ✅ |
+| `importance` | `importance` | ✅ |
+
+规则：**非空的整块文本字段各产生一个可审项**（key = 字段名），
+值为空则不产生（与 `doc` 的处理一致）。
+
+影响：现有 feat 的可审项数量会上升（新增 2~5 项），
+审查覆盖率分母变大——这是**有意为之**（本来就应该审设计）。
+
 ## 接口
 
 ```python
