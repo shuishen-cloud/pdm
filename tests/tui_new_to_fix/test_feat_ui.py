@@ -199,6 +199,32 @@ async def test_feat_list_single_line_zoom_and_focus(store, feat_root):
         await pilot.pause()
         assert app.focused is not None and app.focused.id == "feat-list"
 
+
+# ---------------------------------------------------------------------------
+# 标签：Design / Review 分派
+# ---------------------------------------------------------------------------
+
+
+async def test_feat_tabs_and_design_fold(store, feat_root):
+    """标签切换、空格按标签分派、Design 页的焦点/滚动/循环。
+
+    与 ``test_feat_list_single_line_zoom_and_focus`` 拆开：
+    那个用例原先塞了单行/放大/焦点/标签/折叠/循环/滚动 七件事，
+    单用例 1.8s 且语义混杂；拆开后各自职责单一。
+    """
+    from pdev.tui_new_to_fix.screens import FeatScreen
+
+    long_slug = "tui-new-to-fix-and-feat-review-super-long-slug"
+    _reload_store(feat_root).update(
+        Feat(slug=long_slug, title="长", api=["x()", "y()"],
+             design_note="为什么这么设计", impl_note="怎么落地的"))
+
+    app = make_app(store)
+    app.config = _config_with_feat(feat_root)
+    async with app.run_test(size=(100, 20)) as pilot:
+        await pilot.press("f")
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)
         # --- 标签：默认 Review，d/n 切换，空格含义随标签变 ---
         screen = app.screen
         assert screen._tab == "review", "默认应在 Review（保持兼容）"
@@ -364,10 +390,15 @@ async def test_feat_screen_exception_does_not_kill_app(store, feat_root):
 
 
 def test_feat_ui_suite_is_fast():
-    """本文件的 run_test 开销必须低于 3.5s（防回归）。
+    """本文件的 run_test 开销必须低于 4.5s（防回归）。
 
-    基准（Textual 8.2.8，本机）：4 个集成会话 ≈ 2.5~3.0s。
-    ``run_test`` ≈ 0.13s、``pause`` ≈ 0.02s、``press`` ≈ 0.05s，
-    因此这个量级是“必要成本”，不是浪费；阈值留抖动余量。
+    基准（Textual 8.2.8，本机）：6 个集成会话 ≈ 3.2~3.8s。
+    单位成本：``run_test`` ≈ 0.13s、``pause`` ≈ 0.02s、``press`` ≈ 0.05s。
+
+    为何不是更小：这是“必要成本”——每个会话都要真起一次事件循环，
+    才能验证“接线”（按键→分派→渲染）。纯逻辑已全部下沉到
+    ``test_feat_core.py``（0.26s / 40+ 例）。
+
+    阈值 = 实测上限 + 约 20% 抖动余量；**不为凑指标而删断言**。
     """
-    assert _ELAPSED < 3.5, f"Feat 面板测试太慢：{_ELAPSED:.2f}s"
+    assert _ELAPSED < 4.5, f"Feat 面板测试太慢：{_ELAPSED:.2f}s"

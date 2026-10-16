@@ -152,6 +152,41 @@ VSCode 里：**左下角选解释器** → `${workspaceFolder}/.venv/bin/python`
 
 变量面板在左侧，也可以在**调试控制台**里敲 `p feat`、`p args.design_note` 查看值。
 
+### 看调用链：`scripts/trace_calls.py`（推荐，比单步快）
+
+不用手动点几百次——一次跑完打印整棵调用树：
+
+```bash
+# 跟踪一条命令（调用链走 stderr，命令输出仍在 stdout）
+.venv/bin/python scripts/trace_calls.py feat show feat-edit-fields
+
+# 只要调用链（丢弃命令自己的输出）
+.venv/bin/python scripts/trace_calls.py feat show x --brief 2>calls.txt
+
+# 只看 pdev/cli 下的调用（--only 匹配**相对 root** 的路径）
+.venv/bin/python scripts/trace_calls.py --only cli feat show x
+
+# 看某函数被调用时拿到什么（局部变量）
+.venv/bin/python scripts/trace_calls.py --locals cmd_feat_new feat new ...
+```
+
+输出形如（缩进 = 调用深度）：
+
+```
+→ cli/__init__.py:main(argv)
+  → cli/parser.py:build_parser()
+  → cli/context.py:from_config(cls, config)
+  → cli/commands.py:cmd_feat_show(ctx, args)
+    → cli/commands.py:_feat_store(ctx)
+```
+
+**它怎么实现的**：`sys.settrace(callback)` 让解释器在每次函数进入时
+回调；`frame` 给出文件名/函数名/局部变量，`frame.f_back` 往上数出
+深度。与 pdb 同一机制，区别只是“打印后继续”而不是“暂停等人”。
+
+**相比 VSCode 单步的好处**：一次跑完、能过滤库代码、
+能存文件对比改动前后的路径差异。
+
 ### 不用 VSCode 的替代方案
 
 ```bash
