@@ -142,3 +142,28 @@ def test_fake_review_checker_detects_planted_batch(tmp_path):
         capture_output=True, text=True, cwd=str(tmp_path))
     assert r.returncode == 1, "应识别出批量伪造"
     assert "疑似" in r.stdout or "发现" in r.stdout
+
+
+def test_readme_has_design_standings():
+    """README 必须有「设计立场」节，且六条立场齐全（防丢失）。"""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "## 设计立场" in text, "README 缺「设计立场」节"
+    for kw in ("主数据是 commit", "质量是设计出来的", "人工审核有两个目的",
+               "doc 流程是为了追溯", "初衷是减少反复",
+               "命令行约束 Agent"):
+        assert kw in text, f"README 设计立场缺：{kw}"
+
+
+def test_readme_standings_keep_user_quotes():
+    """每一条立场都应附用户原话（引用块），不得只有结论。"""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    section = text.split("## 设计立场", 1)[1].split("## 快速开始", 1)[0]
+    assert section.count("> \"") >= 6, \
+        f"设计立场节的原话引用不足 6 条：{section.count(chr(62) + ' ' + chr(34))}"
+
+
+def test_observations_no_stale_heading():
+    """第六节不应再是「待回答的问题」（已勘正为「已确认的立场」）。"""
+    text = OBSERVATIONS.read_text(encoding="utf-8")
+    assert "重新设计前必须先回答" not in text
+    assert "已确认的设计立场" in text
