@@ -28,6 +28,8 @@
 
 ### 改动内容
 
+#### A. `doc/DESIGN_OBSERVATIONS.md`（勘正）
+
 1. **第六节标题**：`重新设计前必须先回答的问题`
    → `已确认的设计立场（用户原话）`
 
@@ -41,12 +43,23 @@
 
 4. **新增「六附」**：只留**唯一**未确认的一项（CLI/TUI 颜色）。
 
-### 只做勘正，不改实质
+#### B. `README.md`（新增一节）
+
+在 `## 快速开始` **之前**新增 `## 设计立场`，把六条立场写进主文档。
+
+**理由**：这六条是**为什么这样设计**的答案，属 README 应回答的问题，
+而原先只在 `doc/` 深处，新人（或 AI）看不到。
+
+每条的 README 版写法：**一句话立场 + 用户原话引用**（保持简短，
+详细展开留在 `DESIGN_OBSERVATIONS.md`）。
+
+### 只做勘正 + 新增，不改实质
 
 | 做 | 不做 |
 |---|---|
 | ✅ 把"待答"改为"已答" | ❌ 不新增立场（只能引用用户原话） |
 | ✅ 补"对设计的约束" | ❌ 不删任何已有的观察（一~五节不动） |
+| ✅ README 新增「设计立场」节 | ❌ 不改 README 其他章节 |
 | ✅ 明示唯一空缺 | ❌ 不替用户回答那一条 |
 
 ### 约束：原话必须真实
@@ -72,7 +85,9 @@
 ```
 test=tests/test_design_audit.py::test_observations_have_evidence_sections
 test=tests/test_design_audit.py::test_observations_include_critical_lessons
+test=tests/test_docs.py::test_main_doc_commands_are_real
 cmd=grep -c '在重新设计前必须先回答' doc/DESIGN_OBSERVATIONS.md
-manual=通读第六节，确认每条都有用户原话引用
-expected=旧标题为 0 处；每条立场有原话；全量测试通过
+cmd=grep -c '## 设计立场' README.md
+manual=通读 README 的「设计立场」节与第六节，确认每条都有用户原话引用
+expected=旧标题 0 处；README 有设计立场节；全量测试通过
 ```
