@@ -444,6 +444,8 @@ def cmd_ui(ctx: AppContext, args) -> int:
         from ..tui_curses import run as run_curses
 
         return run_curses(store, cwd=str(ctx.cwd), config=ctx.config)
+    if getattr(args, "new", False):
+        return _run_new_tui(store, ctx)
     try:
         from ..tui import run as run_tui
     except ImportError:
@@ -469,6 +471,26 @@ def cmd_ui(ctx: AppContext, args) -> int:
         config=ctx.config,
         config_path=find_project_config(ctx.cwd),
     )
+
+
+def _run_new_tui(store, ctx) -> int:
+    """启动重写版 TUI（``pdm ui --new``）。
+
+    与旧 TUI 同样的前置检查：未装 textual / 非交互终端都给明确提示。
+    """
+    try:
+        from ..tui_new_to_fix import run as run_new
+        from ..tui_new_to_fix import available as new_available
+    except ImportError:
+        print("需要安装 textual：pip install textual", file=sys.stderr)
+        return 2
+    if not new_available():
+        print("需要安装 textual：pip install textual", file=sys.stderr)
+        return 2
+    if not sys.stdout.isatty():
+        print("TUI 需要交互式终端", file=sys.stderr)
+        return 2
+    return run_new(store, cwd=str(ctx.cwd), config=ctx.config)
 
 
 def _feat_store(ctx: AppContext):

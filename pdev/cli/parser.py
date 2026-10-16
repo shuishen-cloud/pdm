@@ -418,6 +418,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="笔记存储目录（等同 --store）")
     ui.add_argument("--curses", action="store_true",
                     help="用标准库 curses 版（零依赖，只读浏览）")
+    ui.add_argument("--new", action="store_true",
+                    help="用重写版 TUI（tui-new-to-fix，异常不会退出）")
     ui.add_argument("--web", action="store_true",
                     help="启动本地 Web UI（浏览器里交互，零依赖）")
     ui.add_argument("--port", type=int, default=0,
