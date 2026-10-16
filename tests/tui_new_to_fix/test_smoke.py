@@ -70,16 +70,6 @@ def make_app(store) -> PDMApp:
     return PDMApp(store, cwd=str(Path(store.root).parent))
 
 
-def _config_with_feat(feat_root):
-    """造一个最小 config：只带 feat.store 与 default_author。"""
-    from types import SimpleNamespace
-
-    return SimpleNamespace(
-        feat=SimpleNamespace(store=str(feat_root)),
-        default_author="human:test-author",
-    )
-
-
 # --- 会话 1：启动 + 导航（一条会话覆盖全部渲染断言） -------------------------
 
 
@@ -94,274 +84,48 @@ async def test_boot_and_navigate(store):
         assert note_rows(app) == ["难点"]
         assert "难点" in detail_text(app)
 
-        # j 下移到第二条提交，笔记栏与详情跟着变
+        # j 下移到第二条提交，笔记栏与详情跟着变。
+        # 注意：R（刷新）会把选中重置回第一条，所以必须**先断言 j 的效果**，
+        # 不能把 j 与 R 批量放在一起（曾因此破坏语义）。
         await pilot.press("j")
         await pilot.pause()
         assert note_rows(app) == ["竞态", "缺陷"]
         assert "竞态" in detail_text(app)
 
-        # 3 跳到详情面板；再跑几个代表性键，确认不炸（每次约 0.1s，不穷举）
-        for key in ["3", "tab", "2"]:
-            await pilot.press(key)
-            await pilot.pause()
-            assert app.is_running, f"{key} 让 app 退出了"
-            assert app.errors == [], f"{key} 产生了异常：{app.errors}"
-        # R 刷新后数据仍在
-        await pilot.press("R")
-        await pilot.pause()
-        assert len(commit_rows(app)) == 2
-        assert app.errors == []
-
-
-# --- 会话 2：代表性键位不炸 + Feat 面板（同一个 app） ---------------------------
-
-
-@pytest.fixture
-def feat_root(tmp_path):
-    """隔离的 feat 目录，内含一个 demo。避免碰到仓库里的真 feat。"""
-    from pdev.feat import Feat, FeatStore
-
-    root = tmp_path / "feats"
-    s = FeatStore(root)
-    s.update(Feat(slug="demo", title="演示", api=["run() -> int"]))
-    return root
-
-
-def _reload_feat(root, slug="demo"):
-    """从磁盘**重新**读一份 feat（模拟 CLI 复核，不听内存缓存）。"""
-    from pdev.feat import FeatStore
-
-    return FeatStore(root).get(slug)
-
-
-def _reload_store(root):
-    """从磁盘重新读一个 FeatStore。"""
-    from pdev.feat import FeatStore
-
-    return FeatStore(root)
-
-
-def _header_text(screen) -> str:
-    """取 CommentScreen 顶部信息块的纯文本（用于断言）。"""
-    from textual.widgets import Static
-
-    content = screen.query_one("#comment-title", Static).content
-    return getattr(content, "plain", str(content))
-
-
-def _detail_text(screen) -> str:
-    """取 FeatScreen 右侧详情的纯文本。"""
-    from textual.widgets import Static
-
-    content = screen.query_one("#feat-detail-body", Static).content
-    return getattr(content, "plain", str(content))
-
-
-async def test_feat_panel_toggle_and_persist(store, feat_root):
-    """``f`` 打开面板；``空格``/``t`` 能勾选并**真的落盘**。
-
-    写盘一律用 ``_reload_feat`` 复查（新建 store 从磁盘读，
-    不听内存缓存），与 ``web-ui-review`` 的「CLI 复核」同一思路。
-    """
-    from pdev.tui_new_to_fix.screens import FeatScreen
-    from textual.widgets import ListView
-
-    app = make_app(store)
-    app.config = _config_with_feat(feat_root)
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-
-        # --- f 打开面板 + 空格勾 [审] ---
-        await pilot.press("f", "space")
-        await pilot.pause()
-        screen = app.screen
-        assert isinstance(screen, FeatScreen)
-        assert len(screen.query_one("#feat-list", ListView).children) == 1
-        assert app.errors == []
-
-        # 勾选必须真的落盘（从磁盘复查）
-        item = _reload_feat(feat_root).review_item("api:0")
-        assert item.reviewed is True
-        assert item.reviewed_by == "human:test-author"   # by 来自 config
-
-        # --- 再按空格 = 取消；然后 t 勾 [测] 且不动 [审] ---
-        # 注：两位都清空时记录会被 _prune 掉，review_item 返回 None，
-        # 同样表示“未勾选”，因此用 getattr 读。
-        await pilot.press("space", "t")
-        await pilot.pause()
-        assert app.errors == []
-        item = _reload_feat(feat_root).review_item("api:0")
-        assert item.tested is True
-        assert item.reviewed is False
-
-        # --- Esc 关闭后 app 仍在跑 ---
-        await pilot.press("escape")
+        # 后几个键只验证“不炸”（R 刷新后选中回到第一条，不断言选中）
+        await pilot.press("3", "tab", "2", "R")
         await pilot.pause()
         assert app.is_running
-        assert not isinstance(app.screen, FeatScreen)
-
-
-# --- 会话 3：Feat 列表的单行/放大/焦点（与勾选解耦） -------------------------
-
-
-async def test_feat_list_single_line_zoom_and_focus(store, feat_root):
-    """列表单行、Enter 放大能看全、（左右） 方向键切焦点。
-
-    渲染细节（截断宽度、省略号）由 ``test_feat_core`` 的纯函数测覆盖，
-    这里只验证“接线”：高度锁 1、enter 真的改变宽度、焦点真的换。
-    """
-    from pdev.feat import Feat
-    from pdev.tui_new_to_fix.screens import FeatScreen
-    from textual.widgets import ListView
-
-    long_slug = "tui-new-to-fix-and-feat-review-super-long-slug"
-    _reload_store(feat_root).update(
-        Feat(slug=long_slug, title="长", api=["x()"]))
-
-    app = make_app(store)
-    app.config = _config_with_feat(feat_root)
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        await pilot.press("f")
-        await pilot.pause()
-        assert isinstance(app.screen, FeatScreen)
-        lv = app.screen.query_one("#feat-list", ListView)
-        item = next(i for i in lv.children if i.feat.slug == long_slug)
-        assert item.size.height == 1, "列表项折行了"
-
-        # --- Enter 放大：不得被 ListView 吞 ---
-        width_before = lv.size.width
-        await pilot.press("enter")
-        await pilot.pause()
-        assert lv.size.width > width_before, "enter 没有放大列表（被 ListView 吞了？）"
-        assert long_slug in item.render().plain, "放大后应能看到完整 slug"
-        await pilot.press("enter")
-        await pilot.pause()
-        assert lv.size.width == width_before
-
-        # --- 方向键切焦点 ---
-        await pilot.press("right")
-        await pilot.pause()
-        assert app.focused is not None and app.focused.id == "feat-detail"
-        await pilot.press("h")
-        await pilot.pause()
-        assert app.focused is not None and app.focused.id == "feat-list"
-
-
-# --- 会话：评论编辑（第二个写操作） ------------------------------------------
-
-
-async def test_feat_comment_roundtrip(store, feat_root):
-    """``c`` 打开评论弹窗，输入后 Ctrl+S 保存并**真的落盘**；Esc 不落盘。
-
-    多行输入的细节（换行保留、留空=清除）由 ``test_feat_core``
-    的纯函数测覆盖，这里只验证“接线”。
-    """
-    from textual.widgets import TextArea
-
-    from pdev.tui_new_to_fix.screens import CommentScreen, FeatScreen
-
-    app = make_app(store)
-    app.config = _config_with_feat(feat_root)
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        await pilot.press("f")
-        await pilot.pause()
-        assert isinstance(app.screen, FeatScreen)
-
-        # --- c 打开评论弹窗，顶部应显示条目详细信息 ---
-        await pilot.press("c")
-        await pilot.pause()
-        assert isinstance(app.screen, CommentScreen), "c 没打开评论弹窗"
-        header = _header_text(app.screen)
-        assert "demo" in header          # feat
-        assert "api:0" in header         # 条目 key
-        assert "run() -> int" in header  # 条目内容（详细信息）
-
-        # --- 输入（直接写 TextArea，避开逐字按键的开销）并 Ctrl+S 保存 ---
-        app.screen.query_one("#comment-text", TextArea).text = "为何不泛化"
-        await pilot.press("ctrl+s")
-        await pilot.pause()
-        assert isinstance(app.screen, FeatScreen), "保存后应回到 FeatScreen"
         assert app.errors == []
-        assert _reload_feat(feat_root).comment("api:0") == "为何不泛化"
-
-        # --- 再次 c 应是“编辑已有评论”，Esc 取消不落盘 ---
-        await pilot.press("c")
-        await pilot.pause()
-        assert app.screen.query_one("#comment-text", TextArea).text == "为何不泛化"
-        app.screen.query_one("#comment-text", TextArea).text = "改了"
-        await pilot.press("escape")
-        await pilot.pause()
-        assert isinstance(app.screen, FeatScreen)
-        assert _reload_feat(feat_root).comment("api:0") == "为何不泛化", \
-            "Esc 取消不应落盘"
-
-        # --- 两件事仍互不干扰（写评论不等于勾选）---
-        item = _reload_feat(feat_root).review_item("api:0")
-        assert getattr(item, "reviewed", False) is False
-
-        # --- 评论必须紧跟在自己条目下方（不是堆在底部）---
-        detail = _detail_text(app.screen)
-        lines = detail.splitlines()
-        api_line = next(i for i, ln in enumerate(lines) if "api:0" in ln)
-        assert "为何不泛化" in lines[api_line + 1], (
-            f"评论没有紧跟在 api:0 下方：\n{detail}")
-
-
-# --- 会话：FeatScreen 内部的异常兜底 ----------------------------------------
-
-
-async def test_feat_screen_exception_does_not_kill_app(store, feat_root):
-    """FeatScreen 内部抛异常 → app 继续跑（曾因漏包 @guard 而闪退）。"""
-    from pdev.tui_new_to_fix import feat_core
-    from pdev.tui_new_to_fix.screens import FeatScreen
-
-    app = make_app(store)
-    app.config = _config_with_feat(feat_root)
-    original = feat_core.review_rows
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        await pilot.press("f")
-        await pilot.pause()
-        assert isinstance(app.screen, FeatScreen)
-        feat_core.review_rows = lambda f: (_ for _ in ()).throw(
-            RuntimeError("corrupt feat json")
-        )
-        try:
-            await pilot.press("space")
-            await pilot.pause()
-            assert app.is_running, "FeatScreen 抛异常把 app 带走了"
-            assert any("corrupt feat json" in e for e in app.errors), app.errors
-        finally:
-            feat_core.review_rows = original
+        assert len(commit_rows(app)) == 2
 
 
 # --- 会话（异常兜底）：本 feat 的核心契约 ------------------------------------
 
 
 async def test_exception_in_action_does_not_kill_app(store):
-    """action 抛异常 → app 继续跑（旧 TUI 会 panic 退出）。
+    """guard 注入故障 → app 继续跑（旧 TUI 会 panic 退出）。
 
-    用 monkeypatch 注入故障，而不是在 app 里留一个“自毁键”。
-    直接调 action 而不是按键：这是单元级验证，不必经过输入栈。
+    FeatScreen 内部的同类验证在 ``tests/tui_new_to_fix/test_feat_ui.py``
+    的 ``test_feat_screen_exception_does_not_kill_app``（拆文件后
+    两个文件各自更快）。
     """
+    from pdev.tui_new_to_fix.guard import guard
+
+    def boom() -> None:
+        raise RuntimeError("intentional failure")
+
     app = make_app(store)
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
 
-        def boom() -> None:
-            raise RuntimeError("intentional failure")
-
         # 用与 app 相同的方式包装，确保测的就是 guard 本身
-        from pdev.tui_new_to_fix.guard import guard
-
         wrapped = guard(lambda self: boom())
         wrapped(app)                    # 不应抛出
-
         assert app.is_running, "guard 没兜住，app 退出了"
         assert len(app.errors) == 1, app.errors
         assert "intentional failure" in app.errors[0]
+
         # 出错后仍能正常操作（按键路径不受影响）
         await pilot.press("2")
         await pilot.pause()
@@ -447,11 +211,14 @@ async def test_boot_failure_is_contained(tmp_path):
 
 
 def test_smoke_suite_is_fast():
-    """本文件所有用例的**自身**耗时之和必须低于 2.5s（防回归）。
+    """本文件的 run_test 开销必须低于 1.8s（防回归）。
 
-    只统计用例执行时间（autouse fixture 累加），不含 pytest 启动、
-    收集、import —— 否则全仓跑时会被其它测试的耗时污染。
+    Feat 面板的慢用例在 ``tests/tui_new_to_fix/test_feat_ui.py``，
+    拆文件是为了保留“快速反馈”：改主界面只需跑本文件（~2s）。
 
-    基准（Textual 8.2.8，本机）：约 1.6~1.9s。
+    单位成本（实测）：``run_test`` ≈ 0.13s、``pause`` ≈ 0.02s、
+    ``press`` ≈ 0.05s。本文件 5 个用例各需一次 ``run_test``
+    （硬成本 ≈ 0.65s），加断言所需的同步，约 1.2~1.5s。
+    这里只统计用例自身耗时，不含 pytest 启动、收集、import。
     """
-    assert _ELAPSED < 2.5, f"冒烟测试太慢：{_ELAPSED:.2f}s"
+    assert _ELAPSED < 1.8, f"冒烟测试太慢：{_ELAPSED:.2f}s"
