@@ -24,8 +24,10 @@ __all__ = ["guard"]
 def guard(fn):
     """把 ``fn`` 包成不抛异常的版本。
 
-    用于 ``App`` 的 action 与消息回调。异常会被转成
-    ``self.notify(...)`` + ``self.errors.append(...)``。
+    可用于 ``App`` 的 action / 回调，**也可用于 ``Screen``（ModalScreen）**：
+    screen 自身没有 ``errors``，会向上找 ``self.app.errors``。
+    异常统一转成 ``notify(...)`` + 记录，绝不冒到 Textual 的
+    ``_handle_exception``（那会 panic 整个 app）。
     """
 
     @functools.wraps(fn)
@@ -39,19 +41,38 @@ def guard(fn):
     return wrapper
 
 
+def _host(obj):
+    """找到可用来记录错误的对象。
+
+    ``Screen`` 没有 ``errors``，其 ``app`` 通常有（PDMApp）。
+    找不到就退化为原对象，由 ``_record`` 自行容错。
+    """
+    if obj is None:
+        return obj
+    if hasattr(obj, "errors"):
+        return obj
+    app = getattr(obj, "app", None)
+    if app is not None and hasattr(app, "errors"):
+        return app
+    return obj
+
+
 def _record(app, exc: Exception, where: str) -> None:
     """记录并提示；记录本身失败也不能再抛。"""
+    host = _host(app)
     detail = "".join(
         traceback.format_exception_only(type(exc), exc)
     ).strip()
     entry = f"{where}: {detail}"
     try:
-        errors = getattr(app, "errors", None)
+        errors = getattr(host, "errors", None)
         if errors is not None:
             errors.append(entry)
     except Exception:                            # noqa: BLE001
         pass
     try:
-        app.notify(f"{where} 出错：{detail}", severity="error")
+        notify = getattr(host, "notify", None) or getattr(app, "notify", None)
+        if notify is not None:
+            notify(f"{where} 出错：{detail}", severity="error")
     except Exception:                            # noqa: BLE001
         pass

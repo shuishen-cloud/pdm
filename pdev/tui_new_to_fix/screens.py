@@ -21,6 +21,7 @@ from textual.screen import ModalScreen
 from textual.widgets import ListItem, ListView, Static
 
 from . import feat_core
+from .guard import guard
 
 __all__ = ["FeatScreen"]
 
@@ -108,6 +109,7 @@ class FeatScreen(ModalScreen):
                     yield Static("", id="feat-detail-body")
             yield Static("", id="feat-hint")
 
+    @guard
     def on_mount(self) -> None:
         self._load_list()
         self.query_one("#feat-list", ListView).focus()
@@ -201,12 +203,15 @@ class FeatScreen(ModalScreen):
 
     # --- actions ---
 
+    @guard
     def action_close(self) -> None:
         self.dismiss(None)
 
+    @guard
     def action_cursor_down(self) -> None:
         self._move_cursor(1)
 
+    @guard
     def action_cursor_up(self) -> None:
         self._move_cursor(-1)
 
@@ -227,9 +232,11 @@ class FeatScreen(ModalScreen):
             lv.index = new_idx
             self._refresh_detail()
 
+    @guard
     def action_toggle_review(self) -> None:
         self._toggle("review")
 
+    @guard
     def action_toggle_test(self) -> None:
         self._toggle("test")
 
@@ -251,13 +258,23 @@ class FeatScreen(ModalScreen):
         try:
             self.feat_store.set_reviews(slug, [key], **kwargs)
         except Exception as e:                   # noqa: BLE001
-            self.app.errors.append(f"feat review: {e}")   # type: ignore[attr-defined]
+            self._record_error(f"feat review: {e}")
             self.notify(f"写入失败：{e}", severity="error")
             return
         self._refresh_detail()
         label = "审" if field == "review" else "测"
         self.notify(f"{key} [{label}] 已更新")
 
+    def _record_error(self, msg: str) -> None:
+        """记入 ``app.errors``（假如有）。**不得抛异常。**"""
+        try:
+            errors = getattr(self.app, "errors", None)
+            if errors is not None:
+                errors.append(msg)
+        except Exception:                        # noqa: BLE001
+            pass
+
+    @guard
     def on_list_view_highlighted(self, event) -> None:
         if isinstance(event.item, FeatItem):
             self._cursor = 0

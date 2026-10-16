@@ -100,11 +100,13 @@ async def test_boot_and_navigate(store):
         assert note_rows(app) == ["竞态", "缺陷"]
         assert "竞态" in detail_text(app)
 
-        # 3 跳到详情面板
-        await pilot.press("3")
-        await pilot.pause()
-        assert app.is_running
-        # R 刷新后数据仍在（放在这里，与导航共用一个会话）
+        # 3 跳到详情面板；再跑几个代表性键，确认不炸（每次约 0.1s，不穷举）
+        for key in ["3", "tab", "2"]:
+            await pilot.press(key)
+            await pilot.pause()
+            assert app.is_running, f"{key} 让 app 退出了"
+            assert app.errors == [], f"{key} 产生了异常：{app.errors}"
+        # R 刷新后数据仍在
         await pilot.press("R")
         await pilot.pause()
         assert len(commit_rows(app)) == 2
@@ -133,11 +135,13 @@ def _reload_feat(root, slug="demo"):
 
 
 async def test_keys_keep_app_alive_and_feat_panel(store, feat_root):
-    """纯导航键不炸；且 ``f`` 能打开 Feat 面板、``空格`` 能勾审查并落盘。
+    """``f`` 能打开 Feat 面板、``空格``/``t`` 能勾选并落盘，且面板不闪退。
 
-    两件事共用一个 app 会话：``run_test`` 很贵，能合并就合并。
-    写盘一律用 ``_reload_feat`` 复查（新建 store 从磁盘读），
-    与 ``web-ui-review`` 的「CLI 复核」同一思路。
+    写盘一律用 ``_reload_feat`` 复查（新建 store 从磁盘读，
+    不听内存缓存），与 ``web-ui-review`` 的「CLI 复核」同一思路。
+
+    故意**不再跑一遍导航键**：那是 ``test_boot_and_navigate`` 的事，
+    每个 ``pilot.press`` 约 0.1s，重复付不起。
     """
     from pdev.tui_new_to_fix.screens import FeatScreen
     from textual.widgets import ListView
@@ -146,36 +150,24 @@ async def test_keys_keep_app_alive_and_feat_panel(store, feat_root):
     app.config = _config_with_feat(feat_root)
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        for key in ["2", "3", "tab"]:
-            await pilot.press(key)
-            await pilot.pause()
-            assert app.is_running, f"{key} 让 app 退出了"
-            assert app.errors == [], f"{key} 产生了异常：{app.errors}"
 
-        # --- f 打开面板，能看到列表 ---
-        await pilot.press("f")
+        # --- f 打开面板 + 空格勾 [审] ---
+        await pilot.press("f", "space")
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, FeatScreen)
         assert len(screen.query_one("#feat-list", ListView).children) == 1
-
-        # --- 空格勾 [审]，必须真的落盘（从磁盘复查） ---
-        await pilot.press("space")
-        await pilot.pause()
         assert app.errors == []
+
+        # 勾选必须真的落盘（从磁盘复查）
         item = _reload_feat(feat_root).review_item("api:0")
         assert item.reviewed is True
         assert item.reviewed_by == "human:test-author"   # by 来自 config
 
-        # 再按一次 = 取消（两个位都清空时记录会被 _prune 掉，
-        # 因此 review_item 返回 None——同样表示“未勾选”）
-        await pilot.press("space")
-        await pilot.pause()
-        item = _reload_feat(feat_root).review_item("api:0")
-        assert getattr(item, "reviewed", False) is False
-
-        # --- t 勾 [测]，且不得顺带改 [审] ---
-        await pilot.press("t")
+        # --- 再按空格 = 取消；然后 t 勾 [测] 且不动 [审] ---
+        # 注：两位都清空时记录会被 _prune 掉，review_item 返回 None，
+        # 同样表示“未勾选”，因此用 getattr 读。
+        await pilot.press("space", "t")
         await pilot.pause()
         assert app.errors == []
         item = _reload_feat(feat_root).review_item("api:0")
@@ -188,7 +180,23 @@ async def test_keys_keep_app_alive_and_feat_panel(store, feat_root):
         assert app.is_running
         assert not isinstance(app.screen, FeatScreen)
 
+        # --- FeatScreen 内部抛异常不得带走 app（曾因漏包 @guard 而闪退）---
+        from pdev.tui_new_to_fix import feat_core
 
+        original = feat_core.review_rows
+        await pilot.press("f")
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)
+        feat_core.review_rows = lambda f: (_ for _ in ()).throw(
+            RuntimeError("corrupt feat json")
+        )
+        try:
+            await pilot.press("space")
+            await pilot.pause()
+            assert app.is_running, "FeatScreen 抛异常把 app 带走了"
+            assert any("corrupt feat json" in e for e in app.errors), app.errors
+        finally:
+            feat_core.review_rows = original
 # --- 会话 3：异常兜底（本 feat 的核心契约） ---------------------------------
 
 
@@ -220,21 +228,30 @@ async def test_exception_in_action_does_not_kill_app(store):
         assert app.is_running
 
 
-async def test_bound_action_is_guarded(store):
-    """**本类自己定义**的 action 必须都被 guard 包住（防漏包）。
+def test_all_actions_and_callbacks_are_guarded():
+    """**每个界面类的 action / 回调**都必须被 guard 包住（防漏包）。
 
+    这是本 feat 最重要的一条防回归：FeatScreen（ModalScreen）
+    曾漏包，导致面板内任何异常都 panic 退出整个 TUI。
+
+    纯函数式（不起 app），所以不必占 ``run_test`` 预算。
     不能查 ``dir(app)``：那会列出 Textual 框架自带的一堆 action
     （``action_add_class`` 等），它们不归我们管。
     """
-    app = make_app(store)
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        own = [n for n in vars(type(app)) if n.startswith("action_")]
-        assert own, "本类没定义任何 action，断言无效"
-        for name in own:
-            fn = getattr(app, name)
+    from pdev.tui_new_to_fix.app import PDMApp
+    from pdev.tui_new_to_fix.screens import FeatScreen
+
+    for cls in (PDMApp, FeatScreen):
+        names = [n for n in vars(cls)
+                 if n.startswith("action_") or n.startswith("on_")]
+        assert names, f"{cls.__name__} 没定义任何 action/回调，断言无效"
+        for name in names:
+            fn = vars(cls)[name]
             # guard 用 functools.wraps，因此可从 __wrapped__ 反查
-            assert hasattr(fn, "__wrapped__"), f"{name} 没被 guard 包住"
+            assert hasattr(fn, "__wrapped__"), (
+                f"{cls.__name__}.{name} 没被 guard 包住——"
+                f"它抛异常会让整个 TUI 退出"
+            )
 
 
 async def test_exception_in_reload_does_not_kill_app(store):
