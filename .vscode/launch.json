@@ -1,0 +1,129 @@
+{
+  // VSCode 调试配置。调试前先确认左下角选中的解释器是：
+  //   ${workspaceFolder}/.venv/bin/python
+  //
+  // 注意：所有配置都带 "python": "${workspaceFolder}/.venv/bin/python"，
+  // 并设 PYTHONFAULTHANDLER=1 便于崩溃时拿到栈。
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // ★ 最常用：调试 pdm 命令。参数在 "args" 里改，例如：
+      //   ["feat", "new", "demo", "-t", "T", "--design-note", "..."]
+      //   或 ["feat", "check", "review-gate"]
+      //   或 ["review"]
+      "name": "pdm <子命令>（改 args）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "args": ["feat", "show", "feat-edit-fields"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "PYTHONFAULTHANDLER": "1"
+      }
+    },
+    {
+      // 调试「pdm feat new」整体流程：先在这里跑通，再改代码。
+      // 断点建议打在 pdev/cli/commands.py::cmd_feat_new
+      "name": "pdm feat new（新建 feat）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": [
+        "feat", "new", "debug-demo",
+        "-t", "调试演示",
+        "--doc", "feat/debug-demo.md",
+        "--design-note", "（调试）设计思路",
+        "--impl-note", "（调试）实现方式",
+        "--data-model", "X: int —— 调试用",
+        "--sample", "{\"x\": 1}",
+        "--change", "pdev/review.py::gate_decision —— （调试）",
+        "--test-note", "（调试）测试方式",
+        "--impact", "（调试）影响面",
+        "--importance", "medium"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      // 调试命令行入口（不加子命令时打印帮助）
+      "name": "pdm --help",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["--help"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      // 调试 TUI（新版）。TUI 需要真终端，用 integratedTerminal；
+      // 断点建议打在 pdev/tui_new_to_fix/ 下的方法里。
+      // 调试 TUI 时不要开 justMyCode=false，否则会在 Textual 内部频繁中断。
+      "name": "TUI 新版（pdm ui --new）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["ui", "--new"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      // 调试单个测试文件/用例：在测试资源管理器里右键即可，
+      // 这里给一个「当前打开的测试文件」的快捷配置。
+      "name": "pytest 当前文件",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-v", "-s"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      // 调试新 TUI 的测试（默认被 -m 'not tui' 排除，这里显式跑）
+      "name": "pytest 新 TUI 全部",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests/tui_new_to_fix/", "-v"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      // 跑「退出门禁」脚本（诊断 pytest 退出码）
+      "name": "scripts/check_test_exit.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/check_test_exit.py",
+      "args": ["tests/tui_new_to_fix/", "--runs", "1"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    }
+  ]
+}

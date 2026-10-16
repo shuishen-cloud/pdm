@@ -25,7 +25,11 @@ htmlcov/
 *.pm
 *.bak
 .idea/
-.vscode/
+# 忽略 .vscode 下的内容，但放行 launch.json。
+# 注意：不能写“.vscode/”（整目录），否则 ! 例外不生效——
+# git 不会进入被忽略的目录去找例外。
+.vscode/*
+!.vscode/launch.json
 
 # 本地运行数据
 issues/

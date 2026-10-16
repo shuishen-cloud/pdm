@@ -91,7 +91,93 @@ grep -n "def cmd_feat_new" -A 40 pdev/cli/commands.py
 这就是“设计落到代码中”的载体——`changes` 字段要求
 `文件::符号 —— 说明` 格式，正是防止设计漂在文档里、找不到对应代码。
 
-## 2. 登记 feat（`pdm feat new`）
+## 2. 调试：怎么亲眼看到执行轨迹
+
+> 光看地图不够，想确认“命令到底走了哪些分支”，用调试器。
+> 仓库已配好 `.vscode/launch.json`（随 git 走）。
+
+### 一次性准备
+
+```bash
+.venv/bin/pip install debugpy          # 已装则可跳过
+```
+
+VSCode 里：**左下角选解释器** → `${workspaceFolder}/.venv/bin/python`。
+
+### 可用的调试配置（`F5` 后选）
+
+| 配置名 | 用途 |
+|--------|------|
+| `pdm <子命令>（改 args）` | **最常用**：改 `args` 就能调任意 pdm 命令 |
+| `pdm feat new（新建 feat）` | 已填好八个必填字段，直接跑 `feat new` 全流程 |
+| `pdm --help` | 看命令行入口 |
+| `pytest 当前文件` | 调当前打开的测试文件 |
+| `pytest 新 TUI 全部` | 跑 `tests/tui_new_to_fix/` |
+| `TUI 新版（pdm ui --new）` | 调 TUI（需真终端，用 integratedTerminal） |
+| `scripts/check_test_exit.py` | 调退出门禁脚本 |
+
+### 断点位置（调试 `pdm feat new` 时）
+
+按执行顺序打这三个：
+
+| 顺序 | 行内位置 | 看什么 |
+|:--:|----------|--------|
+| 1 | `pdev/cli/parser.py:287` | `fnew.set_defaults(func=commands.cmd_feat_new)` —— 按 `F11` 进入实现 |
+| 2 | `pdev/cli/commands.py:508` | `cmd_feat_new` 第一行 —— 看 `args` 里八个必填是否都在 |
+| 3 | `pdev/cli/commands.py:533` | `missing = feat.missing_required_fields()` —— **你要插入门禁的位置就在附近**（校验之后、`add(feat)` 之前） |
+
+> ⚠️ 行号会随代码变动漂移。**以函数名/代码特征为准**：
+> 用 `grep -n "missing_required_fields" pdev/cli/commands.py` 重新定位。
+
+### 你想加功能的观察点
+
+```python
+# pdev/review.py:91         compute_review 的第一行
+#   → 看它的 feats 参数、返回值 s 的 total/reviewed/coverage
+
+# pdev/cli/commands.py:1604  cmd_review 里调 compute_review 的地方
+#   → 这是“参照实现”：它已在做“取全部 feat → 算覆盖率 → 格式化”
+```
+
+### 调试操作速查
+
+| 键 | 作用 |
+|----|------|
+| `F5` | 启动 / 继续 |
+| `F9` | 在当前行切换断点 |
+| `F10` | 单步跳过 |
+| `F11` | 单步进入（进函数） |
+| `Shift+F11` | 跳出当前函数 |
+| `Shift+F5` | 停止 |
+
+变量面板在左侧，也可以在**调试控制台**里敲 `p feat`、`p args.design_note` 查看值。
+
+### 不用 VSCode 的替代方案
+
+```bash
+# 命令行调试器
+.venv/bin/python -m pdb main.py feat show feat-edit-fields
+#   n=下一行  s=进入  c=继续  p <expr>=打印  q=退出
+
+# 最粗暴：临时打印（记得删）
+#   在 pdev/cli/commands.py::cmd_feat_new 里加：
+#   print("DEBUG args:", vars(args), file=sys.stderr)
+```
+
+### 一个坑：debugpy 与 frozen modules
+
+首次用 `debugpy` 可能看到：
+
+```
+Debugger warning: It seems that frozen modules are being used, which may
+make the debugger miss breakpoints.
+```
+
+**症状**：断点不生效。**规避**：若遇到，把调试配置的 `program` 换成
+用 `python -Xfrozen_modules=off` 包装，或改用 `pdb`。
+（本仓库实测断点正常，仅作备注。）
+
+## 3. 登记 feat（`pdm feat new`）
 
 **八项字段全必填**（缺一即报错退出码 2）：
 
@@ -126,7 +212,7 @@ grep -n "def cmd_feat_new" -A 40 pdev/cli/commands.py
 **踩坑点**：`--change` 每条必须带 `::` 或 `.`（定位到符号），否则
 `feat check` 会报 `vague-change`。
 
-## 3. doc 阶段：先写设计文档
+## 4. doc 阶段：先写设计文档
 
 写 `doc/feat/review-gate.md`，内容建议包含：
 
@@ -150,7 +236,7 @@ grep -n "def cmd_feat_new" -A 40 pdev/cli/commands.py
 下一步：按本 doc 编写测试（pdm feat set <slug> testing）
 ```
 
-## 4. test 阶段：先写测试
+## 5. test 阶段：先写测试
 
 新建 `tests/test_review_gate.py`。**先只写测试，实现可以是空**：
 
@@ -177,7 +263,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/python -m pytest tests/test_review_gate.py -q
 ```
 
-## 5. feat 阶段：实现
+## 6. feat 阶段：实现
 
 改 `pdev/review.py`、`pdev/cli/commands.py`、`pdev/config.py`、`pdev/cli/parser.py`。
 
@@ -206,9 +292,9 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
     --verify 'test=tests/test_review_gate.py::test_gate_blocks_below_threshold;method=怎么验证;expected=passed'
 ```
 
-## 6. fix 阶段：集成中发现的问题
+## 7. fix 阶段：集成中发现的问题
 
-手工实测（见第 8 节），有问题就在这一步修并提交：
+手工实测（见第 9 节），有问题就在这一步修并提交：
 
 ```bash
 .venv/bin/pdm feat commit fix review-gate -m "修复：<具体问题>" \
@@ -218,7 +304,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 **注意**：`feat` 之后**必须**经过 `fix` 才能 `close`（流程强制）。
 即使没有代码修复，也要提交一次回填文档。
 
-## 7. close 阶段：收尾
+## 8. close 阶段：收尾
 
 在本 feat 的设计文档 `doc/feat/review-gate.md` 末尾追加「实现与校验结果」小节：
 交付物、实测数据、发现的异常、已知限制。
@@ -235,7 +321,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
   review-gate → [closed]
 ```
 
-## 8. 手工验证
+## 9. 手工验证
 
 ```bash
 # 当前覆盖率 2%（低于 10%）→ 应该警告
@@ -245,7 +331,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/pdm feat new temp-demo2 --title "临时" ... --ignore-gate
 ```
 
-## 9. 自校验
+## 10. 自校验
 
 ```bash
 .venv/bin/pdm feat check review-gate
@@ -285,7 +371,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/pdm feat stage-review review-gate --list        # 看进度
 ```
 
-## 10. 常用排查命令
+## 11. 常用排查命令
 
 | 目的 | 命令 |
 |------|------|
@@ -298,7 +384,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 | 看流程是否合规 | `pdm feat check review-gate` |
 | 看某 commit 的笔记 | `pdm show <commit>` |
 
-## 11. 常见报错与处置
+## 12. 常见报错与处置
 
 | 报错 | 原因 | 处置 |
 |------|------|------|
@@ -327,7 +413,7 @@ json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False,indent=2)"
 .venv/bin/pdm feat check review-gate
 ```
 
-## 12. 完成后
+## 13. 完成后
 
 ```bash
 .venv/bin/pdm feat list | grep review-gate     # 应是 [closed]
