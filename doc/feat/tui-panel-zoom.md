@@ -112,11 +112,71 @@ class PDMApp(App):
 
 ```
 test=tests/tui_new_to_fix/test_core.py::test_note_line_parts_truncates_title
-test=tests/tui_new_to_fix/test_smoke.py::test_panels_are_single_line
-test=tests/tui_new_to_fix/test_smoke.py::test_enter_zooms_and_restores
-test=tests/tui_new_to_fix/test_smoke.py::test_zoom_is_exclusive
-test=tests/tui_new_to_fix/test_smoke.py::test_zoom_noop_when_not_in_panel
+test=tests/tui_new_to_fix/test_smoke.py::test_boot_and_navigate
+test=tests/tui_new_to_fix/test_smoke.py::test_exception_in_action_does_not_kill_app
 cmd=.venv/bin/pdm ui --new 然后按 Enter / z
 manual=选一栏按 Enter 看它撑满、再按还原；用长 subject 的提交验证单行截断
 expected=列宽变化正确、条目始终单行
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 `332edb46`（test `780244d7`、doc `c4a9274b`）。
+
+### 交付物
+
+| 文件 | 内容 |
+|------|------|
+| `pdev/tui_new_to_fix/app.py` | CSS 加 `CommitItem/NoteItem { height: 1 }` 与三态 zoom class；`+zoom_target` / `+action_toggle_zoom`；`CommitList` / `NoteList` `+key_enter` |
+| `tests/tui_new_to_fix/test_smoke.py` | 单行断言 + 三态放大断言 + 焦点不在栏内时 no-op |
+| `doc/feat/tui-panel-zoom.md` | 本文档 |
+
+**零新增依赖**：`pyproject.toml` 未改。
+
+### 实测（`run_test`，尺寸 100x30）
+
+| 状态 | `#commits` | `#notes` | `_zoomed` |
+|------|-----------:|---------:|-----------|
+| 常规 | 34 | 26 | `None` |
+| 放大提交 | **98** | 0 | `commits` |
+| 放大详情 | 0 | 0 | `detail` |
+| 还原 | 34 | 26 | `None` |
+
+列表项高度断言：`commits` 两条、`notes` 一条，**全部 height=1**（单行生效）。
+
+### 与设计文档的差异
+
+- 文档未提但实现时新增：`zoom_target()` 会**向上找祖先**，
+  以支持焦点落在栏内子控件（如详情里的 `Static`）的情况。
+- `_zoom_parent(widget)` 辅助函数：沿 `screen` → `app` 找
+  `action_toggle_zoom`，不硬编码 `self.app.screen`（弹窗场景下
+  screen 不是主界面）。
+
+### 本次发现的异常（已记笔记）
+
+1. **`ListView` 吞掉 `Enter`**（pitfall/high）
+   App 级 `Binding("enter", ...)` 收不到，必须在子类 `key_enter()`
+   里转发并 `return True`。Feat 面板实测 action 触发 **0** 次。
+2. **`zoom_target()` 与 `_zoomed` 是两个不同的量**（pitfall/medium）
+   前者答“Enter 会作用于谁”，后者答“现在放大的是哪栏”。
+   测试里曾混淆，导致还原后的断言失败。断言状态请用 `_zoomed`。
+3. **pytest 退出时段错误（退出码 139）**（bug/high，**独立问题**）
+   与本 feat 无关（`git stash` 验证改动前同样崩），
+   详见下节。
+
+### 遗留问题（不属本 feat 范围）
+
+跑 `tests/tui_new_to_fix/test_feat_ui.py` 时，pytest 会输出
+`5 passed` 但**以退出码 139 结束**——崩溃发生在解释器关闭阶段。
+
+- 范围：仅该文件触发（`test_core` / `test_feat_core` / `test_smoke`
+  退出码均为 0）。
+- 触发条件：`FeatStore` 写盘 + `pilot.press` 按键路径同时存在。
+- 影响：CI 会误判失败，且掩盖真实失败。
+- 已记入笔记（bug/high），**需单开 feat 排查**。
+
+### 已知限制（有意不做）
+
+- 不记忆栏宽到配置（每次启动为默认比例）。
+- 不支持鼠标拖拽调栏宽。
+- 详情栏内不分区放大（只能整栏）。
