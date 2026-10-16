@@ -256,9 +256,11 @@ class FeatScreen(ModalScreen):
         Binding("q", "close", "关闭"),
         Binding("j", "cursor_down", "下移", show=False),
         Binding("k", "cursor_up", "上移", show=False),
-        Binding("space", "toggle_review", "勾选审查"),
+        Binding("space", "primary_action", "主操作"),
         Binding("t", "toggle_test", "勾选测试"),
         Binding("c", "edit_comment", "评论"),
+        Binding("d", "tab_design", "Design", show=False),
+        Binding("n", "tab_review", "Review", show=False),
         Binding("enter", "toggle_zoom", "放大列表"),
         Binding("z", "toggle_zoom", "放大列表", show=False),
         Binding("right", "focus_detail", "右移", show=False),
@@ -275,6 +277,9 @@ class FeatScreen(ModalScreen):
         self.feat_store = feat_store
         self.by = by
         self.ops = FeatOps(feat_store, by=by)   # 写操作层（可独立单测）
+        self._tab = "review"                # 当前标签（design|review）；默认 Review 保持兼容
+        self._folded: dict = {}               # Design 条目的收起状态
+        self._design_cursor = 0               # Design 页的条目光标
         self._rows: List[tuple] = []      # 当前 feat 的可审项
         self._cursor = 0                  # 当前高亮的可审项下标
         self._zoomed = False              # 左列是否已放大
@@ -326,7 +331,9 @@ class FeatScreen(ModalScreen):
     # --- 详情 ---
 
     def _refresh_detail(self) -> None:
-        """重绘详情。组装逻辑在 :func:`feat_core.detail_lines`（纯函数）。"""
+        """重绘详情。渲染选源**按当前标签分派**；
+        两种行模型都是纯函数（见 ``feat_core.detail_lines`` / ``design_lines``）。
+        """
         feat = self._current_feat()
         self._rows = feat_core.review_rows(feat) if feat is not None else []
         if self._rows:
@@ -334,14 +341,56 @@ class FeatScreen(ModalScreen):
         else:
             self._cursor = 0
 
+        if self._tab == "design":
+            filled = self._design_filled_keys(feat) if feat is not None else []
+            self._design_cursor = max(0, min(self._design_cursor,
+                                              max(len(filled) - 1, 0)))
+            model = feat_core.design_lines(feat, self._folded,
+                                           cursor=filled[self._design_cursor]
+                                           if filled else None)
+        else:
+            model = feat_core.detail_lines(feat, self._rows,
+                                           self._cursor, _MARK)
         t = Text()
-        for line in feat_core.detail_lines(feat, self._rows,
-                                          self._cursor, _MARK):
+        for line in model:
             for value, style in line:
                 t.append(value, style=style or None)
             t.append("\n")
         self.query_one("#feat-detail-body", Static).update(t)
         self._update_hint()
+
+    #: Design 页条目顺序（与 feat_core 的 _design_sections 一致）
+    _DESIGN_KEYS = ("design_note", "impl_note", "test_note", "debug_note",
+                    "extend_note", "impact", "importance", "data_model",
+                    "samples", "api", "logs", "fallbacks")
+
+    def _design_cursor_section(self):
+        """Design 页当前**可操作**的条目 key（跳过空条目）。
+
+        只返回“有内容”的条目：空条目没有正文，展开/收起没有意义，
+        让光标停在那里会让用户按空格却没反应。
+        """
+        feat = self._current_feat()
+        if feat is None:
+            return None
+        filled = self._design_filled_keys(feat)
+        if not filled:
+            return None
+        idx = max(0, min(self._design_cursor, len(filled) - 1))
+        return filled[idx]
+
+    @staticmethod
+    def _design_filled_keys(feat) -> list:
+        """有内容的 Design 条目 key（顺序与渲染一致）。"""
+        out = []
+        for key in FeatScreen._DESIGN_KEYS:
+            value = getattr(feat, key, None)
+            if key == "importance":
+                if value is not None:
+                    out.append(key)
+            elif value:
+                out.append(key)
+        return out
 
     def _update_hint(self) -> None:
         zoom = "[已放大] " if self._zoomed else ""
@@ -349,12 +398,18 @@ class FeatScreen(ModalScreen):
             tail = "Enter/z 还原   ↑/↓ 选 feat   Esc 关闭"
             self.query_one("#feat-hint", Static).update(zoom + tail)
             return
-        if not self._rows:
-            text = "无可审项   Enter 放大   Esc 关闭"
+        tabs = "[DESIGN] Review" if self._tab == "design" else "DESIGN [Review]"
+        if self._tab == "design":
+            section = self._design_cursor_section() or ""
+            folded = self._folded.get(section, True)
+            text = (f"{tabs}   {section} {'收起' if folded else '展开'}   "
+                    f"d/n 切标签   空格 展开/收起   ↑/↓ 选条目   Esc 关闭")
+        elif not self._rows:
+            text = f"{tabs}   无可审项   d/n 切标签   Enter 放大   Esc 关闭"
         else:
             key, _label, reviewed, tested = self._rows[self._cursor]
-            text = (f"{key}  [审]{_MARK[reviewed]} [测]{_MARK[tested]}   "
-                    f"空格 勾审   t 勾测   ←/→ 切焦点   Enter 放大")
+            text = (f"{tabs}   {key}  [审]{_MARK[reviewed]} [测]{_MARK[tested]}   "
+                    f"空格 勾审   t 勾测   d/n 切标签   Enter 放大")
         self.query_one("#feat-hint", Static).update(zoom + text)
 
     # --- actions ---
@@ -394,14 +449,47 @@ class FeatScreen(ModalScreen):
                 self._refresh_detail()
             return
 
-        # 焦点在详情：移动可审项光标
+        # 焦点在详情：按当前标签分派（Design 移条目光标 / Review 移可审项）
+        if self._tab == "design":
+            filled = self._design_filled_keys(self._current_feat())
+            if not filled:
+                return
+            # **循环**：到底回顶、到顶去底（与 lazygit 等一致）
+            self._design_cursor = (self._design_cursor + delta) % len(filled)
+            self._refresh_detail()
+            self._scroll_design_cursor_into_view()
+            return
         if not self._rows:
             self._detail().scroll_down()
             return
-        new = self._cursor + delta
-        if 0 <= new < len(self._rows):
-            self._cursor = new
-            self._refresh_detail()
+        # Review 页同样循环，与 Design 页保持一致
+        self._cursor = (self._cursor + delta) % len(self._rows)
+        self._refresh_detail()
+
+    def _scroll_design_cursor_into_view(self) -> None:
+        """把 Design 当前条目滚入视野（光标移动后调用）。
+
+        行号由 :func:`feat_core.design_cursor_span` 算（与渲染同一
+        份 sections 定义，不会漂移）。
+        """
+        span = feat_core.design_cursor_span(
+            self._current_feat(), self._folded, self._design_cursor_section())
+        if span is None:
+            return
+        start, end = span
+        detail = self._detail()
+        top = detail.scroll_y
+        height = max(detail.size.height, 1)
+        bottom = top + height - 1
+
+        # 确保**起始行**落在视口内：上滚到下界、下滚到上界。
+        # 注意不能拿 end 对齐顶部（那会把条目滚出视野）。
+        if end > bottom:
+            # 让条目末尾恰好露出：向上对齐 start，但不能超过条目长度
+            target = min(start, max(end - height + 1, 0))
+            detail.scroll_to(y=target, animate=False)
+        elif start < top:
+            detail.scroll_to(y=max(start - 1, 0), animate=False)
 
     @guard
     def action_toggle_zoom(self) -> None:
@@ -443,6 +531,46 @@ class FeatScreen(ModalScreen):
     def action_detail_page_up(self) -> None:
         self._detail().focus()
         self._detail().scroll_page_up()
+
+    @guard
+    def action_primary_action(self) -> None:
+        """``空格``：**按当前标签分派**。
+
+        - Review 页：勾选 ``[审]``（原有行为）
+        - Design 页：展开/收起当前条目
+        """
+        if self._tab == "design":
+            self._toggle_fold()
+        else:
+            self._toggle("review")
+
+    @guard
+    def action_tab_design(self) -> None:
+        """``d``：切到 Design 标签。"""
+        self._set_tab("design")
+
+    @guard
+    def action_tab_review(self) -> None:
+        """``n``：切到 Review 标签。"""
+        self._set_tab("review")
+
+    def _set_tab(self, tab: str) -> None:
+        if tab == self._tab:
+            return
+        self._tab = tab
+        # Design 页的操作对象是条目（而非左列 feat）：切过去就把焦点
+        # 交给详情，否则用户按 j/k 只会切 feat，以为“移动没反应”。
+        if tab == "design":
+            self._detail().focus()
+        self._refresh_detail()
+
+    def _toggle_fold(self) -> None:
+        """展开/收起当前 Design 条目。"""
+        key = self._design_cursor_section()
+        if key is None:
+            return
+        self._folded[key] = not self._folded.get(key, True)
+        self._refresh_detail()
 
     @guard
     def action_toggle_review(self) -> None:
