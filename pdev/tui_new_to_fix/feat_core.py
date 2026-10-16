@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-__all__ = ["review_rows", "plan_toggle", "plan_comment", "comment_rows",
+__all__ = ["review_rows", "plan_toggle", "plan_comment",
            "comment_header", "feat_line", "feat_line_text", "REVIEW_FIELDS"]
 
 #: 允许切换的字段（白名单，与 web-ui-review 一致）。
@@ -98,29 +98,6 @@ def comment_header(feat, key: str) -> List[Tuple[str, str]]:
         out.append(("状态",
                     f"[审]{'■' if reviewed else '□'} "
                     f"[测]{'■' if tested else '□'}"))
-    return out
-
-
-def comment_rows(feat) -> List[Tuple[str, str, str]]:
-    """带非空评论的可审项：``(key, label, comment)``。
-
-    按可审项顺序；无评论或 ``feat`` 不完整时返回 ``[]``（不抛异常）。
-    """
-    try:
-        items = list(feat.commented_items())
-    except Exception:                            # noqa: BLE001
-        return []
-    out: List[Tuple[str, str, str]] = []
-    for ref in items:
-        key = getattr(ref, "key", "")
-        if not key:
-            continue
-        try:
-            text = feat.comment(key)
-        except Exception:                        # noqa: BLE001
-            text = ""
-        if text:
-            out.append((key, getattr(ref, "label", "") or "", text))
     return out
 
 

@@ -149,6 +149,14 @@ def _header_text(screen) -> str:
     return getattr(content, "plain", str(content))
 
 
+def _detail_text(screen) -> str:
+    """取 FeatScreen 右侧详情的纯文本。"""
+    from textual.widgets import Static
+
+    content = screen.query_one("#feat-detail-body", Static).content
+    return getattr(content, "plain", str(content))
+
+
 async def test_feat_panel_toggle_and_persist(store, feat_root):
     """``f`` 打开面板；``空格``/``t`` 能勾选并**真的落盘**。
 
@@ -292,6 +300,13 @@ async def test_feat_comment_roundtrip(store, feat_root):
         # --- 两件事仍互不干扰（写评论不等于勾选）---
         item = _reload_feat(feat_root).review_item("api:0")
         assert getattr(item, "reviewed", False) is False
+
+        # --- 评论必须紧跟在自己条目下方（不是堆在底部）---
+        detail = _detail_text(app.screen)
+        lines = detail.splitlines()
+        api_line = next(i for i, ln in enumerate(lines) if "api:0" in ln)
+        assert "为何不泛化" in lines[api_line + 1], (
+            f"评论没有紧跟在 api:0 下方：\n{detail}")
 
 
 # --- 会话：FeatScreen 内部的异常兜底 ----------------------------------------

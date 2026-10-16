@@ -294,21 +294,22 @@ class FeatScreen(ModalScreen):
                 t.append(f"[{_MARK[reviewed]}][{_MARK[tested]}] ", style="green")
                 t.append(f"{key:<12}", style="cyan")
                 t.append(f"{label}\n", style="dim")
+                self._append_comment(t, feat, key)
 
-        self._show_comment_note(feat, t)
         body.update(t)
         self._update_hint()
 
-    def _show_comment_note(self, feat, t: Text) -> None:
-        """展示已有评论（多行按行缩进；编辑按 c）。"""
-        rows = feat_core.comment_rows(feat)
-        if not rows:
+    def _append_comment(self, t: Text, feat, key: str) -> None:
+        """把该条目的评论**缩进显示在自己的条目下方**（多行逐行）。"""
+        try:
+            text = feat.comment(key) or ""
+        except Exception:                        # noqa: BLE001
             return
-        t.append("\n评论\n", style="bold")
-        for key, _label, text in rows:
-            t.append(f"  {key}\n", style="cyan")
-            for line in text.splitlines() or [""]:
-                t.append(f"    {line}\n", style="dim")
+        if not text:
+            return
+        for line in text.splitlines() or [""]:
+            t.append("      │ ", style="dim cyan")
+            t.append(f"{line}\n", style="dim")
 
     def _update_hint(self) -> None:
         zoom = "[已放大] " if self._zoomed else ""

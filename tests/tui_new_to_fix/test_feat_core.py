@@ -164,27 +164,6 @@ def test_plan_comment_strips_outer_whitespace_only():
     assert feat_core.plan_comment("  a\nb  ") == "a\nb"
 
 
-# --- comment_rows -----------------------------------------------------------
-
-
-def test_comment_rows_shape():
-    f = _feat()
-    f.set_comment("api:0", "选签名不泛化")
-    rows = feat_core.comment_rows(f)
-    assert rows == [("api:0", "run() -> int", "选签名不泛化")]
-
-
-def test_comment_rows_empty_when_no_comment():
-    assert feat_core.comment_rows(_feat()) == []
-
-
-def test_comment_rows_survives_broken_feat():
-    class Broken:
-        pass
-
-    assert feat_core.comment_rows(Broken()) == []
-
-
 # --- comment_header ---------------------------------------------------------
 
 
