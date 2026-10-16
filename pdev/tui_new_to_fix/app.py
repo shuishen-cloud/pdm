@@ -30,6 +30,13 @@ from .guard import guard
 
 __all__ = ["PDMApp", "run"]
 
+#: 放大态对应的容器 class（三态互斥）。
+_ZOOM_CLASSES = {
+    "commits": "zoom-commits",
+    "notes": "zoom-notes",
+    "detail": "zoom-detail",
+}
+
 
 class CommitItem(ListItem):
     """提交列表的一行。"""
@@ -80,12 +87,21 @@ class NoteItem(ListItem):
 
 
 class CommitList(ListView):
-    """左侧提交列表。"""
+    """左侧提交列表。
+
+    拦截 ``Enter``：``ListView`` 会把它当“选中”吃掉，
+    App 级绑定收不到（Feat 面板实测 action 触发 0 次）。
+    """
 
     class Picked(Message):
         def __init__(self, commit: str) -> None:
             self.commit = commit
             super().__init__()
+
+    def key_enter(self) -> bool:
+        """Enter 转给 App 放大当前栏。"""
+        _zoom_parent(self)
+        return True
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if isinstance(event.item, CommitItem):
@@ -93,12 +109,16 @@ class CommitList(ListView):
 
 
 class NoteList(ListView):
-    """中间笔记列表。"""
+    """中间笔记列表（同样拦截 Enter，见 CommitList）。"""
 
     class Picked(Message):
         def __init__(self, note: CommitNote) -> None:
             self.note = note
             super().__init__()
+
+    def key_enter(self) -> bool:
+        _zoom_parent(self)
+        return True
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if isinstance(event.item, NoteItem):
@@ -154,6 +174,23 @@ class PDMApp(App):
     #commits { width: 36%; border: round $primary; }
     #notes   { width: 28%; border: round $primary; }
     #detail  { width: 1fr;  border: round $primary; padding: 0 1; }
+
+    /* 条目必须单行（否则长 subject/标题会折成多行，列表可读性崩掉） */
+    CommitItem { height: 1; padding: 0 1; }
+    NoteItem   { height: 1; padding: 0 1; }
+
+    /* 放大：当前栏占满，其余两栏隐藏（三态互斥） */
+    #body.zoom-commits #commits { width: 1fr; }
+    #body.zoom-commits #notes,
+    #body.zoom-commits #detail { display: none; }
+
+    #body.zoom-notes #notes { width: 1fr; }
+    #body.zoom-notes #commits,
+    #body.zoom-notes #detail { display: none; }
+
+    #body.zoom-detail #detail { width: 1fr; }
+    #body.zoom-detail #commits,
+    #body.zoom-detail #notes { display: none; }
     """
 
     TITLE = "PDM"
@@ -168,6 +205,8 @@ class PDMApp(App):
         Binding("j", "cursor_down", "下移", show=False),
         Binding("k", "cursor_up", "上移", show=False),
         Binding("R", "refresh", "刷新"),
+        Binding("enter", "toggle_zoom", "放大"),
+        Binding("z", "toggle_zoom", "放大", show=False),
         Binding("f", "show_feats", "Feat"),
     ]
 
@@ -178,6 +217,7 @@ class PDMApp(App):
         self.config = config
         self.errors: List[str] = []
         self._current: Optional[str] = None
+        self._zoomed: Optional[str] = None     # 当前放大的栏 id
 
     # --- 布局 ---
 
@@ -295,6 +335,50 @@ class PDMApp(App):
         if hasattr(w, "action_cursor_up"):
             w.action_cursor_up()
 
+    # --- 放大 ---
+
+    def zoom_target(self) -> Optional[str]:
+        """当前焦点落在哪一栏；不在三栏（或无焦点）则返回 ``None``。"""
+        focused = self.focused
+        if focused is None:
+            return None
+        for pid in ("commits", "notes", "detail"):
+            try:
+                if focused is self.query_one(f"#{pid}"):
+                    return pid
+            except Exception:                    # noqa: BLE001
+                continue
+        # 焦点可能在栏内子控件上（如详情里的 Static）：往上找祖先
+        for pid in ("commits", "notes", "detail"):
+            try:
+                panel = self.query_one(f"#{pid}")
+            except Exception:                    # noqa: BLE001
+                continue
+            if panel in getattr(focused, "ancestors", []):
+                return pid
+        return None
+
+    @guard
+    def action_toggle_zoom(self) -> None:
+        """``Enter`` / ``z``：放大当前焦点所在栏；再按还原。
+
+        三态互斥；先清掉全部 zoom class 再写目标态（幂等）。
+        """
+        target = self.zoom_target()
+        body = self.query_one("#body")
+        for cls in _ZOOM_CLASSES.values():
+            body.remove_class(cls)
+
+        if target is None:
+            return                              # 静默 no-op
+        if self._zoomed == target:              # 再按 = 还原
+            self._zoomed = None
+            self.notify("已还原")
+            return
+        self._zoomed = target
+        body.add_class(_ZOOM_CLASSES[target])
+        self.notify(f"已放大：{target}")
+
     @guard
     def action_show_feats(self) -> None:
         """``f``：打开 Feat 面板（含审查勾选，本项目首个写操作）。"""
@@ -328,6 +412,19 @@ def _owns(current: Optional[str], commit: str) -> bool:
     return (len(current) >= 6 and commit.startswith(current)) or (
         len(commit) >= 6 and current.startswith(commit)
     )
+
+
+def _zoom_parent(widget) -> None:
+    """把 Enter 转给拥有 ``action_toggle_zoom`` 的那一层（App）。
+
+    不能硬编码 ``self.app.screen``：弹窗场景下 screen 不是主界面。
+    """
+    for candidate in (getattr(widget, "screen", None),
+                      getattr(widget, "app", None)):
+        action = getattr(candidate, "action_toggle_zoom", None)
+        if action is not None:
+            action()
+            return
 
 
 def _git_log(cwd: str) -> list:
