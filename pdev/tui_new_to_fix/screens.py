@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Feat 面板（ModalScreen）：两栏浏览 + 审查勾选。
+"""Feat 面板（ModalScreen）：两栏浏览 + 审查勾选 + 条目评论。
 
-这是新 TUI 的**首个写操作**。约束见 ``doc/feat/tui-feat-review.md``：
+新 TUI 的两个写操作都在这里，约束见：
 
-- 写入只走 ``FeatStore.set_reviews()``（CLI 的同一条路径），不直接改 JSON。
-- 只允许改 ``reviewed`` / ``tested`` 两个布尔位。
-- ``by`` 由调用方（app）从 config 取，**不由界面/用户输入决定**。
-- 校验与取反逻辑在 :mod:`pdev.tui_new_to_fix.feat_core`（纯函数，可单测）。
+- ``doc/feat/tui-feat-review.md``：勾选
+- ``doc/feat/tui-feat-comment.md``：评论
+
+共同点：
+
+- 写入只走 ``FeatStore.set_reviews()`` / ``set_comment()``
+  （CLI 的同一条路径），不直接改 JSON。
+- 校验与规范化逻辑在 :mod:`pdev.tui_new_to_fix.feat_core`（纯函数，可单测）。
+- 所有 action / 回调必须包 ``@guard``（漏包会让整个 TUI 退出）。
 """
 
 from __future__ import annotations
@@ -20,26 +25,25 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import ListItem, ListView, Static
 
-from . import feat_core
+from . import core, feat_core
 from .guard import guard
 
-__all__ = ["FeatScreen"]
+__all__ = ["FeatScreen", "CommentScreen"]
 
 _MARK = {True: "■", False: "□"}
 
 
-def _feat_line(feat) -> Text:
-    """左列：一条 feat。"""
+def _feat_line(feat, width: int = 0) -> Text:
+    """左列：一条 feat（**强制单行**，超出截断）。
+
+    渲染逻辑在 :func:`feat_core.feat_line`（纯函数，可毫秒级测）；
+    这里只负责套上 rich 颜色。
+    """
     t = Text()
-    status = getattr(getattr(feat, "status", None), "value", "?")
-    t.append("● ", style="bold")
-    t.append(getattr(feat, "slug", "?"), style="bold yellow")
-    t.append(f"  {status}", style="dim")
-    try:
-        counts = feat.review_counts()
-        t.append(f"  审 {counts.reviewed}/{counts.total}", style="cyan")
-    except Exception:                            # noqa: BLE001
-        pass
+    marker, slug, tail = feat_core.feat_line(feat, width)
+    t.append(marker, style="bold")
+    t.append(slug, style="bold yellow")
+    t.append(tail, style="dim")
     return t
 
 
@@ -51,14 +55,96 @@ class FeatItem(ListItem):
         self.feat = feat
 
     def render(self) -> Text:
-        return _feat_line(self.feat)
+        """按列表当前宽度截断，保证**单行**。"""
+        width = self.size.width or 32
+        return _feat_line(self.feat, width)
+
+
+class FeatList(ListView):
+    """左列 feat 列表。
+
+    关键是拦截 ``Enter``：``ListView`` 会把它当“选中”吃掉，
+    导致放大快捷键收不到（实测 ``action_toggle_zoom`` 触发 0 次）。
+    """
+
+    def key_enter(self) -> bool:
+        """Enter 在被 ListView 消化前转给 FeatScreen 放大。"""
+        screen = getattr(self, "screen", None)
+        action = getattr(screen, "action_toggle_zoom", None)
+        if action is not None:
+            action()
+            return True
+        return False
+
+
+class CommentScreen(ModalScreen):
+    """条目评论编辑弹窗（**多行**，所以用 TextArea）。
+
+    - ``Ctrl+S`` 保存，``Esc`` 取消。
+    - ``dismiss`` 返回 ``str``（保存，空串 = 清除）或 ``None``（取消）。
+    - 独立弹窗的意义：文本框的字母/回车不会污染 FeatScreen 的
+      ``j``/``k``/``空格``/``t``。
+    """
+
+    CSS = """
+    CommentScreen { align: center middle; background: $surface 70%; }
+    #comment-box {
+        width: 80%;
+        height: 70%;
+        padding: 0 1;
+        border: thick $accent;
+        background: $surface;
+    }
+    #comment-title { height: 1; color: $text-muted; }
+    #comment-text { height: 1fr; }
+    #comment-hint { height: 1; color: $text-muted; }
+    """
+
+    BINDINGS = [
+        Binding("ctrl+s", "save", "保存"),
+        Binding("escape", "cancel", "取消"),
+    ]
+
+    def __init__(self, initial: str = "", title: str = "") -> None:
+        super().__init__()
+        self._initial = initial or ""
+        self._title = title or "评论"
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import TextArea
+
+        with Vertical(id="comment-box"):
+            yield Static(
+                f"{self._title}   Ctrl+S 保存 · Esc 取消 · 留空=清除",
+                id="comment-title")
+            yield TextArea(self._initial, id="comment-text")
+            yield Static("（多行可粘贴；回车换行）", id="comment-hint")
+
+    @guard
+    def on_mount(self) -> None:
+        from textual.widgets import TextArea
+
+        self.query_one("#comment-text", TextArea).focus()
+
+    @guard
+    def action_save(self) -> None:
+        from textual.widgets import TextArea
+
+        text = self.query_one("#comment-text", TextArea).text
+        self.dismiss(text)
+
+    @guard
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class FeatScreen(ModalScreen):
     """两栏 feat 浏览 + 审查勾选。
 
-    - ``↑``/``↓`` 或 ``j``/``k`` 选 feat
+    - ``↑``/``↓`` 或 ``j``/``k`` 选 feat／移动可审项
+    - ``←``/``→`` 或 ``h``/``l`` / ``Tab`` 切焦点
     - ``空格`` 切换 ``[审]``、``t`` 切换 ``[测]``（作用于**当前高亮可审项**）
+    - ``Enter`` / ``z`` 放大左侧 feat 列表（占满宽度，看全长 slug）
     - ``Esc`` / ``q`` 关闭
     """
 
@@ -74,6 +160,11 @@ class FeatScreen(ModalScreen):
     #feat-title { height: 1; color: $text-muted; }
     #feat-body { height: 1fr; }
     #feat-list { width: 34; height: 1fr; border: round $primary; }
+    /* 放大：列表占满，详情隐藏 */
+    #feat-body.list-zoomed #feat-list { width: 1fr; }
+    #feat-body.list-zoomed #feat-detail { display: none; }
+    /* 关键：列表项必须单行（否则长 slug 会折成多行） */
+    FeatItem { height: 1; padding: 0 1; }
     #feat-detail {
         width: 1fr; height: 1fr;
         border: round $primary; padding: 0 1;
@@ -88,6 +179,16 @@ class FeatScreen(ModalScreen):
         Binding("k", "cursor_up", "上移", show=False),
         Binding("space", "toggle_review", "勾选审查"),
         Binding("t", "toggle_test", "勾选测试"),
+        Binding("c", "edit_comment", "评论"),
+        Binding("enter", "toggle_zoom", "放大列表"),
+        Binding("z", "toggle_zoom", "放大列表", show=False),
+        Binding("right", "focus_detail", "右移", show=False),
+        Binding("l", "focus_detail", "右移", show=False),
+        Binding("left", "focus_list", "左移", show=False),
+        Binding("h", "focus_list", "左移", show=False),
+        Binding("tab", "focus_toggle", "切焦点", show=False),
+        Binding("pagedown", "detail_page_down", "翻页", show=False),
+        Binding("pageup", "detail_page_up", "翻页", show=False),
     ]
 
     def __init__(self, feat_store, by: str = "human") -> None:
@@ -96,6 +197,7 @@ class FeatScreen(ModalScreen):
         self.by = by
         self._rows: List[tuple] = []      # 当前 feat 的可审项
         self._cursor = 0                  # 当前高亮的可审项下标
+        self._zoomed = False              # 左列是否已放大
 
     # --- 布局 ---
 
@@ -104,7 +206,7 @@ class FeatScreen(ModalScreen):
             yield Static("Feat（开发记录）· 空格 勾审 · t 勾测 · Esc 关闭",
                          id="feat-title")
             with Horizontal(id="feat-body"):
-                yield ListView(id="feat-list")
+                yield FeatList(id="feat-list")
                 with VerticalScroll(id="feat-detail"):
                     yield Static("", id="feat-detail-body")
             yield Static("", id="feat-hint")
@@ -180,26 +282,29 @@ class FeatScreen(ModalScreen):
         self._update_hint()
 
     def _show_comment_note(self, feat, t: Text) -> None:
-        """展示已有评论（只读；编辑是另一个 feat）。"""
-        try:
-            commented = list(feat.commented_items())
-        except Exception:                        # noqa: BLE001
-            return
-        if not commented:
+        """展示已有评论（多行按行缩进；编辑按 c）。"""
+        rows = feat_core.comment_rows(feat)
+        if not rows:
             return
         t.append("\n评论\n", style="bold")
-        for ref in commented:
-            t.append(f"  {ref.key}  ", style="cyan")
-            t.append(f"{feat.comment(ref.key)}\n", style="dim")
+        for key, _label, text in rows:
+            t.append(f"  {key}\n", style="cyan")
+            for line in text.splitlines() or [""]:
+                t.append(f"    {line}\n", style="dim")
 
     def _update_hint(self) -> None:
+        zoom = "[已放大] " if self._zoomed else ""
+        if self._zoomed:
+            tail = "Enter/z 还原   ↑/↓ 选 feat   Esc 关闭"
+            self.query_one("#feat-hint", Static).update(zoom + tail)
+            return
         if not self._rows:
-            text = "无可审项   Esc 关闭"
+            text = "无可审项   Enter 放大   Esc 关闭"
         else:
             key, _label, reviewed, tested = self._rows[self._cursor]
             text = (f"{key}  [审]{_MARK[reviewed]} [测]{_MARK[tested]}   "
-                    f"空格 勾审   t 勾测   ↑/↓ 选择   Esc 关闭")
-        self.query_one("#feat-hint", Static).update(text)
+                    f"空格 勾审   t 勾测   ←/→ 切焦点   Enter 放大")
+        self.query_one("#feat-hint", Static).update(zoom + text)
 
     # --- actions ---
 
@@ -215,22 +320,78 @@ class FeatScreen(ModalScreen):
     def action_cursor_up(self) -> None:
         self._move_cursor(-1)
 
+    def _is_list_focused(self) -> bool:
+        return self.focused is self.query_one("#feat-list", ListView)
+
+    def _detail(self):
+        return self.query_one("#feat-detail", VerticalScroll)
+
     def _move_cursor(self, delta: int) -> None:
-        """上下移动：优先移动「可审项光标」，到头再切 feat。"""
-        if self._rows:
-            new = self._cursor + delta
-            if 0 <= new < len(self._rows):
-                self._cursor = new
+        """上下移动，**按焦点区分语义**（修复之前混在一起的问题）：
+
+        - 焦点在左列：切换选中的 feat
+        - 焦点在详情：移动可审项光标，并滚动详情让它可见
+        """
+        if self._is_list_focused():
+            lv = self.query_one("#feat-list", ListView)
+            idx = lv.index if lv.index is not None else -1
+            feats = self._feats()
+            new_idx = max(0, min(len(feats) - 1, idx + delta))
+            if new_idx != idx:
+                self._cursor = 0
+                lv.index = new_idx
                 self._refresh_detail()
-                return
-        lv = self.query_one("#feat-list", ListView)
-        idx = lv.index if lv.index is not None else -1
-        feats = self._feats()
-        new_idx = max(0, min(len(feats) - 1, idx + delta))
-        if new_idx != idx:
-            self._cursor = 0
-            lv.index = new_idx
+            return
+
+        # 焦点在详情：移动可审项光标
+        if not self._rows:
+            self._detail().scroll_down()
+            return
+        new = self._cursor + delta
+        if 0 <= new < len(self._rows):
+            self._cursor = new
             self._refresh_detail()
+
+    @guard
+    def action_toggle_zoom(self) -> None:
+        """Enter / z：放大左列（占满宽度，看全长 slug），再按还原。"""
+        body = self.query_one("#feat-body")
+        self._zoomed = not self._zoomed
+        if self._zoomed:
+            body.add_class("list-zoomed")
+            self._detail().blur()
+            self.query_one("#feat-list", ListView).focus()
+        else:
+            body.remove_class("list-zoomed")
+        self._update_hint()
+
+    @guard
+    def action_focus_list(self) -> None:
+        """左移：焦点回左列。"""
+        self.query_one("#feat-list", ListView).focus()
+
+    @guard
+    def action_focus_detail(self) -> None:
+        """右移：焦点切到详情（可滚动）。"""
+        self._detail().focus()
+
+    @guard
+    def action_focus_toggle(self) -> None:
+        """Tab：在左列与详情之间切。"""
+        if self._is_list_focused():
+            self._detail().focus()
+        else:
+            self.action_focus_list()
+
+    @guard
+    def action_detail_page_down(self) -> None:
+        self._detail().focus()
+        self._detail().scroll_page_down()
+
+    @guard
+    def action_detail_page_up(self) -> None:
+        self._detail().focus()
+        self._detail().scroll_page_up()
 
     @guard
     def action_toggle_review(self) -> None:
@@ -239,6 +400,35 @@ class FeatScreen(ModalScreen):
     @guard
     def action_toggle_test(self) -> None:
         self._toggle("test")
+
+    @guard
+    def action_edit_comment(self) -> None:
+        """``c``：编辑当前高亮可审项的评论（弹窗多行输入）。"""
+        feat = self._current_feat()
+        if feat is None or not self._rows:
+            return
+        key = self._rows[self._cursor][0]
+        slug = getattr(feat, "slug", "")
+        try:
+            initial = feat.comment(key) or ""
+        except Exception:                        # noqa: BLE001
+            initial = ""
+
+        def after(result) -> None:
+            if result is None:                   # 取消，不落盘
+                return
+            text = feat_core.plan_comment(result)
+            try:
+                self.feat_store.set_comment(slug, key, text)
+            except Exception as e:               # noqa: BLE001
+                self._record_error(f"feat comment: {e}")
+                self.notify(f"写入失败：{e}", severity="error")
+                return
+            self._refresh_detail()
+            self.notify(f"{key} 评论已{'清除' if not text else '保存'}")
+
+        self.app.push_screen(CommentScreen(initial, title=f"{slug} · {key}"),
+                             after)
 
     def _toggle(self, field: str) -> None:
         """切换一个勾选位并落盘（唯一写路径）。"""
