@@ -145,3 +145,77 @@ cmd=.venv/bin/python -m pytest tests/tui_new_to_fix/ -q
 manual=./run.sh ui --new → f → d → j/k（应跟随滚动、到底循环）→ 空格展开收起 → n 回 Review 后空格变勾审
 expected=Design 页可浏览全部设计字段，Review 页行为与之前一致
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 `8f5e2bed`（test `9a36d47e`、doc `647af924`、fix `56c95d0f`）。
+**状态：已闭环（closed）**。
+
+### 交付物
+
+| 文件 | 内容 |
+|------|------|
+| `pdev/tui_new_to_fix/feat_core.py` | `+design_lines` / `+design_cursor_span` / `+design_keys` / `+_design_sections`（单一真相） |
+| `pdev/tui_new_to_fix/screens.py` | `+_tab/_folded/_design_cursor`；`+action_primary_action`（空格按标签分派）/`+action_tab_design`/`+action_tab_review`；`+_scroll_design_cursor_into_view`；`_refresh_detail`/`_move_cursor`/`_update_hint` 各加分派 |
+| `doc/feat/tui-feat-design.md` | 本文档 |
+
+**零新增依赖**。
+
+### 实测渲染
+
+```
+▶ ▸ 设计思路  (2 行)
+▸ 实现方式  (1 行)
+…
+▸ 日志  （未填）
+
+（空格展开后）
+▶ ▾ 设计思路
+    详情区平铺信息密度低，看设计要在一堆勾选框里找。
+    分成 Design 与 Review 两页，Design 用可折叠条目。
+```
+
+### 骨架试金石的结论
+
+本 feat 先写骨架验证“重构是否充分”（上一个 feat 的成果）：
+
+| 遇到的问题 | 是否需继续重构 |
+|-----------|:---:|
+| 默认标签选什么 | 否（改一行，选 Review 保兼容） |
+| 空格语义分派 | 否（一个 if） |
+| 渲染分派 | 否（3 行） |
+| 移动分派 | 否（3 行） |
+| 光标停在空条目上 | 否（功能设计缺陷，加 `_design_filled_keys`） |
+
+**结论**：重构是够的，5 个问题里 4 个只需改几行，没有一处需要动
+`FeatScreen` 的整体结构；且未改动之前的代码结构（只加分派分支）。
+
+### fix 阶段回填
+
+集成后发现一个**重复定义隐患**：`FeatScreen._DESIGN_KEYS` 与
+`feat_core._design_sections` 各维护一份条目顺序，靠人工对比保证一致；
+一旦漂移，光标会跳到错条目。
+
+修法：新增 `feat_core.design_keys()` 作为**单一真相**，
+`screens.py` 改为派生；补 2 个测试（顺序一致、元组不可变）
+与 1 个幂等断言（重复按同一标签键不出错）。
+
+### 本次发现的异常（已记笔记）
+
+1. **滚动跟随不能用条目末尾行号**（pitfall/high）——
+   `scroll_to(y=end)` 会把条目滚出视野。
+2. **空格含义随标签变化需要“主操作”分派层**（difficulty/medium）——
+   否则按键空间冲突；默认标签选 Review 才能保住老行为。
+
+### 遗留问题（不属本 feat）
+
+用户报告 Design 页视图不跟随滚动。无头测试（`size=(100,16)`、
+4 项各 10 行全展开）显示滚动逻辑正确（起始行始终在可见区内），
+但实际终端仍未复现出“不滚”。已记入笔记（bug/high），
+含 4 条待排查方向。
+
+### 已知限制（有意不做）
+
+- 折叠状态不持久化（关闭面板即重置）。
+- 不做第三个标签、不做 Design 字段的 TUI 内编辑。
+- 不内联渲染设计文档正文。
