@@ -236,3 +236,56 @@ cmd=.venv/bin/pytest -q
 manual=用 open_ledger() 完成五个闭环，全程不 import 内核模块
 expected=全绿；内核签名未变；可用例当成说明书读
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 `5100604f`。四个子门面全部落地。
+
+### 交付物
+
+| 文件 | 变化 |
+|------|------|
+| `pdev/api.py` | `+LedgerV2` + 四个子门面（`CheckAPI`/`ReviewAPI`/`VerifyAPI`/`TraceAPI`）；`Ledger.__init__` 改为读 config；`open_ledger` 改返回 `LedgerV2` |
+| `tests/test_ledger.py` | 12 例（五个闭环 + 边界 + 内核签名守卫） |
+
+**内核模块一行未改**（`check.py`/`review.py`/`stats.py`/`featview.py`/`verify.py` 全部原样）。
+
+### 五个闭环（可用作说明书）
+
+| 闭环 | 组合 |
+|------|------|
+| 记录 | `features.new` → `record` → `overview` |
+| 审查 | `reviews.list` → `reviews.mark` → `reviews.counts` → `reviews.overview` |
+| 校验 | `checks.of` → `checks.summary` → `checks.all` |
+| 追溯 | `trace.doc_body` → `trace.notes` |
+| 验证 | `verify.pending` → `verify.runnable` → `verify.run` |
+
+### 验证
+
+| 项 | 结果 |
+|----|------|
+| `tests/test_ledger.py` | ✅ 12 例 |
+| 默认全量 | ✅ 全绿 |
+| 实测五个子门面 | ✅ 全程不 import 内核 |
+| 回退点 | ✅ `Ledger` 仍可用（无子门面），删 `LedgerV2` 即回退 |
+| 内核签名 | ✅ 由 `test_no_kernel_signature_changed` 守卫 |
+| CLI | ✅ 不受影响 |
+
+### 实现期发现的两个坑
+
+1. **子类属性与父类方法同名会互相遮蔽**
+   `LedgerV2.reviews` 是 `@property`，父类 `Ledger` 有同名方法
+   `reviews(slug)`。子类属性完全遮蔽父类方法 →
+   `self._ledger.reviews(slug)` 变成"调用 `ReviewAPI` 实例" → `TypeError`。
+   **解法**：父类中会被子门面占用的实现方法统一加 `_impl` 后缀。
+
+2. **`pending` 与 `runnable` 语义相反**
+   `verify.pick_notes()` 返回"**有**可执行验证的笔记"，而非"缺验证的"。
+   设计文档把两者混为一谈。**解法**：拆成 `pending()`（用
+   `needs_verification`）与 `runnable()`（用 `pick_notes`）。
+
+### 下一步（未做，留给后续 feat）
+
+**合入**：验证一段时间后，把 `LedgerV2` 的 4 个子门面属性
+**搬到 `Ledger`**，删掉 `LedgerV2`。合入的是**属性**（4 个），
+不是 18 个方法——避免重新变成上帝对象。
