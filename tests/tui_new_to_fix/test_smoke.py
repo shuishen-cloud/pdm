@@ -99,6 +99,51 @@ async def test_boot_and_navigate(store):
         assert app.errors == []
         assert len(commit_rows(app)) == 2
 
+        # --- 条目必须单行（长 subject 不得折行）---
+        from textual.widgets import ListView
+
+        for panel in ("#commits", "#notes"):
+            lv = app.query_one(panel, ListView)
+            for child in lv.children:
+                assert child.size.height == 1, f"{panel} 的条目折行了"
+
+        # --- Enter 放大当前栏，再按还原 ---
+        await pilot.press("1")                 # 焦点回提交栏
+        await pilot.pause()
+        commits = app.query_one("#commits", ListView)
+        notes = app.query_one("#notes", ListView)
+        wide_before = commits.size.width
+        await pilot.press("enter")
+        await pilot.pause()
+        assert commits.size.width > wide_before, "enter 没有放大提交栏"
+        assert notes.size.width == 0, "放大时其余栏应隐藏"
+        assert app._zoomed == "commits"
+
+        # 放大态互斥：切到笔记栏再按 enter，只留笔记栏
+        await pilot.press("2")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert notes.size.width > 0
+        assert commits.size.width == 0, "两栏不应同时可见（放大态必须互斥）"
+        assert app._zoomed == "notes"
+
+        # 再按还原
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app._zoomed is None, "再按 enter 应取消放大"
+        assert commits.size.width > 0 and notes.size.width > 0
+        assert commits.size.width == wide_before
+
+        # --- 焦点不在三栏时，放大是静默 no-op ---
+        app.set_focus(None)
+        await pilot.pause()
+        app.action_toggle_zoom()             # 同步 action，不 await
+        await pilot.pause()
+        assert app.zoom_target() is None
+        assert app._zoomed is None
+        assert app.errors == []
+
 
 # --- 会话（异常兜底）：本 feat 的核心契约 ------------------------------------
 
@@ -211,14 +256,14 @@ async def test_boot_failure_is_contained(tmp_path):
 
 
 def test_smoke_suite_is_fast():
-    """本文件的 run_test 开销必须低于 1.8s（防回归）。
+    """本文件的 run_test 开销必须低于 2.5s（防回归）。
 
     Feat 面板的慢用例在 ``tests/tui_new_to_fix/test_feat_ui.py``，
-    拆文件是为了保留“快速反馈”：改主界面只需跑本文件（~2s）。
+    拆文件是为了保留“快速反馈”：改主界面只需跑本文件。
 
     单位成本（实测）：``run_test`` ≈ 0.13s、``pause`` ≈ 0.02s、
     ``press`` ≈ 0.05s。本文件 5 个用例各需一次 ``run_test``
-    （硬成本 ≈ 0.65s），加断言所需的同步，约 1.2~1.5s。
+    （硬成本 ≈ 0.65s），加断言所需的同步，约 1.6~2.0s。
     这里只统计用例自身耗时，不含 pytest 启动、收集、import。
     """
-    assert _ELAPSED < 1.8, f"冒烟测试太慢：{_ELAPSED:.2f}s"
+    assert _ELAPSED < 2.5, f"冒烟测试太慢：{_ELAPSED:.2f}s"
