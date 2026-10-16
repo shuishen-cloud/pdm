@@ -33,6 +33,18 @@ class AppContext:
     cwd: Path = field(default_factory=Path.cwd)
     color: bool = False
 
+    @property
+    def ledger(self):
+        """任务级门面（:class:`pdev.api.Ledger`），与 :attr:`store` 同源。
+
+        复用 ``store`` 已解析的绝对路径构造，保证两者指向同一份数据；
+        门面仅供**只读查询**使用，写入仍走 ``store``，避免两条写入路径。
+        """
+        from ..api import Ledger
+
+        root = Path(self.store.root).parent
+        return Ledger(root=str(root), cwd=str(self.cwd), config=self.config)
+
     @classmethod
     def from_config(
         cls,

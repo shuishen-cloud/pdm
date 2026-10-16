@@ -1417,7 +1417,10 @@ def cmd_query(ctx: AppContext, args) -> int:
 
 def cmd_show(ctx: AppContext, args) -> int:
     """查看某次提交的全部笔记。"""
-    notes = ctx.store.by_commit(args.commit)
+    # notes = ctx.store.by_commit(args.commit)
+    
+    # ! 测试 ledger 的接口
+    notes = ctx.ledger.notes_of(args.commit)
     if not notes:
         print(f"commit {args.commit} 没有笔记", file=sys.stderr)
         return 1
