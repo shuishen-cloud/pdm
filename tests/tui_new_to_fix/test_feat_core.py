@@ -200,6 +200,60 @@ def test_comment_header_survives_broken_feat():
     assert head["feat"] == "b"
 
 
+# --- detail_lines（详情渲染，纯函数）------------------------------------
+
+_MARK = {True: "■", False: "□"}
+
+
+def _plain(lines) -> list:
+    """行模型 → 纯文本行（便于断言）。"""
+    return ["".join(v for v, _s in line) for line in lines]
+
+
+def test_detail_lines_no_feat():
+    assert _plain(feat_core.detail_lines(None, [], 0, _MARK)) == \
+        ["（无 feat，用 pdm feat new 创建）"]
+
+
+def test_detail_lines_no_rows():
+    f = Feat(slug="demo", title="演示")
+    out = _plain(feat_core.detail_lines(f, [], 0, _MARK))
+    assert out[0] == "demo"
+    assert out[1] == "演示"
+    assert "（无可审项）" in out[-1]
+
+
+def test_detail_lines_marks_cursor():
+    """当前高亮项用 ▶ 标记，其余用空格对齐。"""
+    f = Feat(slug="demo", title="t", api=["a()", "b()"])
+    rows = [("api:0", "a()", False, False), ("api:1", "b()", True, True)]
+    out = _plain(feat_core.detail_lines(f, rows, 1, _MARK))
+    item_lines = [ln for ln in out if "api:0" in ln or "api:1" in ln]
+    assert item_lines[0].startswith("  "), "未选中不应有 ▶"
+    assert item_lines[1].startswith("▶ ")
+    assert "[■][■]" in item_lines[1]      # 已审已测
+
+
+def test_detail_lines_comment_inline_after_its_row():
+    """评论必须紧跟在**自己条目**的下一行（不是堆底部）。"""
+    f = Feat(slug="demo", title="t", api=["a()", "b()"])
+    f.set_comment("api:0", "第一行\n第二行")
+    rows = [("api:0", "a()", False, False), ("api:1", "b()", False, False)]
+    out = _plain(feat_core.detail_lines(f, rows, 0, _MARK))
+    i = next(n for n, ln in enumerate(out) if "api:0" in ln)
+    assert "第一行" in out[i + 1]
+    assert "第二行" in out[i + 2]
+    assert "api:1" in out[i + 3]
+
+
+def test_detail_lines_survives_broken_feat():
+    class Broken:
+        slug = "b"
+
+    out = _plain(feat_core.detail_lines(Broken(), [], 0, _MARK))
+    assert out[0] == "b"
+
+
 # --- 时间预算 ---------------------------------------------------------------
 
 

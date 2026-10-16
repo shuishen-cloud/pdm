@@ -16,7 +16,17 @@ import pytest
 
 from pdev.feat import Feat, FeatImportance, FeatStore
 
-_T0 = time.perf_counter()
+#: 本文件“自己的”耗时累加（不含 import 与其它测试）。
+#: 不能用模块级 ``_T0``——全仓跑时会把它人的耗时也算进来（已经踩过）。
+_ELAPSED = 0.0
+
+
+@pytest.fixture(autouse=True)
+def _measure():
+    global _ELAPSED
+    start = time.perf_counter()
+    yield
+    _ELAPSED += time.perf_counter() - start
 
 
 @pytest.fixture
@@ -152,5 +162,9 @@ def test_comment_write_failure_returns_false(store, ops):
 
 
 def test_ops_suite_is_fast():
-    """整文件必须远低于 1s —— 证明没有 run_test 被偷偷引入。"""
-    assert time.perf_counter() - _T0 < 1.0
+    """本文件所有用例自身耗时之和必须远低于 1s。
+
+    证明没有 ``run_test`` 被偷偷引入（FeatOps 的全部价值就在
+    “不起 app 也能测”）。
+    """
+    assert _ELAPSED < 1.0, f"FeatOps 测试太慢：{_ELAPSED:.2f}s"

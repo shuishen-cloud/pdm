@@ -156,6 +156,67 @@ class CommentScreen(ModalScreen):
         self.dismiss(None)
 
 
+class FeatOps:
+    """Feat 面板的**写操作层**（见 doc/feat/tui-featscreen-split.md）。
+
+    设计约束：**不依赖 Textual 运行时**——
+
+    - 构造只接 ``feat_store`` 与 ``by``；
+    - 方法返回 ``(ok, message)``，**不自己调 notify**；
+    提示与错误记录由调用方（FeatScreen）负责。
+
+    因此本类可脱离 ``run_test`` 单测（毫秒级，见
+    ``tests/tui_new_to_fix/test_feat_ops.py``）。
+    """
+
+    def __init__(self, feat_store, by: str = "human") -> None:
+        self.feat_store = feat_store
+        self.by = by
+
+    # --- 勾选 ---
+
+    def toggle(self, feat, key, field: str):
+        """切换一个勾选位并落盘。返回 ``(ok, message)``。
+
+        非法 key/field → ``(False, 说明)``，**不落盘**。
+        """
+        plan = feat_core.plan_toggle(feat, key, field)
+        if plan is None:
+            return False, f"不能切换：{key}（{field}）"
+        kwargs = dict(plan)
+        if field == "review":
+            kwargs["by"] = self.by            # 作者由调用方决定
+        else:
+            kwargs["status"] = "passed"
+        slug = getattr(feat, "slug", "")
+        try:
+            self.feat_store.set_reviews(slug, [key], **kwargs)
+        except Exception as e:                # noqa: BLE001
+            return False, str(e) or "写入失败"
+        label = "审" if field == "review" else "测"
+        return True, f"{key} [{label}] 已更新"
+
+    def toggle_review(self, feat, key):
+        """切换 ``[审]``。"""
+        return self.toggle(feat, key, "review")
+
+    def toggle_test(self, feat, key):
+        """切换 ``[测]``。"""
+        return self.toggle(feat, key, "test")
+
+    # --- 评论 ---
+
+    def edit_comment(self, feat, key, text):
+        """写评论（空串/纯空白 = 清除）。返回 ``(ok, message)``。"""
+        normalized = feat_core.plan_comment(text)
+        slug = getattr(feat, "slug", "")
+        try:
+            self.feat_store.set_comment(slug, key, normalized)
+        except Exception as e:                # noqa: BLE001
+            return False, str(e) or "写入失败"
+        return True, f"{key} 评论已{'清除' if not normalized else '保存'}"
+
+
 class FeatScreen(ModalScreen):
     """两栏 feat 浏览 + 审查勾选。
 
@@ -213,6 +274,7 @@ class FeatScreen(ModalScreen):
         super().__init__()
         self.feat_store = feat_store
         self.by = by
+        self.ops = FeatOps(feat_store, by=by)   # 写操作层（可独立单测）
         self._rows: List[tuple] = []      # 当前 feat 的可审项
         self._cursor = 0                  # 当前高亮的可审项下标
         self._zoomed = False              # 左列是否已放大
@@ -264,52 +326,22 @@ class FeatScreen(ModalScreen):
     # --- 详情 ---
 
     def _refresh_detail(self) -> None:
-        body = self.query_one("#feat-detail-body", Static)
+        """重绘详情。组装逻辑在 :func:`feat_core.detail_lines`（纯函数）。"""
         feat = self._current_feat()
-        if feat is None:
-            self._rows = []
+        self._rows = feat_core.review_rows(feat) if feat is not None else []
+        if self._rows:
+            self._cursor = max(0, min(self._cursor, len(self._rows) - 1))
+        else:
             self._cursor = 0
-            body.update(Text("（无 feat，用 pdm feat new 创建）", style="dim"))
-            self._update_hint()
-            return
-
-        self._rows = feat_core.review_rows(feat)
-        self._cursor = max(0, min(self._cursor, len(self._rows) - 1))
 
         t = Text()
-        t.append(f"{getattr(feat, 'slug', '?')}\n", style="bold yellow")
-        title = getattr(feat, "title", "")
-        if title:
-            t.append(f"{title}\n", style="bold")
-        t.append("\n")
-
-        if not self._rows:
-            t.append("（无可审项）\n", style="dim")
-        else:
-            for i, (key, label, reviewed, tested) in enumerate(self._rows):
-                if i == self._cursor:
-                    t.append("▶ ", style="bold cyan")
-                else:
-                    t.append("  ")
-                t.append(f"[{_MARK[reviewed]}][{_MARK[tested]}] ", style="green")
-                t.append(f"{key:<12}", style="cyan")
-                t.append(f"{label}\n", style="dim")
-                self._append_comment(t, feat, key)
-
-        body.update(t)
+        for line in feat_core.detail_lines(feat, self._rows,
+                                          self._cursor, _MARK):
+            for value, style in line:
+                t.append(value, style=style or None)
+            t.append("\n")
+        self.query_one("#feat-detail-body", Static).update(t)
         self._update_hint()
-
-    def _append_comment(self, t: Text, feat, key: str) -> None:
-        """把该条目的评论**缩进显示在自己的条目下方**（多行逐行）。"""
-        try:
-            text = feat.comment(key) or ""
-        except Exception:                        # noqa: BLE001
-            return
-        if not text:
-            return
-        for line in text.splitlines() or [""]:
-            t.append("      │ ", style="dim cyan")
-            t.append(f"{line}\n", style="dim")
 
     def _update_hint(self) -> None:
         zoom = "[已放大] " if self._zoomed else ""
@@ -427,7 +459,6 @@ class FeatScreen(ModalScreen):
         if feat is None or not self._rows:
             return
         key = self._rows[self._cursor][0]
-        slug = getattr(feat, "slug", "")
         try:
             initial = feat.comment(key) or ""
         except Exception:                        # noqa: BLE001
@@ -436,15 +467,13 @@ class FeatScreen(ModalScreen):
         def after(result) -> None:
             if result is None:                   # 取消，不落盘
                 return
-            text = feat_core.plan_comment(result)
-            try:
-                self.feat_store.set_comment(slug, key, text)
-            except Exception as e:               # noqa: BLE001
-                self._record_error(f"feat comment: {e}")
-                self.notify(f"写入失败：{e}", severity="error")
+            ok, msg = self.ops.edit_comment(feat, key, result)
+            if not ok:
+                self._record_error(f"feat comment: {msg}")
+                self.notify(f"写入失败：{msg}", severity="error")
                 return
             self._refresh_detail()
-            self.notify(f"{key} 评论已{'清除' if not text else '保存'}")
+            self.notify(msg)
 
         self.app.push_screen(
             CommentScreen(initial,
@@ -452,29 +481,20 @@ class FeatScreen(ModalScreen):
             after)
 
     def _toggle(self, field: str) -> None:
-        """切换一个勾选位并落盘（唯一写路径）。"""
+        """切换一个勾选位（写盘委托给 :class:`FeatOps`）。"""
         feat = self._current_feat()
         if feat is None or not self._rows:
             return
         key = self._rows[self._cursor][0]
-        plan = feat_core.plan_toggle(feat, key, field)
-        if plan is None:                         # 非法 key/field，不落盘
-            return
-        slug = getattr(feat, "slug", "")
-        kwargs = dict(plan)
-        if field == "review":
-            kwargs["by"] = self.by                # 作者由调用方决定
-        else:
-            kwargs["status"] = "passed"
-        try:
-            self.feat_store.set_reviews(slug, [key], **kwargs)
-        except Exception as e:                   # noqa: BLE001
-            self._record_error(f"feat review: {e}")
-            self.notify(f"写入失败：{e}", severity="error")
+        ok, msg = self.ops.toggle(feat, key, field)
+        if not ok:
+            # plan_toggle 返回 None 时也只是“不能切”，不必报错刷屏
+            if "不能切换" not in msg:
+                self._record_error(f"feat {field}: {msg}")
+                self.notify(f"写入失败：{msg}", severity="error")
             return
         self._refresh_detail()
-        label = "审" if field == "review" else "测"
-        self.notify(f"{key} [{label}] 已更新")
+        self.notify(msg)
 
     def _record_error(self, msg: str) -> None:
         """记入 ``app.errors``（假如有）。**不得抛异常。**"""

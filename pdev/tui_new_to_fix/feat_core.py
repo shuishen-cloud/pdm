@@ -12,7 +12,8 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 __all__ = ["review_rows", "plan_toggle", "plan_comment",
-           "comment_header", "feat_line", "feat_line_text", "REVIEW_FIELDS"]
+           "comment_header", "detail_lines",
+           "feat_line", "feat_line_text", "REVIEW_FIELDS"]
 
 #: 允许切换的字段（白名单，与 web-ui-review 一致）。
 REVIEW_FIELDS = ("review", "test")
@@ -99,6 +100,58 @@ def comment_header(feat, key: str) -> List[Tuple[str, str]]:
                     f"[审]{'■' if reviewed else '□'} "
                     f"[测]{'■' if tested else '□'}"))
     return out
+
+
+def detail_lines(feat, rows, cursor: int, mark) -> List[List[tuple]]:
+    """组装右侧详情的**行模型**：``[[(text, style), ...], ...]``。
+
+    外层是行，内层是该行的若干片段（一行可拼多种颜色），
+    与界面的逐段 append 一一对应。
+
+    纯函数（无 textual 依赖）：渲染细节可毫秒级单测。
+    ``mark`` 是 ``{True: "■", False: "□"}``（由调用方传入，
+    保持界面层的单一真相）。
+
+    ``feat is None`` → 提示行；``rows`` 为空 → “无可审项”。
+    """
+    if feat is None:
+        return [[("（无 feat，用 pdm feat new 创建）", "dim")]]
+
+    lines: List[List[tuple]] = [
+        [(str(getattr(feat, "slug", "?")), "bold yellow")],
+    ]
+    title = getattr(feat, "title", "")
+    if title:
+        lines.append([(str(title), "bold")])
+    lines.append([("", "")])
+
+    if not rows:
+        lines.append([("（无可审项）", "dim")])
+        return lines
+
+    for i, (key, label, reviewed, tested) in enumerate(rows):
+        on_cursor = i == cursor
+        line: List[tuple] = []
+        line.append(("▶ " if on_cursor else "  ",
+                     "bold cyan" if on_cursor else ""))
+        line.append((f"[{mark[reviewed]}][{mark[tested]}] ", "green"))
+        line.append((f"{key:<12}", "cyan"))
+        line.append((str(label), "dim"))
+        lines.append(line)
+        for cl in _comment_lines(feat, key):
+            lines.append([cl])
+    return lines
+
+
+def _comment_lines(feat, key: str) -> List[tuple]:
+    """评论缩进显示在自己条目下方（多行逐行）。"""
+    try:
+        text = feat.comment(key) or ""
+    except Exception:                            # noqa: BLE001
+        return []
+    if not text:
+        return []
+    return [("      │ " + line, "dim") for line in (text.splitlines() or [""])]
 
 
 def feat_line(feat, width: int = 0) -> tuple:
