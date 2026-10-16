@@ -35,7 +35,7 @@ def ledger(tmp_path) -> LedgerV2:
     return open_ledger(root=str(tmp_path / ".pdm"), cwd=str(tmp_path))
 
 
-def test_只构造一个对象就能用(tmp_path):
+def test_one_object_is_enough(tmp_path):
     """用法：open_ledger() 一个入口拿到全部能力，无需 import 内核。"""
     led = open_ledger(root=str(tmp_path / ".pdm"), cwd=str(tmp_path))
     # 四个子门面都在，且不需要自己 new Store / GitRepo
@@ -68,7 +68,7 @@ def test_v2_is_a_ledger():
 # ---------------------------------------------------------------------------
 
 
-def test_usage_记录闭环(ledger):
+def test_usage_record_then_overview(ledger):
     """目的：把一次开发中踩的坑记下来，并看一眼总量。
 
     用的方法：
@@ -103,7 +103,7 @@ def test_usage_记录闭环(ledger):
 # ---------------------------------------------------------------------------
 
 
-def test_usage_审查闭环(ledger):
+def test_usage_review_flow(ledger):
     """目的：审阅一条 feat 的规格，逐项打勾，确认覆盖率。
 
     用的方法：
@@ -145,7 +145,7 @@ def test_usage_审查闭环(ledger):
     assert score.reviewed == 2
 
 
-def test_usage_审查可撤销(ledger):
+def test_usage_review_can_be_reverted(ledger):
     """目的：审错了要能撤销。"""
     ledger.features.new("a", "A", api=["f()"])
     ledger.reviews.mark("a", "api:0", by="human:lwy")
@@ -160,7 +160,7 @@ def test_usage_审查可撤销(ledger):
 # ---------------------------------------------------------------------------
 
 
-def test_usage_校验闭环(ledger):
+def test_usage_check_flow(ledger):
     """目的：检查一条 feat 是否合规，并知道下一步做什么。
 
     用的方法：
@@ -188,7 +188,7 @@ def test_usage_校验闭环(ledger):
     assert isinstance(all_issues, list)
 
 
-def test_usage_校验空库不报错(ledger):
+def test_usage_check_empty_store_ok(ledger):
     """目的：空仓库校验应返回空，而不是崩。"""
     assert ledger.checks.all() == []
 
@@ -198,7 +198,7 @@ def test_usage_校验空库不报错(ledger):
 # ---------------------------------------------------------------------------
 
 
-def test_usage_追溯闭环(ledger, tmp_path):
+def test_usage_trace_flow(ledger, tmp_path):
     """目的：看到一条 feat，想知道"当初为什么这么设计"。
 
     用的方法：
@@ -225,7 +225,7 @@ def test_usage_追溯闭环(ledger, tmp_path):
     assert [n.title for n in notes] == ["难点"]
 
 
-def test_usage_追溯缺文档不崩(ledger):
+def test_usage_trace_missing_doc_ok(ledger):
     """目的：设计文档缺失时应给提示而非异常。"""
     ledger.features.new("nodoc", "没有文档", doc="feat/nope.md")
     body = ledger.trace.doc_body("nodoc")
@@ -237,7 +237,7 @@ def test_usage_追溯缺文档不崩(ledger):
 # ---------------------------------------------------------------------------
 
 
-def test_usage_验证闭环(ledger):
+def test_usage_verify_flow(ledger):
     """目的：找出"记了但没验证"的笔记，并执行验证。
 
     用的方法：
