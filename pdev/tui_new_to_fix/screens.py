@@ -342,7 +342,7 @@ class FeatScreen(ModalScreen):
             self._cursor = 0
 
         if self._tab == "design":
-            filled = self._design_filled_keys(feat) if feat is not None else []
+            filled = self._design_filled_keys(feat)
             self._design_cursor = max(0, min(self._design_cursor,
                                               max(len(filled) - 1, 0)))
             model = feat_core.design_lines(feat, self._folded,
@@ -359,10 +359,23 @@ class FeatScreen(ModalScreen):
         self.query_one("#feat-detail-body", Static).update(t)
         self._update_hint()
 
-    #: Design 页条目顺序（与 feat_core 的 _design_sections 一致）
-    _DESIGN_KEYS = ("design_note", "impl_note", "test_note", "debug_note",
-                    "extend_note", "impact", "importance", "data_model",
-                    "samples", "api", "logs", "fallbacks")
+    def _design_filled_keys(self, feat) -> list:
+        """有内容的 Design 条目 key（顺序与渲染一致）。
+
+        顺序取自 ``feat_core.design_keys()``（单一真相），
+        不在本类重复维护——两处定义漂移会让光标跳到错条目。
+        """
+        if feat is None:
+            return []
+        out = []
+        for key in feat_core.design_keys():
+            value = getattr(feat, key, None)
+            if key == "importance":
+                if value is not None:
+                    out.append(key)
+            elif value:
+                out.append(key)
+        return out
 
     def _design_cursor_section(self):
         """Design 页当前**可操作**的条目 key（跳过空条目）。
@@ -378,19 +391,6 @@ class FeatScreen(ModalScreen):
             return None
         idx = max(0, min(self._design_cursor, len(filled) - 1))
         return filled[idx]
-
-    @staticmethod
-    def _design_filled_keys(feat) -> list:
-        """有内容的 Design 条目 key（顺序与渲染一致）。"""
-        out = []
-        for key in FeatScreen._DESIGN_KEYS:
-            value = getattr(feat, key, None)
-            if key == "importance":
-                if value is not None:
-                    out.append(key)
-            elif value:
-                out.append(key)
-        return out
 
     def _update_hint(self) -> None:
         zoom = "[已放大] " if self._zoomed else ""

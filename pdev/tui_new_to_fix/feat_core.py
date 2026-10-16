@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 
 __all__ = ["review_rows", "plan_toggle", "plan_comment",
            "comment_header", "detail_lines", "design_lines",
-           "design_cursor_span",
+           "design_cursor_span", "design_keys",
            "feat_line", "feat_line_text", "REVIEW_FIELDS"]
 
 #: 允许切换的字段（白名单，与 web-ui-review 一致）。
@@ -219,6 +219,19 @@ def design_cursor_span(feat, folded=None, cursor=None):
             return line, line + height - 1
         line += height
     return None
+
+
+def design_keys() -> tuple:
+    """Design 页条目的 key 顺序（**单一真相**）。
+
+    ``screens.py`` 不自己维护一份，而是用本函数：两处定义一旦漂移，
+    光标会跳到错条目（实测阶段先靠人工对比发现，现改为派生）。
+    """
+    return tuple(k for k, _t, _v in _design_sections(_EmptyFeat()))
+
+
+class _EmptyFeat:
+    """只为取字段名而用的空对象（_design_sections 全用 getattr）。"""
 
 
 def _design_sections(feat):

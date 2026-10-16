@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from pdev.feat import Feat  # noqa: E402
+from pdev.feat import Feat, FeatImportance  # noqa: E402
 from pdev.tui_new_to_fix import core, feat_core  # noqa: E402
 
 _T0 = time.perf_counter()
@@ -347,6 +347,36 @@ def test_design_lines_survives_broken_feat():
         pass
 
     assert _design_plain(Broken())        # 不抛即可
+
+
+def test_design_keys_matches_render_order():
+    """``design_keys()`` 的顺序必须与 ``design_lines`` 渲染顺序一致。
+
+    两处不一致会让光标跳到错条目。本测试是修复阶段的产物：
+    原本 ``FeatScreen._DESIGN_KEYS`` 与 ``feat_core._design_sections``
+    各维护一份，靠人工对比；现已改为派生，本测试防它再漂移。
+    """
+    f = Feat(slug="demo", title="t",
+             design_note="d", impl_note="i", test_note="t",
+             debug_note="b", extend_note="e", impact="im",
+             importance=FeatImportance.HIGH,
+             data_model=["D"], samples=["S"], api=["A"],
+             logs=["L"], fallbacks=["F"])
+    keys = feat_core.design_keys()
+    # 渲染出的标题顺序应与 design_keys 一一对应
+    titles = {}
+    for key, title, _v in feat_core._design_sections(f):
+        titles[key] = title
+    rendered = " ".join(v for line in feat_core.design_lines(f)
+                        for v, _s in line)
+    positions = [rendered.index(titles[k]) for k in keys]
+    assert positions == sorted(positions), "渲染顺序与 design_keys 不一致"
+
+
+def test_design_keys_is_stable():
+    """同一份定义多次调用结果一致（元组，不可变）。"""
+    assert feat_core.design_keys() == feat_core.design_keys()
+    assert isinstance(feat_core.design_keys(), tuple)
 
 
 # --- 时间预算 ---------------------------------------------------------------

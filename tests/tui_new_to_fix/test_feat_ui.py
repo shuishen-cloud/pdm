@@ -233,6 +233,14 @@ async def test_feat_list_single_line_zoom_and_focus(store, feat_root):
         assert app.focused is not None and app.focused.id == "feat-detail", \
             "切到 Design 后焦点应在详情，否则 j/k 移动无效"
 
+        # --- 重复按同一标签键不应出错（幂等）---
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        assert screen._tab == "design"
+        assert app.errors == []
+
         # --- 光标移动时，当前条目**必须在视口内**（曾滚到错误位置）---
         detail = screen._detail()
         for _ in range(4):
