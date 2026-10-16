@@ -12,7 +12,8 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 __all__ = ["review_rows", "plan_toggle", "plan_comment",
-           "comment_header", "detail_lines",
+           "comment_header", "detail_lines", "design_lines",
+           "design_cursor_span",
            "feat_line", "feat_line_text", "REVIEW_FIELDS"]
 
 #: 允许切换的字段（白名单，与 web-ui-review 一致）。
@@ -152,6 +153,105 @@ def _comment_lines(feat, key: str) -> List[tuple]:
     if not text:
         return []
     return [("      │ " + line, "dim") for line in (text.splitlines() or [""])]
+
+
+def design_lines(feat, folded=None, cursor=None) -> List[List[tuple]]:
+    """Design 标签页的行模型（**可折叠条目**）：``[[(text, style), ...]]``。
+
+    每个条目：收起时只显示 ``▸ 标题  (N 行)``，展开时逐行显示正文。
+    ``folded`` 是 ``{section_key: bool}``（None = 全部收起）；
+    ``cursor`` 是当前高亮条目的 key（None = 不高亮任何条目）。
+
+    纯函数：折叠/分组/行数统计可毫秒级单测。
+    """
+    if feat is None:
+        return [[("（无 feat）", "dim")]]
+    folded = folded or {}
+    lines: List[List[tuple]] = []
+
+    for key, title, value in _design_sections(feat):
+        body = _section_body(value)
+        on_cursor = key == cursor
+        prefix = "▶ " if on_cursor else ""
+        head_style = "bold cyan" if on_cursor else "bold"
+        if not body:                     # 空条目：标题仍显示，标注未填
+            lines.append([(f"{prefix}▸ {title}", head_style),
+                          ("  （未填）", "dim")])
+            continue
+        is_folded = folded.get(key, True)      # 默认收起
+        arrow = "▸" if is_folded else "▾"
+        mark = f"  ({len(body)} 行)" if is_folded else ""
+        lines.append([(f"{prefix}{arrow} {title}", head_style), (mark, "dim")])
+        if not is_folded:
+            for row in body:
+                lines.append([(f"    {row}", "")])
+    return lines
+
+
+def _importance_text(feat) -> str:
+    imp = getattr(feat, "importance", None)
+    if imp is None:
+        return ""
+    label = getattr(imp, "label", "")
+    value = getattr(imp, "value", imp)
+    return f"{value}（{label}）" if label else str(value)
+
+
+def design_cursor_span(feat, folded=None, cursor=None):
+    """当前条目的**行范围** ``(start, end)``（0 起，含首尾）。
+
+    用于移动光标后把该条目滚入视野。行号算法与
+    :func:`design_lines` **共用同一份 sections 定义**（避免两处漂移）。
+
+    找不到（无 feat / cursor 为空）返回 ``None``。
+    """
+    if feat is None or cursor is None:
+        return None
+    folded = folded or {}
+    line = 0
+    for key, title, value in _design_sections(feat):
+        body = _section_body(value)
+        if not body:
+            height = 1                       # 空条目也占一行（“未填”）
+        else:
+            height = 1 if folded.get(key, True) else 1 + len(body)
+        if key == cursor:
+            return line, line + height - 1
+        line += height
+    return None
+
+
+def _design_sections(feat):
+    """Design 页的条目定义：``[(key, 标题, 值), ...]``。
+
+    **单一真相**：``design_lines`` 与 ``design_cursor_span`` 都用它，
+    保证“渲染出的行”与“算出的行号”不会漂移。
+    """
+    return [
+        ("design_note", "设计思路", getattr(feat, "design_note", "")),
+        ("impl_note", "实现方式", getattr(feat, "impl_note", "")),
+        ("test_note", "测试方式", getattr(feat, "test_note", "")),
+        ("debug_note", "调试方式", getattr(feat, "debug_note", "")),
+        ("extend_note", "如何扩展", getattr(feat, "extend_note", "")),
+        ("impact", "影响面", getattr(feat, "impact", "")),
+        ("importance", "重要性", _importance_text(feat)),
+        ("data_model", "数据结构", getattr(feat, "data_model", []) or []),
+        ("samples", "样例值", getattr(feat, "samples", []) or []),
+        ("api", "交付接口", getattr(feat, "api", []) or []),
+        ("logs", "日志", getattr(feat, "logs", []) or []),
+        ("fallbacks", "异常兜底", getattr(feat, "fallbacks", []) or []),
+    ]
+
+
+def _section_body(value) -> List[str]:
+    """把字段值统一成“若干行文本”（空值 → ``[]``）。"""
+    if not value:
+        return []
+    if isinstance(value, str):
+        return value.splitlines() or []
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value if str(v).strip()]
+    return [str(value)]
 
 
 def feat_line(feat, width: int = 0) -> tuple:

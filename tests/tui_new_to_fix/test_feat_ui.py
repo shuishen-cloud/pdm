@@ -27,6 +27,7 @@ pytest.importorskip("textual")
 from pdev.feat import Feat, FeatStore  # noqa: E402
 from pdev.note import Actor, CommitNote, NoteKind  # noqa: E402
 from pdev.store import NoteStore  # noqa: E402
+from pdev.tui_new_to_fix import feat_core
 from pdev.tui_new_to_fix.app import PDMApp  # noqa: E402
 
 #: 本文件“自己的”耗时累加（不含 import、收集与其它测试）。
@@ -167,7 +168,8 @@ async def test_feat_list_single_line_zoom_and_focus(store, feat_root):
 
     long_slug = "tui-new-to-fix-and-feat-review-super-long-slug"
     _reload_store(feat_root).update(
-        Feat(slug=long_slug, title="长", api=["x()"]))
+        Feat(slug=long_slug, title="长", api=["x()", "y()"],
+             design_note="为什么这么设计", impl_note="怎么落地的"))
 
     app = make_app(store)
     app.config = _config_with_feat(feat_root)
@@ -196,6 +198,63 @@ async def test_feat_list_single_line_zoom_and_focus(store, feat_root):
         await pilot.press("h")
         await pilot.pause()
         assert app.focused is not None and app.focused.id == "feat-list"
+
+        # --- 标签：默认 Review，d/n 切换，空格含义随标签变 ---
+        screen = app.screen
+        assert screen._tab == "review", "默认应在 Review（保持兼容）"
+
+        await pilot.press("d")            # 切到 Design
+        await pilot.pause()
+        assert screen._tab == "design"
+        body = _detail_text(screen)
+        assert "设计思路" in body, "Design 页应展示设计条目"
+
+        # Design 页：空格 = 展开/收起（不是勾审）
+        before_folded = dict(screen._folded)
+        await pilot.press("space")
+        await pilot.pause()
+        assert screen._folded != before_folded, "Design 页空格应切折叠"
+        assert "▾" in _detail_text(screen), "展开后应有 ▾ 标记"
+
+        # 回到 Review：空格又变回勾审（注意第一项可能是 design_note，
+        # 因为整块文本字段已纳入可审项）
+        await pilot.press("n")
+        await pilot.pause()
+        assert screen._tab == "review"
+        first_key = screen._rows[screen._cursor][0]
+        await pilot.press("space")
+        await pilot.pause()
+        assert _reload_feat(feat_root, long_slug).review_item(
+            first_key).reviewed is True, f"Review 页空格应勾审 {first_key}"
+
+        # --- Design 页：切过去自动把焦点给详情（否则 j/k 只会切 feat）---
+        await pilot.press("d")
+        await pilot.pause()
+        assert app.focused is not None and app.focused.id == "feat-detail", \
+            "切到 Design 后焦点应在详情，否则 j/k 移动无效"
+
+        # --- 光标移动时，当前条目**必须在视口内**（曾滚到错误位置）---
+        detail = screen._detail()
+        for _ in range(4):
+            await pilot.press("j")
+            await pilot.pause()
+            span = feat_core.design_cursor_span(
+                screen._current_feat(), screen._folded,
+                screen._design_cursor_section())
+            top = detail.scroll_y
+            bottom = top + detail.size.height - 1
+            assert span[0] <= bottom, (
+                f"光标条目 {screen._design_cursor_section()} 滚出视野："
+                f"span={span} 可见=[{top},{bottom}]")
+
+        # --- 光标**循环**：连按 len(filled) 次必回到同一位置 ---
+        filled = screen._design_filled_keys(screen._current_feat())
+        assert len(filled) >= 2, "本用例需要至少两个有条目的字段"
+        before = screen._design_cursor
+        for _ in range(len(filled)):
+            await pilot.press("j")
+            await pilot.pause()
+        assert screen._design_cursor == before, "一圈之后应回到原位（循环）"
 
 
 # ---------------------------------------------------------------------------

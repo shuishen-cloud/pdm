@@ -254,6 +254,101 @@ def test_detail_lines_survives_broken_feat():
     assert out[0] == "b"
 
 
+# --- design_lines（Design 页：可折叠条目）-------------------------------
+
+
+def _design_plain(feat, folded=None) -> list:
+    return ["".join(v for v, _s in line)
+            for line in feat_core.design_lines(feat, folded)]
+
+
+def test_design_lines_all_sections_collapsed_by_default():
+    """默认全部收起：只显示标题与行数，不显示正文。"""
+    f = Feat(slug="demo", title="t", design_note="第一行\n第二行")
+    out = _design_plain(f)
+    head = next(ln for ln in out if "设计思路" in ln)
+    assert head.startswith("▸")
+    assert "(2 行)" in head
+    assert not any("第一行" in ln for ln in out), "收起时不应显示正文"
+
+
+def test_design_lines_expands_one_section():
+    """展开某条目 → 显示正文，且箭头变 ▾。"""
+    f = Feat(slug="demo", title="t", design_note="第一行\n第二行")
+    out = _design_plain(f, {"design_note": False})
+    head = next(ln for ln in out if "设计思路" in ln)
+    assert head.startswith("▾")
+    assert "(2 行)" not in head            # 展开后不显示行数
+    i = out.index(head)
+    assert "第一行" in out[i + 1]
+    assert "第二行" in out[i + 2]
+
+
+def test_design_lines_covers_all_nine_fields():
+    """设计页要展示的九类内容都在（含新增五项）。"""
+    f = Feat(slug="demo", title="t")
+    out = " ".join(_design_plain(f))
+    for title in ("设计思路", "实现方式", "测试方式", "调试方式",
+                  "如何扩展", "影响面", "重要性", "数据结构", "样例值"):
+        assert title in out, f"缺条目：{title}"
+
+
+def test_design_lines_marks_empty_section():
+    """未填的条目仍占一行并标注（不静默消失）。"""
+    f = Feat(slug="demo", title="t")      # 什么都没填
+    out = _design_plain(f)
+    assert any("（未填）" in ln for ln in out)
+
+
+def test_design_lines_importance_shows_label():
+    from pdev.feat import FeatImportance
+
+    f = Feat(slug="demo", title="t", importance=FeatImportance.HIGH)
+    out = " ".join(_design_plain(f, {"importance": False}))
+    assert "high" in out and "高" in out
+
+
+def test_design_lines_list_field_shows_each_item():
+    f = Feat(slug="demo", title="t", api=["a()", "b()"])
+    out = _design_plain(f, {"api": False})
+    assert any("a()" in ln for ln in out)
+    assert any("b()" in ln for ln in out)
+
+
+def test_design_cursor_span_matches_render():
+    """行号算法与渲染一致（收起 1 行 / 展开 1+N 行 / 空条目 1 行）。"""
+    f = Feat(slug="demo", title="t",
+             design_note="a\nb",          # 2 行
+             impl_note="",                # 空 → 1 行
+             test_note="x")               # 1 行
+    # 全部收起：design_note 占 0 行，impl_note 占 1，test_note 占 2
+    assert feat_core.design_cursor_span(f, {}, "design_note") == (0, 0)
+    assert feat_core.design_cursor_span(f, {}, "impl_note") == (1, 1)
+    assert feat_core.design_cursor_span(f, {}, "test_note") == (2, 2)
+    # 展开 design_note → 后面的行号都要下移 2
+    assert feat_core.design_cursor_span(f, {"design_note": False},
+                                        "design_note") == (0, 2)
+    assert feat_core.design_cursor_span(f, {"design_note": False},
+                                        "test_note") == (4, 4)
+
+
+def test_design_cursor_span_unknown_key():
+    f = Feat(slug="demo", title="t")
+    assert feat_core.design_cursor_span(f, {}, "nope") is None
+    assert feat_core.design_cursor_span(None, {}, "api") is None
+
+
+def test_design_lines_no_feat():
+    assert "无 feat" in "".join(_design_plain(None))
+
+
+def test_design_lines_survives_broken_feat():
+    class Broken:
+        pass
+
+    assert _design_plain(Broken())        # 不抛即可
+
+
 # --- 时间预算 ---------------------------------------------------------------
 
 
