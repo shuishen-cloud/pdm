@@ -272,12 +272,42 @@ def test_edit_reviewable_revokes_review(store, monkeypatch):
 
 
 def test_edit_text_field_keeps_other_review(store, monkeypatch):
-    """改整块文本字段 → 不影响其它审查位。"""
+    """改一个整块文本字段 → 只影响它自己，不动其它审查位。"""
     f = store.get("demo")
     f.set_reviewed("api:0", True, by="human:lwy")
     store.update(f)
     _run_edit(store, monkeypatch, debug_note="新的调试说明")
     assert store.get("demo").review_item("api:0").reviewed is True
+
+
+def test_edit_own_text_field_revokes_its_review(store, monkeypatch):
+    """改**自身已被审**的整块文本字段 → 撤销**它自己**的审查。
+
+    整块文本字段（design_note/impl_note/test_note/impact）已纳入可审项，
+    因此内容变更同样使旧确认失效。这条行为在设计文档里曾漏写，
+    本测试补上（fix 阶段回填）。
+    """
+    f = store.get("demo")
+    f.set_reviewed("design_note", True, by="human:lwy")
+    store.update(f)
+    assert store.get("demo").review_item("design_note").reviewed is True
+
+    assert _run_edit(store, monkeypatch, design_note="换成新的设计思路") == 0
+    got = store.get("demo")
+    assert got.design_note == "换成新的设计思路"
+    assert getattr(got.review_item("design_note"), "reviewed", False) is False, \
+        "改了自身内容应撤销该字段的审查"
+
+
+def test_edit_importance_revokes_its_review(store, monkeypatch):
+    """改 importance（也是可审项）→ 撤销它自己的审查。"""
+    f = store.get("demo")
+    f.set_reviewed("importance", True, by="human:lwy")
+    store.update(f)
+    assert _run_edit(store, monkeypatch, importance="low") == 0
+    got = store.get("demo")
+    assert got.importance is FeatImportance.LOW
+    assert getattr(got.review_item("importance"), "reviewed", False) is False
 
 
 def test_edit_preview_without_changes(store, monkeypatch, capsys):

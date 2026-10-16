@@ -260,3 +260,67 @@ cmd=.venv/bin/pdm feat edit <slug> --debug-note "..." && pdm feat show <slug>
 manual=改一个 changes 条目，确认原 [审] 被撤销
 expected=字段更新且审查位撤销
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 `798760dd`（test `5e086b92`、doc `8620d42e`）。
+**状态：已闭环（closed）**。
+
+### 交付物
+
+| 文件 | 内容 |
+|------|------|
+| `pdev/feat.py` | `+FeatImportance`；`Feat` 新增 5 字段；`review_items` 纳入整块文本；`set_list_field`/`set_text_field`/`list_field` |
+| `pdev/cli/parser.py` | `feat new` 新增 5 参数；`+feat edit` 子命令；`feat check --loose-history` |
+| `pdev/cli/commands.py` | `+cmd_feat_edit`（唯一字段修改入口）、`+_revoke_*`、预览模式 |
+| `pdev/check.py` | `_fields_enforced(feat, loose_history)`；`+_is_new_feat`；`+_check_missing_review` |
+| `pdev/config.py` | `FeatConfig.loose_history` |
+| `tests/test_feat_edit.py` | 24 例 |
+| `.pi/skills/pdm-workflow/references/commands.md` | 补 `feat edit` 章节与新字段 |
+
+**零新增依赖**。
+
+### 实测（端到端）
+
+| 场景 | 结果 |
+|------|------|
+| 缺必填 → `feat new` | ✅ 退出码 2，列出全部 8 项 |
+| 勾审 `changes:0` | ✅ `[x][ ] changes:0`，审查 1/9 |
+| **改内容 → 自动撤销审查** | ✅ 回到 0/9 |
+| 整块文本纳入可审项 | ✅ `design_note`/`impl_note`/`test_note` 等可勾审 |
+| `missing-review` | ✅ 逐个列出未审项 |
+| `--loose-history` 对新 feat | ✅ **无影响**（永远严格） |
+| **给本 feat 自己补字段** | ✅ `missing-fields` 告警消失 |
+
+### fix 阶段回填的缺口
+
+集成后发现**测试未覆盖“改自身已审的整块文本字段”**：
+原测试只验了“改 `debug_note` 不影响 `api:0`”，
+而未验“改 `design_note` 会撤销它自己的审查”——行为是对的
+（`design_note` 已纳入可审项），但**无测试背”**。
+
+补：`test_edit_own_text_field_revokes_its_review` 与
+`test_edit_importance_revokes_its_review`。
+
+### 本次发现的异常（已记笔记）
+
+1. **改必填项会连带打爆一批既有测试**（difficulty/high）
+   共 12 个失败，分“夹具要更新”与“断言刻画旧行为”两类。
+2. **`Feat(**json_dict)` 不会把字符串转成枚举**（pitfall/medium）
+   要用 `_from_dict()`（内含 `_importance_of` 容错转换）。
+
+### 行为变更清单（影响既有 feat）
+
+| 变更 | 影响 |
+|------|------|
+| 必填字段 5 → 8 | 新建时必须多填三项 |
+| 可审项纳入整块文本 | 现有 feat 可审项 +2~5，覆盖率分母变大 |
+| 历史豁免改为开关 | 默认严格；用 `loose_history` 放过 |
+| `check_one`/`check_feats` 签名 +`loose_history` | 调用方需同步（已更新 `test_ledger` 台账） |
+
+### 已知限制（有意不做）
+
+- `edit` 不支持改 `status`/`stage`/`slug`（分别由 `set`/`commit` 管，
+  `slug` 是文件名）。
+- 不支持批量编辑多个 feat。
+- 不提供交互式编辑（`$EDITOR`）—— 会离开事件循环，风险大于收益。
