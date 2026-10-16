@@ -168,6 +168,7 @@ class PDMApp(App):
         Binding("j", "cursor_down", "下移", show=False),
         Binding("k", "cursor_up", "上移", show=False),
         Binding("R", "refresh", "刷新"),
+        Binding("f", "show_feats", "Feat"),
     ]
 
     def __init__(self, store, cwd: str = ".", config=None) -> None:
@@ -293,6 +294,24 @@ class PDMApp(App):
         w = self.focused
         if hasattr(w, "action_cursor_up"):
             w.action_cursor_up()
+
+    @guard
+    def action_show_feats(self) -> None:
+        """``f``：打开 Feat 面板（含审查勾选，本项目首个写操作）。"""
+        from pathlib import Path
+
+        from ..feat import FeatStore
+        from .screens import FeatScreen
+
+        root = getattr(self.config, "feat", None)
+        root = getattr(root, "store", ".pdm/feats") if root else ".pdm/feats"
+        root = root or ".pdm/feats"
+        path = Path(root)
+        if not path.is_absolute():
+            path = Path(self.cwd) / path
+
+        by = getattr(self.config, "default_author", "") or "human"
+        self.push_screen(FeatScreen(FeatStore(path), by=by))
 
 
 # ---------------------------------------------------------------------------
