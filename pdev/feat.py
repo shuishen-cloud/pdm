@@ -54,6 +54,28 @@ class FeatKind(str, Enum):
     TEST = "test"
 
 
+class FeatImportance(str, Enum):
+    """这条 feat 的重要性（见 doc/feat/feat-edit-fields.md）。
+
+    新建时必填；用于排序与筛选，而不是装饰。
+    """
+
+    CRITICAL = "critical"   # 关键：不做会阻塞后续功能
+    HIGH = "high"           # 高：直接影响可用性
+    MEDIUM = "medium"       # 中：锦上添花
+    LOW = "low"             # 低：可做可不做
+
+    @property
+    def label(self) -> str:
+        """中文名（展示用；存储仍用英文枚举值）。"""
+        return {
+            FeatImportance.CRITICAL: "关键",
+            FeatImportance.HIGH: "高",
+            FeatImportance.MEDIUM: "中",
+            FeatImportance.LOW: "低",
+        }[self]
+
+
 class FeatStatus(str, Enum):
     """开发流程的阶段（对应 doc→test→feat→fix→doc）。"""
 
@@ -166,17 +188,34 @@ class ReviewItemRef:
     tested: bool = False
 
 
-# 可审项的字段顺序（review_items 据此展开）
+# 可审项的列表字段顺序（review_items 据此展开）
 _REVIEW_FIELDS = ("api", "logs", "fallbacks",
                   "data_model", "samples", "changes")
 
+# 可审的**整块文本**字段（见 doc/feat/feat-edit-fields.md）：
+# 非空时各产生一个可审项，key = 字段名。
+# 注：feat-fields 当初把 design_note/impl_note 排除在外，
+# 本 feat 改为纳入，使 Review 页能对设计内容逐项勾审。
+_REVIEW_TEXT_FIELDS = ("design_note", "impl_note", "test_note",
+                       "impact", "importance", "debug_note",
+                       "extend_note")
+
+#: 可由 ``pdm feat edit`` 覆盖的单值文本字段（importance 单独处理）。
+_EDITABLE_TEXT = ("title", "doc", "design_note", "impl_note",
+                  "test_note", "debug_note", "extend_note", "impact")
+
 # 新 feat 必填字段：(属性名, 人类可读名)
+# 见 doc/feat/feat-edit-fields.md：新 feat 永远严格；
+# 历史 feat 是否豁免由配置开关 loose_history 决定。
 _REQUIRED_FIELDS = (
     ("design_note", "设计思路"),
     ("impl_note", "实现方式"),
     ("data_model", "核心数据结构"),
     ("samples", "样例数据"),
     ("changes", "对既有代码的改动"),
+    ("test_note", "测试方式"),
+    ("impact", "对现有系统的影响"),
+    ("importance", "重要性"),
 )
 
 
@@ -208,6 +247,13 @@ class Feat:
     data_model: List[str] = field(default_factory=list)  # 核心数据结构
     samples: List[str] = field(default_factory=list)     # 样例数据
     changes: List[str] = field(default_factory=list)     # 对既有代码的改动
+
+    # 另五项设计字段（见 doc/feat/feat-edit-fields.md）
+    test_note: str = ""                                 # 测试方式（必填）
+    debug_note: str = ""                                # 调试方式（选填）
+    extend_note: str = ""                               # 如何扩展（选填）
+    impact: str = ""                                    # 对现有系统的影响（必填）
+    importance: Optional[FeatImportance] = None         # 重要性（必填）
 
     # 关联（手动串联）
     commits: List[str] = field(default_factory=list)
@@ -286,17 +332,58 @@ class Feat:
     def review_items(self) -> List[ReviewItemRef]:
         """展开可审项，返回 ``ReviewItemRef`` 列表。
 
-        顺序固定：``doc`` → ``api`` → ``logs`` → ``fallbacks`` →
-        ``data_model`` → ``samples`` → ``changes``。
-        ``doc`` 为空、或某个列表为空时，不产生对应项。
+        顺序：``doc`` → 整块文本字段（``_REVIEW_TEXT_FIELDS``，各一个）
+        → 列表字段（``_REVIEW_FIELDS``，逐条 ``name:i``）。
+
+        空字段不产生可审项（与 ``doc`` 的处理一致）。
+        整块文本纳入可审项是本 feat 的行为变更，见
+        ``doc/feat/feat-edit-fields.md``。
         """
         out: List[ReviewItemRef] = []
         if self.doc:
             out.append(ReviewItemRef(key="doc", label=self.doc))
+        for name in _REVIEW_TEXT_FIELDS:
+            val = getattr(self, name, None)
+            if not val:
+                continue
+            # importance 是枚举，取 label 与英文值一起展示
+            if isinstance(val, FeatImportance):
+                label = f"{val.value}（{val.label}）"
+            else:
+                label = str(val)
+            out.append(ReviewItemRef(key=name, label=label))
         for name in _REVIEW_FIELDS:
             for i, text in enumerate(getattr(self, name, []) or []):
                 out.append(ReviewItemRef(key=f"{name}:{i}", label=text))
         return out
+
+    # --- 编辑辅助（供 pdm feat edit 调用）---
+
+    def set_list_field(self, name: str, values: List[str]) -> None:
+        """整体替换某个列表字段。非法字段名抛 ``FeatError``。"""
+        if name not in _REVIEW_FIELDS:
+            raise FeatError(f"不是列表字段：{name!r}（可选 {list(_REVIEW_FIELDS)}）")
+        setattr(self, name, [str(v) for v in values])
+        self.touch()
+
+    def list_field(self, name: str) -> List[str]:
+        """取某个列表字段的副本。"""
+        if name not in _REVIEW_FIELDS:
+            raise FeatError(f"不是列表字段：{name!r}")
+        return list(getattr(self, name, []) or [])
+
+    def set_text_field(self, name: str, value) -> None:
+        """覆盖某个单值字段（含枚举 ``importance``）。
+
+        非法字段名抛 ``FeatError``；``importance`` 接受枚举或字符串。
+        """
+        if name == "importance":
+            self.importance = None if value in (None, "") else FeatImportance(value)
+        elif name in _EDITABLE_TEXT:
+            setattr(self, name, str(value or ""))
+        else:
+            raise FeatError(f"不是可编辑文本字段：{name!r}")
+        self.touch()
 
     def _review_keys(self) -> set:
         return {r.key for r in self.review_items()}
@@ -761,6 +848,12 @@ def _to_dict(f: Feat) -> dict:
         "data_model": list(f.data_model),
         "samples": list(f.samples),
         "changes": list(f.changes),
+        # 另五项设计字段（见 doc/feat/feat-edit-fields.md）
+        "test_note": f.test_note,
+        "debug_note": f.debug_note,
+        "extend_note": f.extend_note,
+        "impact": f.impact,
+        "importance": (f.importance.value if f.importance else None),
         "commits": list(f.commits),
         "notes": list(f.notes),
         "discovered": list(f.discovered),
@@ -834,6 +927,16 @@ _LEGACY_IGNORED = {"design", "data_model", "fixtures", "touches",
                    "follows", "debug"}
 
 
+def _importance_of(raw) -> Optional[FeatImportance]:
+    """把 JSON 里的值转成枚举；非法/缺失返回 ``None``（不报错）。"""
+    if not raw:
+        return None
+    try:
+        return FeatImportance(raw)
+    except ValueError:
+        return None
+
+
 def _from_dict(d: dict) -> Feat:
     def dt(key: str) -> Optional[datetime]:
         raw = d.get(key)
@@ -879,6 +982,12 @@ def _from_dict(d: dict) -> Feat:
         data_model=list(d.get("data_model") or []),
         samples=list(d.get("samples") or []),
         changes=list(d.get("changes") or []),
+        # 另五项：旧 JSON 缺失 → 默认值（向后兼容）
+        test_note=d.get("test_note", "") or "",
+        debug_note=d.get("debug_note", "") or "",
+        extend_note=d.get("extend_note", "") or "",
+        impact=d.get("impact", "") or "",
+        importance=_importance_of(d.get("importance")),
         commits=list(d.get("commits") or []),
         notes=list(d.get("notes") or []),
         discovered=list(d.get("discovered") or []),

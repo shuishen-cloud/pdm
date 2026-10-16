@@ -12,7 +12,7 @@ from typing import Optional, Sequence
 
 from ..common import Actor
 from ..stage import STAGE_SEQUENCE
-from ..feat import FeatKind, FeatStatus
+from ..feat import FeatImportance, FeatKind, FeatStatus
 from ..issue import Priority
 from ..note import (
     NoteKind,
@@ -272,7 +272,48 @@ def build_parser() -> argparse.ArgumentParser:
     fnew.add_argument("--change", action="append", default=[],
                       metavar="TEXT",
                       help="对既有代码的改动，格式 文件::符号 —— 说明（可多次）")
+    # 另五项设计字段（见 doc/feat/feat-edit-fields.md）
+    fnew.add_argument("--test-note", default="",
+                      help="测试方式（必填；没有写「无：原因」）")
+    fnew.add_argument("--debug-note", default="",
+                      help="调试方式（选填）")
+    fnew.add_argument("--extend-note", default="",
+                      help="如何扩展（选填）")
+    fnew.add_argument("--impact", default="",
+                      help="对现有系统的影响（必填）")
+    fnew.add_argument("--importance", default=None,
+                      choices=[i.value for i in FeatImportance],
+                      help="重要性（必填）")
     fnew.set_defaults(func=commands.cmd_feat_new)
+
+    # --- feat edit：编辑已有 feat 的字段（唯一的修改入口）---
+    fedit = feat_sub.add_parser(
+        "edit", help="编辑 feat 字段（不带修改参数则预览）")
+    fedit.add_argument("slug")
+    fedit.add_argument("--title", default=None, help="覆盖标题")
+    fedit.add_argument("--doc", default=None, help="覆盖设计文档路径")
+    fedit.add_argument("--design-note", default=None, help="覆盖设计思路")
+    fedit.add_argument("--impl-note", default=None, help="覆盖实现方式")
+    fedit.add_argument("--test-note", default=None, help="覆盖测试方式")
+    fedit.add_argument("--debug-note", default=None, help="覆盖调试方式")
+    fedit.add_argument("--extend-note", default=None, help="覆盖如何扩展")
+    fedit.add_argument("--impact", default=None, help="覆盖影响面")
+    fedit.add_argument("--importance", default=None,
+                       choices=[i.value for i in FeatImportance],
+                       help="覆盖重要性")
+    for _name in ("api", "logs", "fallbacks", "data_model", "samples",
+                  "changes"):
+        _flag = _name.replace("_", "-")
+        fedit.add_argument(f"--add-{_flag}", action="append", default=None,
+                           dest=f"add_{_name}", metavar="TEXT",
+                           help=f"向 {_name} 追加一条（可多次）")
+        fedit.add_argument(f"--set-{_flag}", action="append", default=None,
+                           dest=f"set_{_name}", metavar="TEXT",
+                           help=f"整体替换 {_name}（可多次）")
+        fedit.add_argument(f"--remove-{_flag}", action="append", default=None,
+                           type=int, dest=f"remove_{_name}", metavar="IDX",
+                           help=f"删除 {_name} 的第 IDX 条（从 0 起）")
+    fedit.set_defaults(func=commands.cmd_feat_edit)
 
     flist = feat_sub.add_parser("list", help="列出 feat")
     flist.add_argument("--status", default=None,
@@ -335,6 +376,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="warning 也算失败（退出码 1）")
     fcheck.add_argument("--json", action="store_true",
                        default=argparse.SUPPRESS)
+    fcheck.add_argument("--loose-history", action="store_true",
+                       help="历史 feat 的缺字段/未审查不告警"
+                            "（新 feat 不受影响，永远严格）")
     fcheck.set_defaults(func=commands.cmd_feat_check)
 
     fbug = feat_sub.add_parser("found", help="记录 fix 阶段发现的异常")
@@ -418,6 +462,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="笔记存储目录（等同 --store）")
     ui.add_argument("--curses", action="store_true",
                     help="用标准库 curses 版（零依赖，只读浏览）")
+    ui.add_argument("--new", action="store_true",
+                    help="用重写版 TUI（tui-new-to-fix，异常不会退出）")
     ui.add_argument("--web", action="store_true",
                     help="启动本地 Web UI（浏览器里交互，零依赖）")
     ui.add_argument("--port", type=int, default=0,

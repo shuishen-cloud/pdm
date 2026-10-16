@@ -444,6 +444,8 @@ def cmd_ui(ctx: AppContext, args) -> int:
         from ..tui_curses import run as run_curses
 
         return run_curses(store, cwd=str(ctx.cwd), config=ctx.config)
+    if getattr(args, "new", False):
+        return _run_new_tui(store, ctx)
     try:
         from ..tui import run as run_tui
     except ImportError:
@@ -471,6 +473,26 @@ def cmd_ui(ctx: AppContext, args) -> int:
     )
 
 
+def _run_new_tui(store, ctx) -> int:
+    """启动重写版 TUI（``pdm ui --new``）。
+
+    与旧 TUI 同样的前置检查：未装 textual / 非交互终端都给明确提示。
+    """
+    try:
+        from ..tui_new_to_fix import run as run_new
+        from ..tui_new_to_fix import available as new_available
+    except ImportError:
+        print("需要安装 textual：pip install textual", file=sys.stderr)
+        return 2
+    if not new_available():
+        print("需要安装 textual：pip install textual", file=sys.stderr)
+        return 2
+    if not sys.stdout.isatty():
+        print("TUI 需要交互式终端", file=sys.stderr)
+        return 2
+    return run_new(store, cwd=str(ctx.cwd), config=ctx.config)
+
+
 def _feat_store(ctx: AppContext):
     """按配置构造 FeatStore（相对路径按 cwd 解析）。"""
     from pathlib import Path
@@ -485,7 +507,7 @@ def _feat_store(ctx: AppContext):
 
 def cmd_feat_new(ctx: AppContext, args) -> int:
     """新建一条 feat。"""
-    from ..feat import Feat, FeatError, FeatKind
+    from ..feat import Feat, FeatError, FeatImportance, FeatKind
 
     try:
         feat = Feat(
@@ -501,12 +523,19 @@ def cmd_feat_new(ctx: AppContext, args) -> int:
             data_model=list(args.data_model),
             samples=list(args.sample),
             changes=list(args.change),
+            test_note=args.test_note or "",
+            debug_note=args.debug_note or "",
+            extend_note=args.extend_note or "",
+            impact=args.impact or "",
+            importance=(FeatImportance(args.importance)
+                        if args.importance else None),
         )
         missing = feat.missing_required_fields()
         if missing:
             print(f"错误：缺必填字段：{'、'.join(missing)}", file=sys.stderr)
             print("  用 --design-note / --impl-note / --data-model / "
-                  "--sample / --change 登记（没有也要写明「无」）",
+                  "--sample / --change / --test-note / --impact / "
+                  "--importance 登记（没有也要写明「无」）",
                   file=sys.stderr)
             return 2
         _feat_store(ctx).add(feat)
@@ -517,6 +546,131 @@ def cmd_feat_new(ctx: AppContext, args) -> int:
     if feat.next_step:
         print(f"下一步：{feat.next_step}")
     return 0
+
+
+def cmd_feat_edit(ctx: AppContext, args) -> int:
+    """编辑 feat 字段（**唯一的字段修改入口**）。
+
+    形式：
+
+    - ``--add-<f>`` 追加、``--set-<f>`` 整体替换、``--remove-<f> IDX`` 按索引删
+      （列表字段）；
+    - ``--title`` / ``--design-note`` 等单值字段直接覆盖；
+    - 不带任何修改参数 = 预览。
+
+    改**可审项**内容后，该条的 ``[审]`` 位自动撤销（内容变了，
+    旧确认不再成立）。见 doc/feat/feat-edit-fields.md。
+    """
+    from ..feat import FeatError, FeatImportance
+
+    store = _feat_store(ctx)
+    feat = store.get(args.slug)
+    if feat is None:
+        print(f"错误：找不到 feat：{args.slug}", file=sys.stderr)
+        return 2
+
+    list_fields = ("api", "logs", "fallbacks", "data_model", "samples",
+                   "changes")
+    text_fields = ("title", "doc", "design_note", "impl_note",
+                   "test_note", "debug_note", "extend_note", "impact")
+
+    changed: list = []
+    try:
+        # --- 列表字段：先整体替换，再追加，最后按索引删 ---
+        for name in list_fields:
+            set_values = getattr(args, f"set_{name}", None)
+            if set_values is not None:
+                feat.set_list_field(name, list(set_values))
+                changed.append(f"{name}=整体替换({len(set_values)} 条)")
+            add_values = getattr(args, f"add_{name}", None)
+            if add_values:
+                feat.set_list_field(name, feat.list_field(name) + list(add_values))
+                changed.append(f"{name}+{len(add_values)} 条")
+            idxs = getattr(args, f"remove_{name}", None) or []
+            for idx in idxs:
+                current = feat.list_field(name)
+                if idx < 0 or idx >= len(current):
+                    print(f"错误：{name} 只有 {len(current)} 条，"
+                          f"删不了索引 {idx}", file=sys.stderr)
+                    return 2
+                del current[idx]
+                feat.set_list_field(name, current)
+                changed.append(f"{name}-索引{idx}")
+                # 内容变了 → 撤销该位置及其后的审查位
+                _revoke_reviews(feat, name, idx, len(feat.list_field(name)))
+
+        # --- 单值字段 ---
+        for name in text_fields:
+            value = getattr(args, name, None)
+            if value is None:
+                continue
+            if name in ("design_note", "impl_note", "test_note",
+                        "extend_note", "impact"):
+                _revoke_one(feat, name)      # 整块文本也是可审项
+            feat.set_text_field(name, value)
+            changed.append(f"{name}=覆盖")
+
+        importance = getattr(args, "importance", None)
+        if importance is not None:
+            _revoke_one(feat, "importance")
+            feat.set_text_field("importance", importance)
+            changed.append("importance=覆盖")
+
+        # --- 整体替换列表也要撤销审查（内容已非原物）---
+        for name in list_fields:
+            if getattr(args, f"set_{name}", None) is not None:
+                _revoke_reviews(feat, name, 0, len(feat.list_field(name)))
+
+    except FeatError as e:
+        print(f"错误：{e}", file=sys.stderr)
+        return 2
+    except ValueError as e:                      # 非法 importance
+        print(f"错误：非法取值 {e}", file=sys.stderr)
+        return 2
+
+    if not changed:
+        _print_feat_fields(feat)
+        return 0
+
+    store.update(feat)
+    print(f"已修改 {feat.slug}：{'、'.join(changed)}")
+    print("（内容变更的条目已自动撤销 [审]）")
+    return 0
+
+
+def _revoke_one(feat, key: str) -> None:
+    """撤销单个 key 的审查位（不存在或已未审则忽略）。"""
+    try:
+        if feat.review_item(key) is not None:
+            feat.set_reviewed(key, False)
+    except Exception:                            # noqa: BLE001
+        pass
+
+
+def _revoke_reviews(feat, name: str, start: int, end: int) -> None:
+    """撤销 ``name`` 从 start 到 end 的审查位（尾部的旧记录）。"""
+    for i in range(start, max(end, start) + 1):
+        _revoke_one(feat, f"{name}:{i}")
+
+
+def _print_feat_fields(feat) -> None:
+    """预览：打印当前字段值（``pdm feat edit <slug>`` 无修改参数时）。"""
+    print(f"{feat.slug}  [{feat.status.value}] {feat.title}")
+    print(f"重要性   {feat.importance.value if feat.importance else '（未填）'}")
+    for label, val in (("设计思路", feat.design_note),
+                       ("实现方式", feat.impl_note),
+                       ("测试方式", feat.test_note),
+                       ("调试方式", feat.debug_note),
+                       ("如何扩展", feat.extend_note),
+                       ("影响面", feat.impact)):
+        print(f"{label}  {val or '（未填）'}")
+    for name in ("api", "logs", "fallbacks", "data_model", "samples",
+                 "changes"):
+        values = feat.list_field(name)
+        for i, v in enumerate(values):
+            print(f"{name}:{i}   {v}")
+        if not values:
+            print(f"{name}   （空）")
 
 
 def cmd_feat_list(ctx: AppContext, args) -> int:
@@ -809,6 +963,7 @@ def cmd_feat_check(ctx: AppContext, args) -> int:
     - ``pdm feat check`` 全检
     - ``pdm feat check <slug>`` 只检一条
     - ``--strict`` 时 warning 也算失败
+    - ``--loose-history`` 时历史 feat 的缺字段/未审查不告警（新 feat 不受影响）
     """
     from ..check import check_feats, check_one, format_issue, summarize
 
@@ -819,14 +974,20 @@ def cmd_feat_check(ctx: AppContext, args) -> int:
 
     rcfg = getattr(ctx.config, "review", None)
     min_coverage = getattr(rcfg, "min_coverage", 0.6)
+    # 命令行开关优先；否则读项目配置（默认严格）
+    cfg = getattr(ctx.config, "feat", None)
+    loose = bool(getattr(args, "loose_history", False)
+                 or getattr(cfg, "loose_history", False))
 
     try:
         if args.slug:
             issues = check_one(store, args.slug, git, note_store=ctx.store,
-                               min_coverage=min_coverage)
+                               min_coverage=min_coverage,
+                               loose_history=loose)
         else:
             issues = check_feats(store, git, note_store=ctx.store,
-                                 min_coverage=min_coverage)
+                                 min_coverage=min_coverage,
+                                 loose_history=loose)
     except KeyError as e:
         print(f"错误：{e}", file=sys.stderr)
         return 2

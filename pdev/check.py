@@ -126,7 +126,8 @@ def format_issue(issue: CheckIssue, color: bool = False) -> str:
 
 
 def check_one(store: FeatStore, slug: str, git=None,
-              note_store=None, min_coverage: float = DEFAULT_MIN_COVERAGE) -> List[CheckIssue]:
+              note_store=None, min_coverage: float = DEFAULT_MIN_COVERAGE,
+              loose_history: bool = False) -> List[CheckIssue]:
     """检查单个 feat。
 
     :param git: 可选的 :class:`pdev.git.GitRepo`；为 ``None`` 时跳过
@@ -134,17 +135,20 @@ def check_one(store: FeatStore, slug: str, git=None,
     :param note_store: 可选的 :class:`pdev.store.NoteStore`；为 ``None``
         时跳过依赖笔记的规则（``commit-no-note`` / ``note-no-verify``）。
     :param min_coverage: 人工审核覆盖率下限，低于它报 ``review-low``。
+    :param loose_history: ``True`` 时**历史 feat** 的缺字段/未审查不再告警；
+        **新 feat 不受影响**（永远严格）。见 doc/feat/feat-edit-fields.md。
     """
     feat = store.get(slug)
     if feat is None:
         raise KeyError(f"找不到 feat：{slug}")
-    return _check_feat(feat, git, note_store, min_coverage)
+    return _check_feat(feat, git, note_store, min_coverage, loose_history)
 
 
 def check_feats(store: FeatStore, git=None, *,
                 include_orphans: bool = True,
                 note_store=None,
-                min_coverage: float = DEFAULT_MIN_COVERAGE) -> List[CheckIssue]:
+                min_coverage: float = DEFAULT_MIN_COVERAGE,
+                loose_history: bool = False) -> List[CheckIssue]:
     """检查全部 feat（含跨 feat 的冲突与孤儿 commit）。
 
     :param git: 可选的 :class:`pdev.git.GitRepo`。
@@ -157,7 +161,8 @@ def check_feats(store: FeatStore, git=None, *,
 
     # 逐个 feat 的局部规则
     for feat in feats:
-        issues.extend(_check_feat(feat, git, note_store, min_coverage))
+        issues.extend(_check_feat(feat, git, note_store, min_coverage,
+                                  loose_history))
 
     # 跨 feat：commit 冲突
     owners: dict[str, List[str]] = {}
@@ -203,7 +208,8 @@ def check_feats(store: FeatStore, git=None, *,
 
 
 def _check_feat(feat: Feat, git, note_store=None,
-                min_coverage: float = DEFAULT_MIN_COVERAGE) -> List[CheckIssue]:
+                min_coverage: float = DEFAULT_MIN_COVERAGE,
+                loose_history: bool = False) -> List[CheckIssue]:
     out: List[CheckIssue] = []
 
     def add(code: str, level: str, message: str) -> None:
@@ -250,7 +256,10 @@ def _check_feat(feat: Feat, git, note_store=None,
     out.extend(_check_review(feat, min_coverage))
 
     # 五项设计字段（见 doc/feat/feat-fields-check.md）
-    out.extend(_check_fields(feat))
+    out.extend(_check_fields(feat, loose_history))
+    # 逐个列出未审查的可审项（新增规则，见 doc/feat/feat-edit-fields.md）
+    if not (loose_history and not _is_new_feat(feat)):
+        out.extend(_check_missing_review(feat))
 
     # 阶段级审核（见 doc/feat/stage-review.md）
     out.extend(_check_stage_reviews(feat))
@@ -288,30 +297,83 @@ def _check_stage_reviews(feat: Feat) -> List[CheckIssue]:
 FIELDS_SINCE = "2026-10-14T11:16:00+00:00"
 
 
-def _fields_enforced(feat: Feat) -> bool:
-    """该 feat 是否受五项必填字段约束（历史豁免）。"""
+def _is_new_feat(feat: Feat) -> bool:
+    """创建时间在 :data:`FIELDS_SINCE` 之后（“新 feat”）。
+
+    新 feat 永远严格，不受 ``loose_history`` 影响。
+    """
     from datetime import datetime
 
     created = getattr(feat, "created_at", None)
     if created is None:
+        return False                        # 无时间 → 当历史处理
+    try:
+        return created >= datetime.fromisoformat(FIELDS_SINCE)
+    except ValueError:
         return False
+
+
+def _fields_enforced(feat: Feat, loose_history: bool = False) -> bool:
+    """该 feat 是否受必填字段约束。
+
+    - **新 feat**（创建时间 ≥ :data:`FIELDS_SINCE`）→ 永远约束；
+    - **历史 feat** → 只有 ``loose_history=False`` 时约束。
+
+    见 doc/feat/feat-edit-fields.md：原来只要早于切点就自动豁免，
+    用户无法控制；现在改为**由开关决定是否放过历史 feat**。
+    """
+    from datetime import datetime
+
+    created = getattr(feat, "created_at", None)
+    if created is None:
+        # 没有创建时间：保守起见按“历史”处理
+        return not loose_history
     try:
         since = datetime.fromisoformat(FIELDS_SINCE)
     except ValueError:                       # 常量写错则不强制，不拖垮 check
         return False
-    return created >= since
+    if created >= since:
+        return True                          # 新 feat：永远严格
+    return not loose_history                 # 历史 feat：由开关决定
 
 
-def _check_fields(feat: Feat) -> List[CheckIssue]:
-    """五项设计字段规则：``missing-fields`` / ``vague-change`` / ``empty-sample``。
+def _check_missing_review(feat: Feat) -> List[CheckIssue]:
+    """``missing-review``：逐个列出**未被 [审] 勾选**的可审项。
 
-    - ``missing-fields``：仅对**有 stage 游标**的 feat 报（历史豁免）。
+    与 ``review-none``（完全没审）/ ``review-low``（覆盖率低）并存：
+    那两条给的是“整体印象”，这条给出**具体还差哪几项**。
+    """
+    out: List[CheckIssue] = []
+    try:
+        items = list(feat.review_items())
+    except Exception:                            # noqa: BLE001
+        return out
+    unpicked = []
+    for ref in items:
+        rec = feat.review_item(ref.key)
+        if not getattr(rec, "reviewed", False):
+            unpicked.append(ref.key)
+    if unpicked:
+        shown = ", ".join(unpicked[:6])
+        more = f" 等 {len(unpicked)} 项" if len(unpicked) > 6 else ""
+        out.append(CheckIssue(
+            feat.slug, "missing-review", "warning",
+            f"未审查的可审项：{shown}{more}",
+        ))
+    return out
+
+
+def _check_fields(feat: Feat, loose_history: bool = False) -> List[CheckIssue]:
+    """设计字段规则：``missing-fields`` / ``vague-change`` / ``empty-sample``。
+
+    - ``missing-fields``：受约束的 feat 缺必填字段就报；
+      历史 feat 是否受约束由 ``loose_history`` 决定（新 feat 永远受约束）。
     - ``vague-change``：``changes`` 某条既无 ``::`` 也无 ``.``。
     - ``empty-sample``：``samples`` 某条过短或光秃秃占位词。
     """
     out: List[CheckIssue] = []
 
-    if _fields_enforced(feat):
+    if _fields_enforced(feat, loose_history):
         missing = feat.missing_required_fields()
         if missing:
             out.append(CheckIssue(

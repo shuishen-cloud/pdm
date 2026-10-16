@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pytest
 
-from pdev.feat import Feat, FeatStatus, FeatStore
+from pdev.feat import Feat, FeatImportance, FeatStatus, FeatStore
 from pdev.check import (
     CheckIssue,
     check_feats,
@@ -40,7 +40,14 @@ def codes(issues) -> set:
 
 
 def add(store: FeatStore, data: dict) -> Feat:
-    f = Feat(**data)
+    """从 dict 建 feat 并落盘。
+
+    走 ``_from_dict`` 而不是 ``Feat(**data)``：前者会把 JSON 里的
+    字符串（如 ``"importance": "medium"``）转成枚举，后者不会。
+    """
+    from pdev.feat import _from_dict
+
+    f = _from_dict(dict(data))
     store.add(f)
     return f
 
@@ -678,6 +685,10 @@ def _fielded(slug="a", **over):
         design_note="思路", impl_note="方式",
         data_model=["X: int"], samples=["X=1"],
         changes=["pdev/x.py::X —— 新增"],
+        # feat-edit-fields 新增的三个必填
+        test_note="pytest tests/test_x.py::test_y",
+        impact="只影响 check 规则",
+        importance=FeatImportance.MEDIUM,
         stage="feat",
         # 设为强制起点之后，使其受 missing-fields 约束
         created_at=datetime.fromisoformat("2026-10-15T00:00:00+00:00"),
@@ -696,12 +707,19 @@ def test_missing_fields_reported_for_staged_feat(store):
 
 
 def test_missing_fields_exempt_for_legacy_feat(store):
-    """早期建立的 feat 豁免 missing-fields（按 created_at 判定）。"""
+    """历史 feat 的豁免**由开关决定**（不再是自动豁免）。
+
+    默认（``loose_history=False``）严格：历史 feat 也报；
+    开关开启时才对历史 feat 放过。见 doc/feat/feat-edit-fields.md。
+    """
     store.add(Feat(slug="old", title="旧", api=["f()"],
                    created_at=datetime.fromisoformat(
                        "2026-10-01T00:00:00+00:00")))
-    got = codes(check_one(store, "old"))
-    assert "missing-fields" not in got
+    # 默认严格：历史 feat 也报
+    assert "missing-fields" in codes(check_one(store, "old"))
+    # 显式放过：不再报
+    assert "missing-fields" not in codes(
+        check_one(store, "old", loose_history=True))
 
 
 def test_missing_fields_enforced_after_since(store):
@@ -712,9 +730,11 @@ def test_missing_fields_enforced_after_since(store):
 
 
 def test_complete_feat_no_missing_fields(store):
+    """字段齐全 → 不报 missing-fields（但仍会报 missing-review）。"""
     store.add(_fielded())
     got = codes(check_one(store, "a"))
     assert "missing-fields" not in got
+    assert "missing-review" in got      # 未勾审 → 新规则生效
 
 
 def test_vague_change_reported(store):
