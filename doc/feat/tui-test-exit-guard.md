@@ -124,3 +124,77 @@ cmd=.venv/bin/python scripts/tui_crash_report.py
 manual=门禁脚本对目标跑多次，观察是否出现非 0/1 的退出码
 expected=当前应稳定为 ok；一旦复发，脚本会打印诊断提示
 ```
+
+## 实现与校验结果（收尾）
+
+实现于 `b6ed69bf`（test `3cff436d`、doc `967a573c`）。
+
+**状态：已闭环（closed）**。本 feat **未修任何 bug**（无可复现的 bug），
+交付的是监控与留证能力。
+
+### 交付物
+
+| 文件 | 内容 |
+|------|------|
+| `scripts/check_test_exit.py` | 退出门禁：子进程跑 pytest，按退出码判定 |
+| `scripts/tui_crash_report.py` | 现场采集：Python/flags/版本/GC/线程/fd/复现命令 |
+| `tests/test_tui_exit_guard.py` | 10 例（分类语义 + 采集健壮性 + 用法校验） |
+| `doc/feat/tui-test-exit-guard.md` | 本文档 |
+
+**零新增依赖**。
+
+### 实测
+
+退出门禁（5 次）：
+
+```
+$ .venv/bin/python scripts/check_test_exit.py tests/tui_new_to_fix/test_feat_ui.py --runs 5
+  run 1/5: 退出码 0
+  ...
+ok: 5 次运行退出码均为 0
+```
+
+**门禁自验**（用一个真段错误确认它真能抓到，
+否则这脚本只是装饰）：
+
+```
+$ .venv/bin/python scripts/check_test_exit.py /tmp/seg_fail.py
+退出门禁失败：出现异常退出码（既非 0 也非 1）
+  第 1 次：退出码 -11（被信号 11 杀死，如 -11 = SIGSEGV）
+  复现命令：... -m pytest /tmp/seg_fail.py -q
+  采集现场：.venv/bin/python scripts/tui_crash_report.py
+```
+
+现场采集输出（示例）：
+
+```
+Python            : 3.13.2 | packaged by Anaconda, Inc.
+平台                : Linux-6.6.87.1-microsoft-standard-WSL2-x86_64-with-glibc2.43
+sys.flags         : sys.flags.dev_mode=False
+# textual 8.2.8 / pytest 9.1.1 / pytest-asyncio 1.4.0
+GC                : count=(1692, 0, 1) threshold=(2000, 10, 10) garbage=0
+线程                : 1: MainThread
+打开 fd 数           : 4
+```
+
+### 本次发现的异常（已记笔记）
+
+1. **无法复现的偶发崩溃不应盲修**（difficulty/high）
+   清理探针 `.pyc` 后，工作区与干净 worktree 各跑 10+ 次均退出码 0。
+   没有复现就没有验收标准，因此转为门禁 + 留证。
+2. **删掉源文件后 `__pycache__` 里的 `.pyc` 仍会被 pytest 加载**（pitfall/medium）
+   调试期创建的 `test_zz_*.py` 用 `rm` 删除后，其 `.pyc` 残留，
+   pytest 仍会加载执行——既污染结果，也误导了我的归因。
+
+### 复发时怎么办
+
+1. 跑 `scripts/check_test_exit.py <目标> --runs 10` 确认是否复发；
+2. 若是，跑 `scripts/tui_crash_report.py` 采集现场；
+3. 带着两份输出开一个新 feat（届时才有可验证的复现步骤）。
+
+### 已知限制（有意不做）
+
+- 未接入 CI 配置文件（仓库暂无 workflow 目录）；
+  需要时把 `check_test_exit.py` 作为 CI 步骤即可。
+- 不做自动归因（如自动判断是不是 GC/线程问题）——证据不足时
+  自动化只会给出误导结论。
