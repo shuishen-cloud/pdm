@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 
 from pdev.feat import Feat  # noqa: E402
-from pdev.tui_new_to_fix import feat_core  # noqa: E402
+from pdev.tui_new_to_fix import core, feat_core  # noqa: E402
 
 _T0 = time.perf_counter()
 
@@ -99,6 +99,90 @@ def test_plan_toggle_only_touches_one_field():
     plan = feat_core.plan_toggle(f, "api:0", "review")
     assert plan == {"reviewed": True}
     assert "tested" not in plan
+
+
+# --- feat_line --------------------------------------------------------------
+
+
+def test_feat_line_parts():
+    marker, slug, tail = feat_core.feat_line(_feat())
+    assert marker == "● "
+    assert slug == "demo"
+    assert "draft" in tail and "审 0/2" in tail
+
+
+def test_feat_line_truncates_long_slug():
+    """限宽时 slug 被截断并加省略号（保证列表单行）。"""
+    f = Feat(slug="a-very-long-slug-for-testing", title="x", api=["a()"])
+    marker, slug, tail = feat_core.feat_line(f, width=20)
+    assert slug.endswith("…")
+    # 总显示宽度不得超过列表宽度
+    assert core.display_width(marker + slug + tail) <= 20
+
+
+def test_feat_line_unlimited_width_keeps_full_slug():
+    long_slug = "tui-new-to-fix-and-feat-review-super-long-slug"
+    f = Feat(slug=long_slug, title="x", api=["a()"])
+    marker, slug, tail = feat_core.feat_line(f, width=0)
+    assert slug == long_slug
+
+
+def test_feat_line_text_matches_parts():
+    f = _feat()
+    assert feat_core.feat_line_text(f) == "".join(feat_core.feat_line(f))
+
+
+def test_feat_line_survives_broken_feat():
+    """feat 缺字段/方法时不能抛（面板会传各种东西）。"""
+    class Broken:
+        slug = "broken"
+
+    marker, slug, tail = feat_core.feat_line(Broken())
+    assert marker and slug == "broken"
+
+
+# --- plan_comment -----------------------------------------------------------
+
+
+def test_plan_comment_normalizes():
+    assert feat_core.plan_comment("为什么这么定") == "为什么这么定"
+
+
+def test_plan_comment_empty_means_clear():
+    """None / 非 str / 全空白 → 空串（表示清除），与 CLI 的 --clear 一致。"""
+    for value in (None, "", "   ", "\n\t ", 123, [], {}):
+        assert feat_core.plan_comment(value) == "", repr(value)
+
+
+def test_plan_comment_keeps_newlines():
+    """多行评论必须保留内部换行（这是用 TextArea 的原因）。"""
+    text = "第一行\n第二行"
+    assert feat_core.plan_comment(text) == text
+
+
+def test_plan_comment_strips_outer_whitespace_only():
+    assert feat_core.plan_comment("  a\nb  ") == "a\nb"
+
+
+# --- comment_rows -----------------------------------------------------------
+
+
+def test_comment_rows_shape():
+    f = _feat()
+    f.set_comment("api:0", "选签名不泛化")
+    rows = feat_core.comment_rows(f)
+    assert rows == [("api:0", "run() -> int", "选签名不泛化")]
+
+
+def test_comment_rows_empty_when_no_comment():
+    assert feat_core.comment_rows(_feat()) == []
+
+
+def test_comment_rows_survives_broken_feat():
+    class Broken:
+        pass
+
+    assert feat_core.comment_rows(Broken()) == []
 
 
 # --- 时间预算 ---------------------------------------------------------------

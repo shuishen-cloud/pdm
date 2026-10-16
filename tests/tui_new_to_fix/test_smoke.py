@@ -134,14 +134,18 @@ def _reload_feat(root, slug="demo"):
     return FeatStore(root).get(slug)
 
 
-async def test_keys_keep_app_alive_and_feat_panel(store, feat_root):
-    """``f`` 能打开 Feat 面板、``空格``/``t`` 能勾选并落盘，且面板不闪退。
+def _reload_store(root):
+    """从磁盘重新读一个 FeatStore。"""
+    from pdev.feat import FeatStore
+
+    return FeatStore(root)
+
+
+async def test_feat_panel_toggle_and_persist(store, feat_root):
+    """``f`` 打开面板；``空格``/``t`` 能勾选并**真的落盘**。
 
     写盘一律用 ``_reload_feat`` 复查（新建 store 从磁盘读，
     不听内存缓存），与 ``web-ui-review`` 的「CLI 复核」同一思路。
-
-    故意**不再跑一遍导航键**：那是 ``test_boot_and_navigate`` 的事，
-    每个 ``pilot.press`` 约 0.1s，重复付不起。
     """
     from pdev.tui_new_to_fix.screens import FeatScreen
     from textual.widgets import ListView
@@ -180,10 +184,117 @@ async def test_keys_keep_app_alive_and_feat_panel(store, feat_root):
         assert app.is_running
         assert not isinstance(app.screen, FeatScreen)
 
-        # --- FeatScreen 内部抛异常不得带走 app（曾因漏包 @guard 而闪退）---
-        from pdev.tui_new_to_fix import feat_core
 
-        original = feat_core.review_rows
+# --- 会话 3：Feat 列表的单行/放大/焦点（与勾选解耦） -------------------------
+
+
+async def test_feat_list_single_line_zoom_and_focus(store, feat_root):
+    """列表单行、Enter 放大能看全、（左右） 方向键切焦点。
+
+    渲染细节（截断宽度、省略号）由 ``test_feat_core`` 的纯函数测覆盖，
+    这里只验证“接线”：高度锁 1、enter 真的改变宽度、焦点真的换。
+    """
+    from pdev.feat import Feat
+    from pdev.tui_new_to_fix.screens import FeatScreen
+    from textual.widgets import ListView
+
+    long_slug = "tui-new-to-fix-and-feat-review-super-long-slug"
+    _reload_store(feat_root).update(
+        Feat(slug=long_slug, title="长", api=["x()"]))
+
+    app = make_app(store)
+    app.config = _config_with_feat(feat_root)
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)
+        lv = app.screen.query_one("#feat-list", ListView)
+        item = next(i for i in lv.children if i.feat.slug == long_slug)
+        assert item.size.height == 1, "列表项折行了"
+
+        # --- Enter 放大：不得被 ListView 吞 ---
+        width_before = lv.size.width
+        await pilot.press("enter")
+        await pilot.pause()
+        assert lv.size.width > width_before, "enter 没有放大列表（被 ListView 吞了？）"
+        assert long_slug in item.render().plain, "放大后应能看到完整 slug"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert lv.size.width == width_before
+
+        # --- 方向键切焦点 ---
+        await pilot.press("right")
+        await pilot.pause()
+        assert app.focused is not None and app.focused.id == "feat-detail"
+        await pilot.press("h")
+        await pilot.pause()
+        assert app.focused is not None and app.focused.id == "feat-list"
+
+
+# --- 会话：评论编辑（第二个写操作） ------------------------------------------
+
+
+async def test_feat_comment_roundtrip(store, feat_root):
+    """``c`` 打开评论弹窗，输入后 Ctrl+S 保存并**真的落盘**；Esc 不落盘。
+
+    多行输入的细节（换行保留、留空=清除）由 ``test_feat_core``
+    的纯函数测覆盖，这里只验证“接线”。
+    """
+    from textual.widgets import TextArea
+
+    from pdev.tui_new_to_fix.screens import CommentScreen, FeatScreen
+
+    app = make_app(store)
+    app.config = _config_with_feat(feat_root)
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)
+
+        # --- c 打开评论弹窗 ---
+        await pilot.press("c")
+        await pilot.pause()
+        assert isinstance(app.screen, CommentScreen), "c 没打开评论弹窗"
+
+        # --- 输入（直接写 TextArea，避开逐字按键的开销）并 Ctrl+S 保存 ---
+        app.screen.query_one("#comment-text", TextArea).text = "为何不泛化"
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen), "保存后应回到 FeatScreen"
+        assert app.errors == []
+        assert _reload_feat(feat_root).comment("api:0") == "为何不泛化"
+
+        # --- 再次 c 应是“编辑已有评论”，Esc 取消不落盘 ---
+        await pilot.press("c")
+        await pilot.pause()
+        assert app.screen.query_one("#comment-text", TextArea).text == "为何不泛化"
+        app.screen.query_one("#comment-text", TextArea).text = "改了"
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, FeatScreen)
+        assert _reload_feat(feat_root).comment("api:0") == "为何不泛化", \
+            "Esc 取消不应落盘"
+
+        # --- 两件事仍互不干扰（写评论不等于勾选）---
+        item = _reload_feat(feat_root).review_item("api:0")
+        assert getattr(item, "reviewed", False) is False
+
+
+# --- 会话：FeatScreen 内部的异常兜底 ----------------------------------------
+
+
+async def test_feat_screen_exception_does_not_kill_app(store, feat_root):
+    """FeatScreen 内部抛异常 → app 继续跑（曾因漏包 @guard 而闪退）。"""
+    from pdev.tui_new_to_fix import feat_core
+    from pdev.tui_new_to_fix.screens import FeatScreen
+
+    app = make_app(store)
+    app.config = _config_with_feat(feat_root)
+    original = feat_core.review_rows
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
         await pilot.press("f")
         await pilot.pause()
         assert isinstance(app.screen, FeatScreen)
@@ -197,7 +308,9 @@ async def test_keys_keep_app_alive_and_feat_panel(store, feat_root):
             assert any("corrupt feat json" in e for e in app.errors), app.errors
         finally:
             feat_core.review_rows = original
-# --- 会话 3：异常兜底（本 feat 的核心契约） ---------------------------------
+
+
+# --- 会话（异常兜底）：本 feat 的核心契约 ------------------------------------
 
 
 async def test_exception_in_action_does_not_kill_app(store):
