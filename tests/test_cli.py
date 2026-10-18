@@ -1969,3 +1969,63 @@ def test_commit_test_can_skip_script(capsys, tmp_path, monkeypatch):
     code = main(["feat", "commit", "feat", "a", "-m", "接入",
                  "--files", "i.py"])
     assert code == 0
+
+def test_cli_get_allowed_with_reviewed_score():
+    """
+    测试新添的审核分数评比测试
+    """
+
+
+    pass
+
+# ---------------------------------------------------------------------------
+# 审查率门禁（见 doc/feat/review-gate.md）
+# ---------------------------------------------------------------------------
+
+
+def test_feat_new_gate_non_interactive_still_creates(capsys, monkeypatch):
+    """非交互环境（测试/CI）：打警告但**仍创建**，退出码 0。
+
+    这是既有测试能继续跑的前提——门禁不能把流水线卡死。
+    """
+    import sys as _sys
+
+    monkeypatch.setattr(_sys.stdin, "isatty", lambda: False, raising=False)
+    code = main(["feat", "new", "gate1", "-t", "G1", "--doc", "d.md",
+                 *_FIELD_ARGS])
+    err = capsys.readouterr().err
+
+    assert code == 0
+    assert "审核率" in err              # 警告打了
+    # feat 确实建成（能用 show 查到）
+    assert main(["--json", "feat", "show", "gate1"]) == 0
+
+
+def test_feat_new_gate_interactive_no_cancels(capsys, monkeypatch):
+    """交互环境 + 用户输 n → 取消，退出码 3，**不落盘**。"""
+    import sys as _sys
+
+    monkeypatch.setattr(_sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda _p="": "n")
+
+    code = main(["feat", "new", "gate2", "-t", "G2", "--doc", "d.md",
+                 *_FIELD_ARGS])
+    capsys.readouterr()
+    assert code == 3
+
+    # 未创建：show 应失败
+    assert _main(["feat", "show", "gate2"]) != 0
+
+
+def test_feat_new_gate_interactive_yes_creates(capsys, monkeypatch):
+    """交互环境 + 用户输 y → 继续创建。"""
+    import sys as _sys
+
+    monkeypatch.setattr(_sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda _p="": "y")
+
+    code = main(["feat", "new", "gate3", "-t", "G3", "--doc", "d.md",
+                 *_FIELD_ARGS])
+    capsys.readouterr()
+    assert code == 0
+    assert main(["--json", "feat", "show", "gate3"]) == 0
