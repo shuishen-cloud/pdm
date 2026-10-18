@@ -91,7 +91,84 @@ grep -n "def cmd_feat_new" -A 40 pdev/cli/commands.py
 这就是“设计落到代码中”的载体——`changes` 字段要求
 `文件::符号 —— 说明` 格式，正是防止设计漂在文档里、找不到对应代码。
 
-## 2. 调试：怎么亲眼看到执行轨迹
+## 2. 架构：改动地图为什么是这四处
+
+> 上一节给了“改哪里”，这一节说“为什么是那里”——
+> 搞清层次后，以后加任何功能都能自己定位。
+
+### 三层结构
+
+```
+用户
+ ↓
+① pdev/cli/commands.py     24 个 cmd_*（**唯一 CLI 入口**）
+ ↓  直接 import 内核模块
+② pdev/*.py 内核           feat.py / review.py / store.py / check.py …
+ ↓
+③ .pdm/*.json 数据
+
+并行的一条路：
+   pdev/api.py::Ledger     **门面**（任务级方法，给 SDK / 脚本用）
+```
+
+**关键认识**：`commands.py` **确实是所有能力的 CLI 入口**，
+但它不唯一——内核同时有门面 `Ledger`（`pdev/api.py`），
+设计约束是：
+
+> - 门面**只暴露任务级方法**，不暴露 Store / Enum / 裸 dataclass
+> - **不破坏现有 CLI** —— 门面是**新增**，不是替换
+
+### `cmd_*` 分三种胖瘦（实测）
+
+| 类型 | 例子 | 行数 | 职责 |
+|------|------|-----:|------|
+| **薄转发** | `cmd_note_list`(5)、`cmd_query`(3)、`cmd_show`(12) | 3~12 | 只转调内核 |
+| **中等** | `cmd_feat_new`(43)、`cmd_review`(42)、`cmd_feat_commit`(43) | 40~45 | 组装参数 + 调内核 + 格式化输出 |
+| **厚** | `cmd_feat_show`(155)、`cmd_feat_edit`(88)、`cmd_feat_review`(84) | 70~155 | 含实质逻辑 |
+
+（行数用 `awk` 按函数边界统计，会与肉眼数略有出入。）
+
+**你要改的 `cmd_feat_new` 属“中等”（43 行），插入门禁大概 +5~8 行，
+不会让它变胖。**
+
+### 为什么门禁要拆两处
+
+| 该动 | 理由 |
+|------|------|
+| `pdev/review.py` 加 `gate_decision()` | **用户与脚本都能用**的内核能力，不该埋在 CLI 里 |
+| `cmd_feat_new` 调用它 | **“何时提醒”是 CLI 的策略**，不是内核的 |
+
+若把两件事都写进 `cmd_feat_new`：内核能力无法复用，
+将来 webui / TUI 想用还得重写一份。
+
+### 可选：要不要同时加进门面
+
+若希望脚本/SDK 也能用这个门禁（如 CI 自检）：
+
+```python
+# pdev/api.py （门面已有 Ledger / LedgerV2 / ReviewAPI）
+ledger.review.gate()        # 返回 GateDecision
+```
+
+**不做也不影响 CLI 功能**——门面是“额外的一扇门”。
+
+### 自己定位“新功能该改哪”的通用方法
+
+```bash
+# 1. 找现有同类命令的实现（照葫芦画瓢）
+grep -n "def cmd_" pdev/cli/commands.py | grep <关键词>
+
+# 2. 看它调了哪些内核函数（那些函数就是可复用的）
+grep -n "def cmd_xxx" -A 40 pdev/cli/commands.py
+
+# 3. 看该内核函数还有谁在用（了解既有约定）
+grep -rn "函数名" pdev/ --include=*.py
+
+# 4. 确认子命令→函数的绑定（分发点）
+grep -n "set_defaults(func=" pdev/cli/parser.py
+```
+
+## 3. 调试：怎么亲眼看到执行轨迹
 
 > 光看地图不够，想确认“命令到底走了哪些分支”，用调试器。
 > 仓库已配好 `.vscode/launch.json`（随 git 走）。
@@ -212,7 +289,7 @@ make the debugger miss breakpoints.
 用 `python -Xfrozen_modules=off` 包装，或改用 `pdb`。
 （本仓库实测断点正常，仅作备注。）
 
-## 3. 登记 feat（`pdm feat new`）
+## 4. 登记 feat（`pdm feat new`）
 
 **八项字段全必填**（缺一即报错退出码 2）：
 
@@ -247,7 +324,7 @@ make the debugger miss breakpoints.
 **踩坑点**：`--change` 每条必须带 `::` 或 `.`（定位到符号），否则
 `feat check` 会报 `vague-change`。
 
-## 4. doc 阶段：先写设计文档
+## 5. doc 阶段：先写设计文档
 
 写 `doc/feat/review-gate.md`，内容建议包含：
 
@@ -271,21 +348,89 @@ make the debugger miss breakpoints.
 下一步：按本 doc 编写测试（pdm feat set <slug> testing）
 ```
 
-## 5. test 阶段：先写测试
+## 6. test 阶段：先写测试
 
-新建 `tests/test_review_gate.py`。**先只写测试，实现可以是空**：
+### 关键认识：测试要分两层
+
+| 层 | 回答的问题 | 给谁看 | 位置 |
+|----|-----------|--------|------|
+| **纯函数** | 判断逻辑对不对（边界/空值） | 改代码的人 | `tests/test_review_gate.py` |
+| **CLI 层** | **功能什么时候触发、会不会阻断** | **使用者** | `tests/test_cli.py` |
+| （文档） | 怎么用 | 用户 | 设计文档「验证方法」节 |
+
+**只写纯函数测试，看不出“怎么用”**——你需要 CLI 层测试：
+“跑一条命令 → 看 stderr/退出码”。
+
+### 第一层：纯函数测试
+
+新建 `tests/test_review_gate.py`：
 
 ```python
-# 建议覆盖
-def test_gate_blocks_below_threshold(): ...     # 覆盖率 2% < 10% → 警告
-def test_gate_passes_above_threshold(): ...     # 覆盖率 50% > 10% → 放行
-def test_gate_passes_exactly_at_threshold(): ...  # 边界：等于阈值
+def test_gate_blocks_below_threshold(): ...     # 覆盖率 2% < 10% → 不放行
+def test_gate_exactly_at_threshold(): ...       # 边界：等于阈值
+def test_gate_passes_above_threshold(): ...     # 略高于阈值 → 放行
 def test_gate_with_no_items(): ...              # total=0 不除零
-def test_feat_new_warns_but_still_creates(): ...  # CLI：退出码 0 + stderr 有警告
-def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 ```
 
-提交：
+#### 数据怎么造（重要坑）
+
+项目已有现成范式（`tests/test_review.py`）：
+
+```python
+from pdev.feat import Feat
+
+# 造一条 feat：注意 doc="" 时才不产生 doc 可审项！
+f = Feat(slug="a", title="a", doc="",
+         api=["1()", "2()", "3()", "4()", "5()", "6()"])
+# → 可审项正好 6 个（api:0 ~ api:5）
+
+f.set_reviewed("api:0", True, by="human:lwy")   # 审 1 个
+```
+
+**分数公式**（决定你怎么凑数据）：
+
+```
+score = 0.6 × 审查率 + 0.4 × 测试率     # 见 pdev/review.py 的 REVIEW_WEIGHT/TEST_WEIGHT
+```
+
+| 想要 score | 数据 |
+|-----------|------|
+| 0.0 | 都不审不测 |
+| **0.1**（阈值边界） | `doc=""` + 6 个 api，**审 1 个** → 0.6×(1/6) |
+| 0.2 | 同上，审 2 个 |
+| 0.6（只审不测的上限） | 全审、不测 |
+| 1.0（满分） | 全审 + 全测 |
+
+⚠️ **别忘记 doc 也占一个可审项**：
+`Feat(doc="d.md", api=["f()"])` 是 **2 个**可审项，不是 1 个。
+
+浮点边界用 `pytest.approx`：
+
+```python
+assert score == pytest.approx(0.1)
+```
+
+### 第二层：CLI 层测试（体现“怎么用”）
+
+加在 `tests/test_cli.py`，照 `test_feat_new_requires_all_fields` 的写法：
+
+```python
+def test_feat_new_warns_when_coverage_low(capsys):
+    """覆盖率低时：**打印警告，但仍创建**（退出码 0）。"""
+    code = _main(["feat", "new", "b", "-t", "B", ...八个必填...])
+    err = capsys.readouterr().err          # ← 抓 stderr
+    assert code == 0, "警告不应阻断创建"     # ← 断言“不阻断”
+    assert "审查覆盖率" in err              # ← 断言“警告出现”
+```
+
+**两个坑**：
+
+1. **用 `_main` 而不是 `main`**：`tests/test_cli.py:33` 的 `main` 包装器
+   会自动补齐必填字段，那样测不到真实行为。
+2. **区分 stdout / stderr**：警告走 `stderr`，
+   `capsys.readouterr().err` 才能拓到。
+
+### 提交
 
 ```bash
 .venv/bin/pdm feat commit test review-gate -m "按设计写测试：门禁三态 + CLI 警告不阻断" \
@@ -298,7 +443,20 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/python -m pytest tests/test_review_gate.py -q
 ```
 
-## 6. feat 阶段：实现
+### 别忘了文档里的「验证方法」
+
+设计文档末尾要写清“怎么验证”，格式是项目约定：
+
+```
+test=tests/test_review_gate.py::test_gate_blocks_below_threshold
+cmd=.venv/bin/pdm feat new demo --title "..." ...
+manual=看 stderr 是否出现警告，且 feat 确实被创建
+expected=退出码 0 + 警告一次
+```
+
+**`cmd=` 那一行就是“使用示例”**——比测试用例本身更能回答“怎么用”。
+
+## 7. feat 阶段：实现
 
 改 `pdev/review.py`、`pdev/cli/commands.py`、`pdev/config.py`、`pdev/cli/parser.py`。
 
@@ -327,9 +485,9 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
     --verify 'test=tests/test_review_gate.py::test_gate_blocks_below_threshold;method=怎么验证;expected=passed'
 ```
 
-## 7. fix 阶段：集成中发现的问题
+## 8. fix 阶段：集成中发现的问题
 
-手工实测（见第 9 节），有问题就在这一步修并提交：
+手工实测（见第 10 节），有问题就在这一步修并提交：
 
 ```bash
 .venv/bin/pdm feat commit fix review-gate -m "修复：<具体问题>" \
@@ -339,7 +497,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 **注意**：`feat` 之后**必须**经过 `fix` 才能 `close`（流程强制）。
 即使没有代码修复，也要提交一次回填文档。
 
-## 8. close 阶段：收尾
+## 9. close 阶段：收尾
 
 在本 feat 的设计文档 `doc/feat/review-gate.md` 末尾追加「实现与校验结果」小节：
 交付物、实测数据、发现的异常、已知限制。
@@ -356,7 +514,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
   review-gate → [closed]
 ```
 
-## 9. 手工验证
+## 10. 手工验证
 
 ```bash
 # 当前覆盖率 2%（低于 10%）→ 应该警告
@@ -366,7 +524,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/pdm feat new temp-demo2 --title "临时" ... --ignore-gate
 ```
 
-## 10. 自校验
+## 11. 自校验
 
 ```bash
 .venv/bin/pdm feat check review-gate
@@ -406,7 +564,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 .venv/bin/pdm feat stage-review review-gate --list        # 看进度
 ```
 
-## 11. 常用排查命令
+## 12. 常用排查命令
 
 | 目的 | 命令 |
 |------|------|
@@ -419,7 +577,7 @@ def test_feat_new_ignore_gate_flag(): ...       # --ignore-gate 无警告
 | 看流程是否合规 | `pdm feat check review-gate` |
 | 看某 commit 的笔记 | `pdm show <commit>` |
 
-## 12. 常见报错与处置
+## 13. 常见报错与处置
 
 | 报错 | 原因 | 处置 |
 |------|------|------|
@@ -448,7 +606,7 @@ json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False,indent=2)"
 .venv/bin/pdm feat check review-gate
 ```
 
-## 13. 完成后
+## 14. 完成后
 
 ```bash
 .venv/bin/pdm feat list | grep review-gate     # 应是 [closed]
