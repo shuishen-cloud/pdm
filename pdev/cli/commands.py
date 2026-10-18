@@ -505,9 +505,51 @@ def _feat_store(ctx: AppContext):
     return FeatStore(p)
 
 
+def _gate_prompt(score: float, threshold: float) -> bool:
+    """审查分数过低时的交互确认。
+
+    :returns: ``True`` = 继续创建；``False`` = 取消。
+
+    抽成独立函数的好处：可单独测（``monkeypatch`` 掉 ``input``），
+    不必跑整个 ``feat new``。
+
+    **非交互环境**（CI / 管道 / 测试，``stdin`` 不是 TTY）自动**放行**——
+   门禁的语义是“提醒开发者”，不是“阻断流水线”。
+    """
+    print(f"代码审核率实在是太低了，只有 {score:.2%}，"
+          f"现在最低的 Review 标准是 {threshold:.2%}，暂停开发吧",
+          file=sys.stderr)
+
+    try:
+        interactive = sys.stdin.isatty()
+    except Exception:                            # noqa: BLE001
+        interactive = False
+    if not interactive:
+        print("（非交互环境，跳过确认，仍创建 feat）", file=sys.stderr)
+        return True
+
+    while True:
+        try:
+            answer = input(
+                "仍要继续开发吗？输入 y 继续，输入 n 取消：").strip().lower()
+        except EOFError:
+            print("错误：没有读到输入，已取消。", file=sys.stderr)
+            return False
+        if answer == "y":
+            return True
+        if answer == "n":
+            print("已取消创建 feat。", file=sys.stderr)
+            return False
+        print("请输入 y 或 n。", file=sys.stderr)
+
+
 def cmd_feat_new(ctx: AppContext, args) -> int:
     """新建一条 feat。"""
+    from pathlib import Path
+
     from ..feat import Feat, FeatError, FeatImportance, FeatKind
+    from ..review import (PDM_CONFIG_FILE, get_allowed_from_reviewed_score,
+                          load_warning_score)
 
     try:
         feat = Feat(
@@ -538,7 +580,17 @@ def cmd_feat_new(ctx: AppContext, args) -> int:
                   "--importance 登记（没有也要写明「无」）",
                   file=sys.stderr)
             return 2
-        _feat_store(ctx).add(feat)
+
+        # 审查率门禁：低于阈值时交互确认（不静默阻断）
+        store = _feat_store(ctx)
+        # 用项目目录下的 .pdm.json，而不是**进程 cwd**：
+        # 用户可能用 --store 指向其它项目，从别处调用。
+        threshold = load_warning_score(str(Path(ctx.cwd) / PDM_CONFIG_FILE))
+        allowed, score = get_allowed_from_reviewed_score(store.all(), threshold)
+        if not allowed and not _gate_prompt(score, threshold):
+            return 3
+
+        store.add(feat)
     except FeatError as e:
         print(f"错误：{e}", file=sys.stderr)
         return 2

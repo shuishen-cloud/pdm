@@ -11,6 +11,7 @@ Feat 汇总出「项目代码掌握程度」，并对**人工审核覆盖率过�
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional
 
@@ -23,6 +24,7 @@ __all__ = [
     "unreviewed_items",
     "LEVELS",
     "DEFAULT_MIN_COVERAGE",
+    "load_warning_score",
 ]
 
 # 分档下界：(level, score 下界)，从高到低匹配
@@ -120,6 +122,45 @@ def compute_review(feats: Optional[Iterable] = None,
 
     s.warnings = _warnings(s, policy)
     return s
+
+
+#: ``.pdm.json`` 中 ``warning_score`` 的默认值（读取失败时兜底）
+DEFAULT_WARNING_SCORE = 0.1
+
+#: 项目配置文件（相对当前工作目录）
+PDM_CONFIG_FILE = ".pdm.json"
+
+
+def load_warning_score(path: str = PDM_CONFIG_FILE,
+                       default: float = DEFAULT_WARNING_SCORE) -> float:
+    """从 ``.pdm.json`` 读取 ``warning_score``，缺失或异常时返回 default。"""
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            data = json.load(fp)
+    except (OSError, ValueError):
+        return default
+    if not isinstance(data, dict):
+        return default
+    try:
+        return float(data.get("warning_score", default))
+    except (TypeError, ValueError):
+        return default
+
+
+def get_allowed_from_reviewed_score(
+        feats, threshold: float = DEFAULT_WARNING_SCORE
+) -> tuple[bool, float]:
+    """按掌握程度评分判断是否放行。**纯函数**（阈值由调用方传入）。
+
+    :param feats: 任意可迭代的 :class:`pdev.feat.Feat`。
+    :param threshold: 放行下限；``score <= threshold`` 视为不放行。
+    :returns: ``(allowed, score)``。
+
+    阈值从配置读取是**调用方**的事（见 ``load_warning_score``），
+    这样本函数可脱离文件系统单测（毫秒级）。
+    """
+    score = compute_review(feats).score
+    return (score > threshold, score)
 
 
 def _warnings(s: ReviewScore, policy: ReviewPolicy) -> List[ReviewWarning]:

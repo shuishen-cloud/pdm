@@ -11,6 +11,7 @@ import pytest
 from pdev.feat import Feat
 from pdev.review import (
     ReviewPolicy,
+    get_allowed_from_reviewed_score as gate,
     ReviewScore,
     ReviewWarning,
     compute_review,
@@ -310,3 +311,98 @@ def test_unreviewed_items_all_reviewed():
     f = _feat("a", api=["f()"], doc="")
     _review_all(f)
     assert unreviewed_items([f]) == []
+
+
+# ---------------------------------------------------------------------------
+# get_allowed_from_reviewed_score：审查率门禁（见 doc/feat/review-gate.md）
+# ---------------------------------------------------------------------------
+#
+# 分数公式：score = 0.6 × 审查率 + 0.4 × 测试率
+# 所以「只审不测」的上限是 0.6；想让 score 恰好等于某个值要算好条目数。
+#
+# 可审项数目提醒：doc 为空时才不产生 doc 可审项；
+# Feat(doc="d.md", api=["f()"]) 是 **2** 个，不是 1 个。
+
+
+def _feat_with_n_api(n: int, reviewed: int = 0, tested: int = 0) -> Feat:
+    """构造恰好 n 个可审项（doc 留空，避免多出 doc 项）的 feat。
+
+    前 ``reviewed`` 个标记已审，前 ``tested`` 个标记已测。
+    """
+    f = Feat(slug="a", title="a", doc="",
+             api=[f"{i}()" for i in range(n)])
+    for i in range(reviewed):
+        f.set_reviewed(f"api:{i}", True, by="human:lwy")
+    for i in range(tested):
+        f.set_tested(f"api:{i}", True, command="pytest x", status="passed")
+    return f
+
+
+def test_gate_empty_input_not_allowed():
+    """没有任何 feat → score 0 → 不放行（且不除零）。"""
+    allowed, score = gate([], 0.1)
+    assert allowed is False
+    assert score == 0.0
+
+
+def test_gate_no_review_not_allowed():
+    """有可审项但一个都没审 → 不放行。"""
+    allowed, score = gate([_feat_with_n_api(6)], 0.1)
+    assert allowed is False
+    assert score == 0.0
+
+
+def test_gate_exactly_at_threshold_not_allowed():
+    """边界：score 恰好等于阈值 → **不放行**（语义是 <=）。"""
+    f = _feat_with_n_api(6, reviewed=1)          # 0.6 × 1/6 = 0.1
+    allowed, score = gate([f], 0.1)
+    assert score == pytest.approx(0.1)
+    assert allowed is False
+
+
+def test_gate_just_above_threshold_allowed():
+    """略高于阈值 → 放行。"""
+    f = _feat_with_n_api(6, reviewed=2)          # 0.6 × 2/6 = 0.2
+    allowed, score = gate([f], 0.1)
+    assert score == pytest.approx(0.2)
+    assert allowed is True
+
+
+def test_gate_threshold_is_parameter():
+    """阈值由调用方传入——同一份数据，阈值不同结果不同。"""
+    f = _feat_with_n_api(6, reviewed=1)          # score = 0.1
+    assert gate([f], 0.1)[0] is False            # <= 0.1 不放行
+    assert gate([f], 0.05)[0] is True            # > 0.05 放行
+
+
+def test_gate_review_only_caps_at_0_6():
+    """只审不测 → score 上限 0.6（不是 1.0）。"""
+    f = _feat_with_n_api(4, reviewed=4)          # 全审、不测
+    allowed, score = gate([f], 0.1)
+    assert score == pytest.approx(0.6)
+    assert allowed is True
+
+
+def test_gate_full_review_and_test_reaches_1():
+    """全审 + 全测 → score 1.0。"""
+    f = _feat_with_n_api(4, reviewed=4, tested=4)
+    allowed, score = gate([f], 0.1)
+    assert score == pytest.approx(1.0)
+    assert allowed is True
+
+
+def test_gate_aggregates_multiple_feats():
+    """多条 feat 汇总：1/3 审查 ≈ 0.2 分。"""
+    good = _feat_with_n_api(1, reviewed=1)       # 1/1
+    bad = _feat_with_n_api(2)                   # 0/2
+    allowed, score = gate([good, bad], 0.1)
+    assert score == pytest.approx(0.6 * (1 / 3))
+    assert allowed is True
+
+
+def test_gate_deterministic():
+    """稳定性：同一输入多次调用结果一致（纯函数无副作用）。"""
+    feats = [_feat_with_n_api(3, reviewed=1)]
+    first = gate(feats, 0.1)
+    for _ in range(5):
+        assert gate(feats, 0.1) == first
