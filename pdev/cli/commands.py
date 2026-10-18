@@ -545,8 +545,11 @@ def _gate_prompt(score: float, threshold: float) -> bool:
 
 def cmd_feat_new(ctx: AppContext, args) -> int:
     """新建一条 feat。"""
+    from pathlib import Path
+
     from ..feat import Feat, FeatError, FeatImportance, FeatKind
-    from ..review import get_allowed_from_reviewed_score, load_warning_score
+    from ..review import (PDM_CONFIG_FILE, get_allowed_from_reviewed_score,
+                          load_warning_score)
 
     try:
         feat = Feat(
@@ -580,7 +583,9 @@ def cmd_feat_new(ctx: AppContext, args) -> int:
 
         # 审查率门禁：低于阈值时交互确认（不静默阻断）
         store = _feat_store(ctx)
-        threshold = load_warning_score()
+        # 用项目目录下的 .pdm.json，而不是**进程 cwd**：
+        # 用户可能用 --store 指向其它项目，从别处调用。
+        threshold = load_warning_score(str(Path(ctx.cwd) / PDM_CONFIG_FILE))
         allowed, score = get_allowed_from_reviewed_score(store.all(), threshold)
         if not allowed and not _gate_prompt(score, threshold):
             return 3

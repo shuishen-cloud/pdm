@@ -12,7 +12,6 @@ Feat 汇总出「项目代码掌握程度」，并对**人工审核覆盖率过�
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional
 
@@ -162,6 +161,7 @@ def get_allowed_from_reviewed_score(
     """
     score = compute_review(feats).score
     return (score > threshold, score)
+
 
 def _warnings(s: ReviewScore, policy: ReviewPolicy) -> List[ReviewWarning]:
     """按「过低」规则生成告警；空仓库不告警。"""
