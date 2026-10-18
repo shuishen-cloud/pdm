@@ -27,5 +27,6 @@
     "repo": "",
     "token": "",
     "auto_push": false
-  }
+  },
+  "warning_score" : 0.1
 }
