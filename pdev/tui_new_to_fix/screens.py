@@ -638,3 +638,80 @@ class FeatScreen(ModalScreen):
         if isinstance(event.item, FeatItem):
             self._cursor = 0
             self._refresh_detail()
+
+
+class ThemeScreen(ModalScreen):
+    """主题选择器：列出全部主题，回车切换。
+
+    ``dismiss`` 返回主题名（取消返回 ``None``）。
+
+    注意：**不 import 旧包** ``pdev.tui.screens`` —— 旧 TUI 将来要删，
+    新包必须自洽。
+    """
+
+    CSS = """
+    ThemeScreen { align: center middle; background: $background 70%; }
+    #theme-box {
+        width: 48;
+        height: auto;
+        max-height: 80%;
+        padding: 1 2;
+        border: thick $accent;
+        background: $surface;
+    }
+    #theme-list { height: auto; max-height: 20; }
+    ThemeItem { height: 1; padding: 0 1; }
+    ThemeItem.--current { background: $accent 40%; }
+    #theme-hint { height: 1; color: $text-muted; margin-top: 1; }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "取消"),
+        Binding("q", "cancel", "取消"),
+    ]
+
+    def __init__(self, current: str = "") -> None:
+        super().__init__()
+        self.current = current
+        self._names: List[str] = []
+
+    def compose(self) -> ComposeResult:
+        self._names = sorted(getattr(self.app, "available_themes", []) or [])
+        with Vertical(id="theme-box"):
+            items = []
+            chosen = 0
+            for i, name in enumerate(self._names):
+                item = ThemeItem(name, current=(name == self.current))
+                if name == self.current:
+                    chosen = i
+                items.append(item)
+            view = ListView(*items, id="theme-list")
+            if self._names:
+                view.index = chosen
+            yield view
+            yield Static("Enter 选择   ·   Esc/q 取消", id="theme-hint")
+
+    @guard
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """``ListView`` 的 Selected 事件；Enter 由这里接管。"""
+        name = getattr(event.item, "theme_name", None)
+        if name:
+            self.dismiss(name)
+
+    @guard
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ThemeItem(ListItem):
+    """主题列表的一行（单行，``●`` 标出当前主题）。"""
+
+    def __init__(self, name: str, current: bool = False) -> None:
+        super().__init__()
+        self.theme_name = name
+        self.current = current
+        if current:
+            self.add_class("--current")
+
+    def compose(self) -> ComposeResult:
+        yield Static(("● " if self.current else "  ") + self.theme_name)

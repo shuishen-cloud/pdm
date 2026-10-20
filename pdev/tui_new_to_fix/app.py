@@ -25,7 +25,7 @@ from textual.message import Message
 from textual.widgets import Footer, Header, ListItem, ListView, Static
 
 from ..note import CommitNote
-from . import core
+from . import core, theme
 from .guard import guard
 
 __all__ = ["PDMApp", "run"]
@@ -208,6 +208,8 @@ class PDMApp(App):
         Binding("enter", "toggle_zoom", "放大"),
         Binding("z", "toggle_zoom", "放大", show=False),
         Binding("f", "show_feats", "Feat"),
+        Binding("t", "cycle_theme", "主题", show=False),
+        Binding("T", "pick_theme", "选主题", show=False),
     ]
 
     def __init__(self, store, cwd: str = ".", config=None) -> None:
@@ -236,8 +238,71 @@ class PDMApp(App):
         必须包 guard：``on_mount`` 抛异常同样会被 Textual 判为
         panic 并退出——这正是旧 TUI “启动就挂” 的路径。
         """
+        self._apply_configured_theme()
         self._reload()
         self.query_one(CommitList).focus()
+
+    # --- 主题 ---
+
+    def _themes(self) -> List[str]:
+        """当前可用的主题名（textual 未装时为空表）。"""
+        try:
+            return list(self.available_themes)
+        except Exception:                        # noqa: BLE001
+            return []
+
+    def _apply_configured_theme(self) -> None:
+        """把 ``config.ui.theme`` 应用到界面（无效名回退默认，**静默**）。
+
+        启动时不 notify：每次开 TUI 弹一条消息太吵。
+        """
+        name = getattr(getattr(self.config, "ui", None), "theme", None)
+        self._set_theme(theme.normalize(name, self._themes()))
+
+    def _set_theme(self, name: str) -> str:
+        """设置主题（无效名静默忽略），返回最终生效的主题名。"""
+        if name in self._themes():
+            self.theme = name
+        return str(self.theme)
+
+    def _persist_ui(self, key: str, value) -> Optional[str]:
+        """把 UI 偏好写回**用户配置**（``~/.config/pdm/config.json``）。
+
+        主题是个人口味，不能写项目 ``.pdm.json``（会被 git 冲掉）。
+        返回保存路径；失败返回 ``None``（只提示，不影响使用）。
+        """
+        try:
+            from ..config import save_user_config
+
+            path = save_user_config({"ui": {key: value}})
+        except Exception as exc:                 # noqa: BLE001
+            self.notify(f"保存设置失败：{exc}", severity="warning")
+            return None
+        if self.config is not None and hasattr(self.config, "ui"):
+            setattr(self.config.ui, key, value)
+        return str(path)
+
+    @guard
+    def action_cycle_theme(self) -> None:
+        """``t``：循环到下一个主题并持久化。"""
+        nxt = theme.next_theme(self.theme, self._themes())
+        applied = self._set_theme(nxt)
+        saved = self._persist_ui("theme", applied)
+        self.notify(f"主题：{applied}" + ("  (已保存)" if saved else ""))
+
+    @guard
+    def action_pick_theme(self) -> None:
+        """``T``：弹出主题选择器，选中后持久化。"""
+        from .screens import ThemeScreen
+
+        def apply(name: Optional[str]) -> None:
+            if not name:
+                return
+            applied = self._set_theme(name)
+            saved = self._persist_ui("theme", applied)
+            self.notify(f"主题：{applied}" + ("  (已保存)" if saved else ""))
+
+        self.push_screen(ThemeScreen(self.theme), apply)
 
     # --- 数据 ---
 
