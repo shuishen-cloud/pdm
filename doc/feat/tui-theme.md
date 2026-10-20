@@ -127,4 +127,40 @@ next_theme("nord", ["dracula", "nord"])                      # -> "dracula"（�
 
 ## 实现中实际抓到的问题
 
-（见 fix 阶段提交）
+### 1. `next_theme` 首版对未知当前主题返回“默认主题的下一个”
+
+设计写的是“从默认主题往后取一个”，但实测按 `t` 会直接跳到
+`catppuccin-mocha`（默认主题的下一个），与“回退到默认主题”的直觉不符。
+改成：**当前主题未知 → 直接返回默认主题**；只有默认主题也不在表里
+才退到列表首项。测试：`test_next_theme_unknown_starts_from_default`。
+
+### 2. 测试预算断言假失败（6.85s）
+
+首版 `test_theme.py` / `test_theme_ui.py` 用**模块级** `_T0` 计时，
+混在全仓跑时把 import 与其它测试的耗时算进来，budget 断言必挂。
+改为 autouse fixture 累加本文件用例耗时（与 `test_smoke.py` 一致）。
+
+### 3. 手敲写法静默失效
+
+`Catppuccin Macchiato` / `catppuccin_macchiato` 在
+`App.available_themes` 里查不到，直接 `self.theme = name` 是静默
+no-op（用户看到“配置了却没生效”）。`theme._key()` 统一小写并把
+`_` / 空格 / `.` 视作 `-` 后再比较。
+
+## 验证结果
+
+```
+pytest -q tests/tui_new_to_fix/            # 88 passed
+pytest -q                                  # 全仓通过
+HOME=/tmp/fakehome pdm theme nord           # CLI 写用户配置
+→ 新 TUI 启动主题 = nord（实测）
+pytest tests/tui_new_to_fix/test_theme.py  # 15 用例，< 0.2s
+```
+
+## 已知边界
+
+- 若 Textual 版本里没有 `catppuccin-macchiato`（当前 8.2.8 有），
+  `normalize` 会退回列表首项；此时**不会**提示用户——刻意保持静默，
+  因为启动时弹通知太吵。
+- 主题切换只影响本进程的 `App.theme`；不用 `App.register_theme`，
+  所以无法使用 Textual 主题表之外的自定义主题（不在本 feat 范围）。
