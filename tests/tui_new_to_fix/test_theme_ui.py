@@ -5,7 +5,8 @@
 
 1. 启动时把 ``config.ui.theme`` 应用到 ``App.theme``；
 2. 配置主题缺失/非法 → 回退 ``catppuccin-macchiato``；
-3. ``t`` 循环切换并写入用户配置（``~/.config/pdm/config.json``）。
+3. ``t`` 循环切换并写入用户配置（``~/.config/pdm/config.json``）；
+4. ``T`` 选择器回车选中同样持久化；写配置失败只 warn 不中断。
 """
 
 from __future__ import annotations
@@ -63,17 +64,20 @@ def make_app(store, theme_name) -> PDMApp:
 async def test_configured_theme_applied_and_cycled(tmp_path, user_config):
     store = NoteStore(tmp_path / "notes")
 
-    # --- 1. 配置主题生效（默认值就是 macchiato，这里用 nord 证明真的读了配置）---
-    app = make_app(store, "nord")
+    # --- 1. 配置主题生效（默认值就是 macchiato，这里用 nord 证明真的读了配置）
+    # 顺便用**用户手敲的写法**（空格 + 大写）验证归一化；
+    app = make_app(store, "Catppuccin Macchiato")
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        assert app.theme == "nord", f"没读 config.ui.theme：{app.theme}"
+        assert app.theme == "catppuccin-macchiato", (
+            f"没读 config.ui.theme 或未归一化：{app.theme}"
+        )
         assert app.is_running
 
         # --- 3. t 循环切换并持久化 ---
         await pilot.press("t")
         await pilot.pause()
-        assert app.theme != "nord", "t 没有切换主题"
+        assert app.theme != "catppuccin-macchiato", "t 没有切换主题"
         saved = json.loads(user_config.read_text(encoding="utf-8"))
         assert saved["ui"]["theme"] == app.theme
         assert app.errors == []
@@ -92,8 +96,35 @@ async def test_configured_theme_applied_and_cycled(tmp_path, user_config):
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, ThemeScreen), "Esc 应关闭选择器"
+
+        # --- 4. 选择器回车选中 → 持久化 ---
+        before = app.theme
+        await pilot.press("T")
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not isinstance(app.screen, ThemeScreen), "Enter 应关闭选择器"
+        assert app.theme != before, "选择器选中的主题没应用"
+        assert json.loads(
+            user_config.read_text(encoding="utf-8")
+        )["ui"]["theme"] == app.theme
+
+        # --- 5. 写用户配置失败：只 warn，主题仍在本次会话生效 ---
+        import pdev.config
+
+        def boom(*a, **kw):
+            raise OSError("read-only home")
+
+        pdev.config.save_user_config = boom
+        prev = app.theme
+        app.action_cycle_theme()
+        await pilot.pause()
+        assert app.theme != prev, "保存失败不应阻止本次切换"
+        assert app.errors == [], "保存失败不该进 errors（它是可降级的）"
+
         assert app.is_running
-        assert app.errors == []
 
 
 async def test_default_theme_when_config_missing(tmp_path):
