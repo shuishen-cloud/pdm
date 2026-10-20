@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from pdev.tui_new_to_fix import theme
 
 NAMES = [
@@ -18,7 +20,17 @@ NAMES = [
     "nord",
 ]
 
-_T0 = time.perf_counter()
+#: 本文件“自己的”耗时累加（不含 import、收集与其它测试——
+#: 不能用模块级起点：全仓跑时会把别人的耗时也算进来，见 test_smoke.py）。
+_ELAPSED = 0.0
+
+
+@pytest.fixture(autouse=True)
+def _measure():
+    global _ELAPSED
+    start = time.perf_counter()
+    yield
+    _ELAPSED += time.perf_counter() - start
 
 
 # --- 默认值 -----------------------------------------------------------------
@@ -108,6 +120,5 @@ def test_next_theme_is_total():
 
 
 def test_budget():
-    """本文件必须 < 0.2s（import 不算在内）。"""
-    elapsed = time.perf_counter() - _T0
-    assert elapsed < 0.2, f"纯函数测试太慢：{elapsed:.3f}s"
+    """本文件必须 < 0.2s（只累计本文件用例耗时）。"""
+    assert _ELAPSED < 0.2, f"纯函数测试太慢：{_ELAPSED:.3f}s"
