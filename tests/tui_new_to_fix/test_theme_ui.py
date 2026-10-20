@@ -20,7 +20,16 @@ pytest.importorskip("textual")
 from pdev.store import NoteStore  # noqa: E402
 from pdev.tui_new_to_fix.app import PDMApp  # noqa: E402
 
-_T0 = time.perf_counter()
+#: 本文件“自己的”耗时累加（理由同 test_smoke.py：不能用模块级起点）。
+_ELAPSED = 0.0
+
+
+@pytest.fixture(autouse=True)
+def _measure():
+    global _ELAPSED
+    start = time.perf_counter()
+    yield
+    _ELAPSED += time.perf_counter() - start
 
 
 class _UIConfig:
@@ -73,6 +82,19 @@ async def test_configured_theme_applied_and_cycled(tmp_path, user_config):
         app.config.ui.theme = "no-such-theme"
         assert app.theme in app.available_themes
 
+        # --- T 弹出选择器（额外 2 次 pause，不占新的 run_test）---
+        await pilot.press("T")
+        await pilot.pause()
+        from pdev.tui_new_to_fix.screens import ThemeScreen
+
+        assert isinstance(app.screen, ThemeScreen)
+        assert app.screen.current == app.theme       # 列表标出当前主题
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ThemeScreen), "Esc 应关闭选择器"
+        assert app.is_running
+        assert app.errors == []
+
 
 async def test_default_theme_when_config_missing(tmp_path):
     """配置里没有主题（None）→ 用 Catppuccin Macchiato。"""
@@ -85,5 +107,4 @@ async def test_default_theme_when_config_missing(tmp_path):
 
 
 def test_budget():
-    elapsed = time.perf_counter() - _T0
-    assert elapsed < 2.5, f"主题 UI 测试太慢：{elapsed:.2f}s"
+    assert _ELAPSED < 2.5, f"主题 UI 测试太慢：{_ELAPSED:.2f}s"
